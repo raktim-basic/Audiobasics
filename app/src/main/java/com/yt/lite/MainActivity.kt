@@ -120,9 +120,3 @@ fun YTLiteApp() {
         }
     }
 }
-That's all 4 files. Now also update MusicViewModel.kt — the play() function needs to pass ctx to getStreamUrl. Find this line:
-val url = Innertube.getStreamUrl(song.id)
-Replace with:
-val url = Innertube.getStreamUrl(getApplication(), song.id)
-And update the error Toast when url is null to say:
-Toast.makeText(getApplication(), "Go to Updater tab and tap Update Player", Toast.LENGTH_LONG).show()
