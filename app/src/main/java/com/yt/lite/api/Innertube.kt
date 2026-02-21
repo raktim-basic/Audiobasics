@@ -9,34 +9,62 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.net.URLDecoder
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.stream.StreamExtractor
 import java.util.concurrent.TimeUnit
 
 object Innertube {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     private val parser = Json { ignoreUnknownKeys = true }
     private val MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
-
     private const val MUSIC_BASE = "https://music.youtube.com/youtubei/v1"
-    private const val YT_BASE = "https://www.youtube.com/youtubei/v1"
+
+    private var newPipeInit = false
+
+    private fun ensureNewPipe(ctx: Context) {
+        if (!newPipeInit) {
+            NewPipe.init(object : org.schabi.newpipe.extractor.downloader.Downloader() {
+                override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): org.schabi.newpipe.extractor.downloader.Response {
+                    val rb = okhttp3.Request.Builder().url(request.url())
+                    request.headers().forEach { (k, v) -> v.forEach { rb.header(k, it) } }
+                    val body = request.dataToSend()?.let {
+                        it.toRequestBody("application/x-www-form-urlencoded".toMediaType())
+                    }
+                    rb.method(request.httpMethod(), body)
+                    val resp = http.newCall(rb.build()).execute()
+                    val respHeaders = mutableMapOf<String, MutableList<String>>()
+                    resp.headers.forEach { (k, v) ->
+                        respHeaders.getOrPut(k) { mutableListOf() }.add(v)
+                    }
+                    return org.schabi.newpipe.extractor.downloader.Response(
+                        resp.code,
+                        resp.message,
+                        respHeaders,
+                        resp.body?.string(),
+                        resp.request.url.toString()
+                    )
+                }
+            })
+            newPipeInit = true
+        }
+    }
 
     private suspend fun post(
         endpoint: String,
-        body: JsonObject,
-        userAgent: String = "Mozilla/5.0",
-        base: String = YT_BASE
+        body: JsonObject
     ): JsonObject? = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
-                .url("$base/$endpoint?prettyPrint=false")
+                .url("$MUSIC_BASE/$endpoint?prettyPrint=false")
                 .post(body.toString().toRequestBody(MEDIA_TYPE))
                 .header("Content-Type", "application/json")
-                .header("User-Agent", userAgent)
+                .header("User-Agent", "Mozilla/5.0")
                 .build()
             val resp = http.newCall(req).execute()
             if (!resp.isSuccessful) return@withContext null
@@ -59,77 +87,33 @@ object Innertube {
             put("query", query)
             put("params", "EgWKAQIIAWoKEAkQBRAKEAMQBA==")
         }
-        val resp = post("search", body, base = MUSIC_BASE) ?: return emptyList()
+        val resp = post("search", body) ?: return emptyList()
         return parseSearch(resp)
     }
 
-    suspend fun getStreamUrl(ctx: Context, videoId: String): String? {
-        if (!SignatureExtractor.isReady(ctx)) return null
+    suspend fun getStreamUrl(ctx: Context, videoId: String): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                ensureNewPipe(ctx)
+                val url = "https://www.youtube.com/watch?v=$videoId"
+                val extractor: StreamExtractor =
+                    ServiceList.YouTube.getStreamExtractor(url)
+                extractor.fetchPage()
 
-        val body = buildJsonObject {
-            putJsonObject("context") {
-                putJsonObject("client") {
-                    put("clientName", "ANDROID")
-                    put("clientVersion", "17.36.4")
-                    put("androidSdkVersion", 30)
-                    put("hl", "en")
-                    put("gl", "US")
-                }
+                // Get audio-only streams, prefer m4a
+                val audioStreams = extractor.audioStreams
+                if (audioStreams.isNullOrEmpty()) return@withContext null
+
+                val best = audioStreams
+                    .filter { it.content?.isNotEmpty() == true }
+                    .maxByOrNull { it.bitrate }
+
+                best?.content
+            } catch (e: Exception) {
+                android.util.Log.e("YTLite", "NewPipe extraction failed", e)
+                null
             }
-            put("videoId", videoId)
-            put("contentCheckOk", true)
-            put("racyCheckOk", true)
         }
-
-        val ua = "com.google.android.youtube/17.36.4 (Linux; U; Android 10; GB) gzip"
-        val resp = post("player", body, ua) ?: return null
-
-        val status = resp["playabilityStatus"]?.jsonObject
-            ?.get("status")?.jsonPrimitive?.content
-        if (status != "OK") return null
-
-        val formats = resp["streamingData"]?.jsonObject
-            ?.get("adaptiveFormats")?.jsonArray ?: return null
-
-        val audio = formats
-            .map { it.jsonObject }
-            .filter { it["mimeType"]?.jsonPrimitive?.content?.startsWith("audio/") == true }
-
-        val withUrl = audio.filter { it["url"] != null }
-        if (withUrl.isNotEmpty()) {
-            return (withUrl.firstOrNull {
-                it["mimeType"]?.jsonPrimitive?.content?.contains("mp4") == true
-            } ?: withUrl.maxByOrNull {
-                it["bitrate"]?.jsonPrimitive?.intOrNull ?: 0
-            })?.get("url")?.jsonPrimitive?.content
-        }
-
-        val withCipher = audio.filter { it["signatureCipher"] != null }
-        val best = withCipher.firstOrNull {
-            it["mimeType"]?.jsonPrimitive?.content?.contains("mp4") == true
-        } ?: withCipher.maxByOrNull {
-            it["bitrate"]?.jsonPrimitive?.intOrNull ?: 0
-        } ?: return null
-
-        val cipher = best["signatureCipher"]?.jsonPrimitive?.content ?: return null
-        return decipherUrl(ctx, cipher)
-    }
-
-    private fun decipherUrl(ctx: Context, signatureCipher: String): String? {
-        return try {
-            val params = signatureCipher.split("&").associate {
-                val (k, v) = it.split("=", limit = 2)
-                k to URLDecoder.decode(v, "UTF-8")
-            }
-            val sig = params["s"] ?: return null
-            val url = params["url"] ?: return null
-            val sp = params["sp"] ?: "signature"
-            val deciphered = SignatureExtractor.decipher(ctx, sig)
-            "$url&$sp=$deciphered"
-        } catch (e: Exception) {
-            null
-        }
-    }
 
     private fun parseSearch(data: JsonObject): List<Song> {
         val songs = mutableListOf<Song>()
