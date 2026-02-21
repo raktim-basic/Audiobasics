@@ -32,6 +32,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _queue = MutableStateFlow<List<Song>>(emptyList())
+    val queue: StateFlow<List<Song>> = _queue
+
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
             _isPlaying.value = playing
@@ -60,6 +63,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _currentSong.value = song
             _isLoading.value = true
             _error.value = null
+            if (_queue.value.none { it.id == song.id }) {
+                _queue.value = _queue.value + song
+            }
             try {
                 val url = Innertube.getStreamUrl(song.id)
                     ?: throw Exception("Could not get stream URL")
