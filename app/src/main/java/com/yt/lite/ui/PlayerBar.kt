@@ -2,6 +2,8 @@ package com.yt.lite.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
@@ -19,7 +21,9 @@ fun PlayerBar(
     song: Song,
     isPlaying: Boolean,
     isLoading: Boolean,
-    onToggle: () -> Unit
+    isLiked: Boolean,
+    onToggle: () -> Unit,
+    onLike: () -> Unit
 ) {
     Surface(tonalElevation = 8.dp) {
         Row(
@@ -49,6 +53,13 @@ fun PlayerBar(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onLike) {
+                Icon(
+                    imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = if (isLiked) "Unlike" else "Like",
+                    tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             if (isLoading) {
