@@ -20,43 +20,18 @@ object Innertube {
     private val parser = Json { ignoreUnknownKeys = true }
     private val MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
-    private const val BASE = "https://music.youtube.com/youtubei/v1"
-    private const val KEY = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-KOWNER5s0"
-
-    private fun webContext() = buildJsonObject {
-        putJsonObject("context") {
-            putJsonObject("client") {
-                put("clientName", "WEB_REMIX")
-                put("clientVersion", "1.20240101.01.00")
-                put("hl", "en")
-                put("gl", "US")
-            }
-        }
-    }
-
-    private fun iosContext() = buildJsonObject {
-        putJsonObject("context") {
-            putJsonObject("client") {
-                put("clientName", "IOS_MUSIC")
-                put("clientVersion", "5.21")
-                put("deviceMake", "Apple")
-                put("deviceModel", "iPhone14,3")
-                put("osName", "iPhone")
-                put("osVersion", "15.7.1.19H117")
-                put("hl", "en")
-                put("gl", "US")
-            }
-        }
-    }
+    private const val MUSIC_BASE = "https://music.youtube.com/youtubei/v1"
+    private const val YT_BASE = "https://www.youtube.com/youtubei/v1"
 
     private suspend fun post(
         endpoint: String,
         body: JsonObject,
-        userAgent: String = "Mozilla/5.0"
+        userAgent: String = "Mozilla/5.0",
+        base: String = YT_BASE
     ): JsonObject? = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
-                .url("$BASE/$endpoint?key=$KEY&prettyPrint=false")
+                .url("$base/$endpoint?prettyPrint=false")
                 .post(body.toString().toRequestBody(MEDIA_TYPE))
                 .header("Content-Type", "application/json")
                 .header("User-Agent", userAgent)
@@ -72,23 +47,43 @@ object Innertube {
 
     suspend fun search(query: String): List<Song> {
         val body = buildJsonObject {
-            webContext().forEach { (k, v) -> put(k, v) }
+            putJsonObject("context") {
+                putJsonObject("client") {
+                    put("clientName", "WEB_REMIX")
+                    put("clientVersion", "1.20240101.01.00")
+                    put("hl", "en")
+                    put("gl", "US")
+                }
+            }
             put("query", query)
             put("params", "EgWKAQIIAWoKEAkQBRAKEAMQBA==")
         }
-        val resp = post("search", body) ?: return emptyList()
+        val resp = post("search", body, base = MUSIC_BASE) ?: return emptyList()
         return parseSearch(resp)
     }
 
     suspend fun getStreamUrl(videoId: String): String? {
         val body = buildJsonObject {
-            iosContext().forEach { (k, v) -> put(k, v) }
+            putJsonObject("context") {
+                putJsonObject("client") {
+                    put("clientName", "ANDROID")
+                    put("clientVersion", "17.36.4")
+                    put("androidSdkVersion", 30)
+                    put("hl", "en")
+                    put("gl", "US")
+                    put("platform", "MOBILE")
+                }
+            }
             put("videoId", videoId)
             put("contentCheckOk", true)
             put("racyCheckOk", true)
         }
-        val ua = "com.google.ios.youtubemusic/5.21 (iPhone14,3; U; CPU iOS 15_7_1 like Mac OS X)"
+        val ua = "com.google.android.youtube/17.36.4 (Linux; U; Android 10; GB) gzip"
         val resp = post("player", body, ua) ?: return null
+
+        val status = resp["playabilityStatus"]?.jsonObject
+            ?.get("status")?.jsonPrimitive?.content
+        if (status != "OK") return null
 
         val formats = resp["streamingData"]?.jsonObject
             ?.get("adaptiveFormats")?.jsonArray ?: return null
@@ -96,6 +91,7 @@ object Innertube {
         val audio = formats
             .map { it.jsonObject }
             .filter { it["mimeType"]?.jsonPrimitive?.content?.startsWith("audio/") == true }
+            .filter { it["url"] != null }
 
         return (audio.firstOrNull {
             it["mimeType"]?.jsonPrimitive?.content?.contains("mp4") == true
