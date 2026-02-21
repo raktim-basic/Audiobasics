@@ -3,51 +3,54 @@ package com.yt.lite.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.yt.lite.api.Innertube
-import com.yt.lite.data.Song
 
 @Composable
 fun HomeScreen(vm: MusicViewModel) {
-    var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val queue by vm.queue.collectAsState()
 
-    LaunchedEffect(Unit) {
-        try {
-            songs = Innertube.getHomeSongs()
-        } catch (e: Exception) {
-            error = e.message ?: "Failed to load"
-        } finally {
-            loading = false
+    if (queue.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Your queue is empty",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Search for songs to start listening",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        when {
-            loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-            error != null -> Text(
-                text = error!!,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(24.dp),
-                color = MaterialTheme.colorScheme.error
-            )
-            else -> LazyColumn {
-                item {
-                    Text(
-                        "Trending",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-                items(songs, key = { it.id }) { song ->
-                    SongItem(song = song) { vm.play(song) }
-                }
+    } else {
+        LazyColumn {
+            item {
+                Text(
+                    "Up next",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+            items(queue, key = { it.id }) { song ->
+                SongItem(song = song) { vm.play(song) }
             }
         }
     }
