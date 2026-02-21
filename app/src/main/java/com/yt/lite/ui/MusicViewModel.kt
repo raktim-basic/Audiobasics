@@ -62,16 +62,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 _queue.value = _queue.value + song
             }
             try {
-                val url = Innertube.getStreamUrl(song.id)
+                val url = Innertube.getStreamUrl(getApplication(), song.id)
                 if (url == null) {
-                    val msg = "No stream URL returned for ${song.id}"
+                    val msg = "Go to Updater tab and tap Update Player"
                     _error.value = msg
-                    Toast.makeText(getApplication(), "Error: $msg", Toast.LENGTH_LONG).show()
+                    Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
                     return@launch
                 }
 
                 Log.d("YTLite", "Stream URL: $url")
-                Toast.makeText(getApplication(), "Loading: ${song.title}", Toast.LENGTH_SHORT).show()
 
                 val dataSourceFactory = DefaultHttpDataSource.Factory()
                     .setDefaultRequestProperties(mapOf(
