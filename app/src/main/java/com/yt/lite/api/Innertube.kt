@@ -11,13 +11,15 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.stream.StreamExtractor
+import org.schabi.newpipe.extractor.downloader.Downloader
+import org.schabi.newpipe.extractor.downloader.Request as NpRequest
+import org.schabi.newpipe.extractor.downloader.Response as NpResponse
 import java.util.concurrent.TimeUnit
 
 object Innertube {
 
     private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
@@ -27,32 +29,35 @@ object Innertube {
 
     private var newPipeInit = false
 
-    private fun ensureNewPipe(ctx: Context) {
-        if (!newPipeInit) {
-            NewPipe.init(object : org.schabi.newpipe.extractor.downloader.Downloader() {
-                override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): org.schabi.newpipe.extractor.downloader.Response {
-                    val rb = okhttp3.Request.Builder().url(request.url())
-                    request.headers().forEach { (k, v) -> v.forEach { rb.header(k, it) } }
-                    val body = request.dataToSend()?.let {
-                        it.toRequestBody("application/x-www-form-urlencoded".toMediaType())
-                    }
-                    rb.method(request.httpMethod(), body)
-                    val resp = http.newCall(rb.build()).execute()
-                    val respHeaders = mutableMapOf<String, MutableList<String>>()
-                    resp.headers.forEach { (k, v) ->
-                        respHeaders.getOrPut(k) { mutableListOf() }.add(v)
-                    }
-                    return org.schabi.newpipe.extractor.downloader.Response(
-                        resp.code,
-                        resp.message,
-                        respHeaders,
-                        resp.body?.string(),
-                        resp.request.url.toString()
-                    )
+    private fun ensureNewPipe() {
+        if (newPipeInit) return
+        NewPipe.init(object : Downloader() {
+            override fun execute(request: NpRequest): NpResponse {
+                val methodBody = request.dataToSend()?.toRequestBody()
+                val rb = Request.Builder()
+                    .url(request.url())
+                    .method(request.httpMethod(), methodBody)
+                request.headers().forEach { (key, values) ->
+                    values.forEach { rb.addHeader(key, it) }
                 }
-            })
-            newPipeInit = true
-        }
+                // Always add a real browser UA so YouTube doesn't block
+                rb.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+                val resp = http.newCall(rb.build()).execute()
+                val headers = mutableMapOf<String, MutableList<String>>()
+                resp.headers.forEach { (k, v) ->
+                    headers.getOrPut(k) { mutableListOf() }.add(v)
+                }
+                return NpResponse(
+                    resp.code,
+                    resp.message,
+                    headers,
+                    resp.body?.string() ?: "",
+                    resp.request.url.toString()
+                )
+            }
+        })
+        newPipeInit = true
     }
 
     private suspend fun post(
@@ -94,24 +99,29 @@ object Innertube {
     suspend fun getStreamUrl(ctx: Context, videoId: String): String? =
         withContext(Dispatchers.IO) {
             try {
-                ensureNewPipe(ctx)
+                ensureNewPipe()
                 val url = "https://www.youtube.com/watch?v=$videoId"
-                val extractor: StreamExtractor =
-                    ServiceList.YouTube.getStreamExtractor(url)
+                val extractor = ServiceList.YouTube.getStreamExtractor(url)
                 extractor.fetchPage()
 
-                // Get audio-only streams, prefer m4a
                 val audioStreams = extractor.audioStreams
-                if (audioStreams.isNullOrEmpty()) return@withContext null
+                android.util.Log.d("YTLite", "Audio streams count: ${audioStreams?.size}")
+
+                if (audioStreams.isNullOrEmpty()) {
+                    android.util.Log.e("YTLite", "No audio streams found for $videoId")
+                    return@withContext null
+                }
 
                 val best = audioStreams
-                    .filter { it.content?.isNotEmpty() == true }
+                    .filter { !it.content.isNullOrEmpty() }
                     .maxByOrNull { it.bitrate }
 
+                android.util.Log.d("YTLite", "Best stream: ${best?.content}")
                 best?.content
+
             } catch (e: Exception) {
-                android.util.Log.e("YTLite", "NewPipe extraction failed", e)
-                null
+                android.util.Log.e("YTLite", "NewPipe error: ${e.javaClass.simpleName}: ${e.message}", e)
+                throw Exception("${e.javaClass.simpleName}: ${e.message}")
             }
         }
 
