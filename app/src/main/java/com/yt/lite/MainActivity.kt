@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -23,6 +24,7 @@ import com.yt.lite.ui.LikedScreen
 import com.yt.lite.ui.MusicViewModel
 import com.yt.lite.ui.PlayerBar
 import com.yt.lite.ui.SearchScreen
+import com.yt.lite.ui.UpdaterScreen
 import com.yt.lite.ui.theme.AppTheme
 
 @UnstableApi
@@ -95,6 +97,17 @@ fun YTLiteApp() {
                         icon = { Icon(Icons.Default.Favorite, "Liked") },
                         label = { Text("Liked") }
                     )
+                    NavigationBarItem(
+                        selected = route == "updater",
+                        onClick = {
+                            nav.navigate("updater") {
+                                popUpTo("queue")
+                                launchSingleTop = true
+                            }
+                        },
+                        icon = { Icon(Icons.Default.SystemUpdate, "Updater") },
+                        label = { Text("Updater") }
+                    )
                 }
             }
         }
@@ -103,6 +116,13 @@ fun YTLiteApp() {
             composable("queue") { HomeScreen(vm) }
             composable("search") { SearchScreen(vm) }
             composable("liked") { LikedScreen(vm) }
+            composable("updater") { UpdaterScreen() }
         }
     }
 }
+That's all 4 files. Now also update MusicViewModel.kt — the play() function needs to pass ctx to getStreamUrl. Find this line:
+val url = Innertube.getStreamUrl(song.id)
+Replace with:
+val url = Innertube.getStreamUrl(getApplication(), song.id)
+And update the error Toast when url is null to say:
+Toast.makeText(getApplication(), "Go to Updater tab and tap Update Player", Toast.LENGTH_LONG).show()
