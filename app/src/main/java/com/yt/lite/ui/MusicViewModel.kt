@@ -3,6 +3,7 @@ package com.yt.lite.ui
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -62,9 +63,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
             try {
                 val url = Innertube.getStreamUrl(song.id)
-                    ?: throw Exception("Could not get stream URL")
+                if (url == null) {
+                    val msg = "No stream URL returned for ${song.id}"
+                    _error.value = msg
+                    Toast.makeText(getApplication(), "Error: $msg", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
 
-                Log.d("YTLite", "Playing URL: $url")
+                Log.d("YTLite", "Stream URL: $url")
+                Toast.makeText(getApplication(), "Loading: ${song.title}", Toast.LENGTH_SHORT).show()
 
                 val dataSourceFactory = DefaultHttpDataSource.Factory()
                     .setDefaultRequestProperties(mapOf(
@@ -91,8 +98,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 player.play()
 
             } catch (e: Exception) {
-                _error.value = e.message ?: "Playback failed"
+                val msg = e.message ?: "Unknown error"
+                _error.value = msg
                 Log.e("YTLite", "Playback error", e)
+                Toast.makeText(getApplication(), "Error: $msg", Toast.LENGTH_LONG).show()
             } finally {
                 _isLoading.value = false
             }
