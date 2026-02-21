@@ -9,7 +9,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="YT Lite"
+        android:label="Audiobasics"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Black.NoTitleBar">
 
