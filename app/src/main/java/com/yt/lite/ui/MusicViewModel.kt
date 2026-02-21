@@ -64,19 +64,19 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val url = Innertube.getStreamUrl(getApplication(), song.id)
                 if (url == null) {
-                    val msg = "Go to Updater tab and tap Update Player"
+                    val msg = "Could not get stream URL for this song"
                     _error.value = msg
                     Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
                     return@launch
                 }
 
-                Log.d("YTLite", "Stream URL: $url")
+                Log.d("YTLite", "Playing: $url")
+                Toast.makeText(getApplication(), "Playing: ${song.title}", Toast.LENGTH_SHORT).show()
 
                 val dataSourceFactory = DefaultHttpDataSource.Factory()
                     .setDefaultRequestProperties(mapOf(
                         "User-Agent" to "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36",
-                        "Referer" to "https://music.youtube.com/",
-                        "Origin" to "https://music.youtube.com"
+                        "Referer" to "https://www.youtube.com/"
                     ))
 
                 val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
@@ -99,7 +99,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 val msg = e.message ?: "Unknown error"
                 _error.value = msg
-                Log.e("YTLite", "Playback error", e)
+                Log.e("YTLite", "Playback error: $msg", e)
                 Toast.makeText(getApplication(), "Error: $msg", Toast.LENGTH_LONG).show()
             } finally {
                 _isLoading.value = false
