@@ -6,22 +6,26 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.util.UnstableApi
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.yt.lite.ui.HomeScreen
+import com.yt.lite.ui.LikedScreen
 import com.yt.lite.ui.MusicViewModel
 import com.yt.lite.ui.PlayerBar
 import com.yt.lite.ui.SearchScreen
 import com.yt.lite.ui.theme.AppTheme
 
+@UnstableApi
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,6 +35,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@UnstableApi
 @Composable
 fun YTLiteApp() {
     val nav = rememberNavController()
@@ -49,15 +54,17 @@ fun YTLiteApp() {
                         song = song,
                         isPlaying = isPlaying,
                         isLoading = isLoading,
-                        onToggle = vm::togglePlayPause
+                        isLiked = vm.isLiked(song),
+                        onToggle = vm::togglePlayPause,
+                        onLike = { vm.toggleLike(song) }
                     )
                 }
                 NavigationBar {
                     NavigationBarItem(
-                        selected = route == "home",
+                        selected = route == "queue",
                         onClick = {
-                            nav.navigate("home") {
-                                popUpTo("home") { inclusive = true }
+                            nav.navigate("queue") {
+                                popUpTo("queue") { inclusive = true }
                                 launchSingleTop = true
                             }
                         },
@@ -68,20 +75,32 @@ fun YTLiteApp() {
                         selected = route == "search",
                         onClick = {
                             nav.navigate("search") {
-                                popUpTo("home")
+                                popUpTo("queue")
                                 launchSingleTop = true
                             }
                         },
                         icon = { Icon(Icons.Default.Search, "Search") },
                         label = { Text("Search") }
                     )
+                    NavigationBarItem(
+                        selected = route == "liked",
+                        onClick = {
+                            nav.navigate("liked") {
+                                popUpTo("queue")
+                                launchSingleTop = true
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Favorite, "Liked") },
+                        label = { Text("Liked") }
+                    )
                 }
             }
         }
     ) { padding ->
-        NavHost(nav, startDestination = "home", modifier = Modifier.padding(padding)) {
-            composable("home") { HomeScreen(vm) }
+        NavHost(nav, startDestination = "queue", modifier = Modifier.padding(padding)) {
+            composable("queue") { HomeScreen(vm) }
             composable("search") { SearchScreen(vm) }
+            composable("liked") { LikedScreen(vm) }
         }
     }
 }
