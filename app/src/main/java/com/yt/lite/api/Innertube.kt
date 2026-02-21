@@ -17,7 +17,7 @@ object Innertube {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val parser = Json { ignoreUnknownKeys = true }
     private val MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     private const val BASE = "https://music.youtube.com/youtubei/v1"
@@ -61,7 +61,7 @@ object Innertube {
                 .build()
             val resp = http.newCall(req).execute()
             if (!resp.isSuccessful) return@withContext null
-            json.parseToJsonElement(resp.body!!.string()).jsonObject
+            parser.parseToJsonElement(resp.body!!.string()).jsonObject
         } catch (e: Exception) {
             null
         }
@@ -118,7 +118,6 @@ object Innertube {
                 ?.get("content")?.jsonObject
                 ?.get("sectionListRenderer")?.jsonObject
                 ?.get("contents")?.jsonArray ?: return songs
-
             for (section in sections) {
                 val items = section.jsonObject["musicShelfRenderer"]?.jsonObject
                     ?.get("contents")?.jsonArray ?: continue
@@ -140,7 +139,6 @@ object Innertube {
                 ?.get("content")?.jsonObject
                 ?.get("sectionListRenderer")?.jsonObject
                 ?.get("contents")?.jsonArray ?: return songs
-
             for (section in sections) {
                 val items = section.jsonObject["musicCarouselShelfRenderer"]?.jsonObject
                     ?.get("contents")?.jsonArray ?: continue
@@ -166,30 +164,32 @@ object Innertube {
         return songs
     }
 
-    private fun parseSong(item: JsonObject): Song? = try {
-        val r = item["musicResponsiveListItemRenderer"]?.jsonObject ?: return null
-        val id = r["playlistItemData"]?.jsonObject?.get("videoId")?.jsonPrimitive?.content
-            ?: r["overlay"]?.jsonObject
-                ?.get("musicItemThumbnailOverlayRenderer")?.jsonObject
-                ?.get("content")?.jsonObject
-                ?.get("musicPlayButtonRenderer")?.jsonObject
-                ?.get("playNavigationEndpoint")?.jsonObject
-                ?.get("watchEndpoint")?.jsonObject
-                ?.get("videoId")?.jsonPrimitive?.content ?: return null
-        val cols = r["flexColumns"]?.jsonArray ?: return null
-        val title = cols.getOrNull(0)?.jsonObject
-            ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
-            ?.get("text")?.jsonObject?.get("runs")?.jsonArray
-            ?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: return null
-        val artist = cols.getOrNull(1)?.jsonObject
-            ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
-            ?.get("text")?.jsonObject?.get("runs")?.jsonArray
-            ?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
-        val thumb = r["thumbnail"]?.jsonObject
-            ?.get("musicThumbnailRenderer")?.jsonObject
-            ?.get("thumbnail")?.jsonObject
-            ?.get("thumbnails")?.jsonArray?.lastOrNull()?.jsonObject
-            ?.get("url")?.jsonPrimitive?.content ?: ""
-        Song(id, title, artist, thumb)
-    } catch (_: Exception) { null }
+    private fun parseSong(item: JsonObject): Song? {
+        return try {
+            val r = item["musicResponsiveListItemRenderer"]?.jsonObject ?: return null
+            val id = r["playlistItemData"]?.jsonObject?.get("videoId")?.jsonPrimitive?.content
+                ?: r["overlay"]?.jsonObject
+                    ?.get("musicItemThumbnailOverlayRenderer")?.jsonObject
+                    ?.get("content")?.jsonObject
+                    ?.get("musicPlayButtonRenderer")?.jsonObject
+                    ?.get("playNavigationEndpoint")?.jsonObject
+                    ?.get("watchEndpoint")?.jsonObject
+                    ?.get("videoId")?.jsonPrimitive?.content ?: return null
+            val cols = r["flexColumns"]?.jsonArray ?: return null
+            val title = cols.getOrNull(0)?.jsonObject
+                ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
+                ?.get("text")?.jsonObject?.get("runs")?.jsonArray
+                ?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: return null
+            val artist = cols.getOrNull(1)?.jsonObject
+                ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
+                ?.get("text")?.jsonObject?.get("runs")?.jsonArray
+                ?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
+            val thumb = r["thumbnail"]?.jsonObject
+                ?.get("musicThumbnailRenderer")?.jsonObject
+                ?.get("thumbnail")?.jsonObject
+                ?.get("thumbnails")?.jsonArray?.lastOrNull()?.jsonObject
+                ?.get("url")?.jsonPrimitive?.content ?: ""
+            Song(id, title, artist, thumb)
+        } catch (_: Exception) { null }
+    }
 }
