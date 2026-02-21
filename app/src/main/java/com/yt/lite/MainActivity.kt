@@ -43,6 +43,7 @@ fun YTLiteApp() {
     val currentSong by vm.currentSong.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
+    val likedSongs by vm.likedSongs.collectAsState()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
 
@@ -50,11 +51,12 @@ fun YTLiteApp() {
         bottomBar = {
             Column {
                 currentSong?.let { song ->
+                    val isLiked = likedSongs.any { it.id == song.id }
                     PlayerBar(
                         song = song,
                         isPlaying = isPlaying,
                         isLoading = isLoading,
-                        isLiked = vm.isLiked(song),
+                        isLiked = isLiked,
                         onToggle = vm::togglePlayPause,
                         onLike = { vm.toggleLike(song) }
                     )
