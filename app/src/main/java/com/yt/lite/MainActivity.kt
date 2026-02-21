@@ -6,7 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -61,8 +61,8 @@ fun YTLiteApp() {
                                 launchSingleTop = true
                             }
                         },
-                        icon = { Icon(Icons.Default.Home, "Home") },
-                        label = { Text("Home") }
+                        icon = { Icon(Icons.Default.QueueMusic, "Queue") },
+                        label = { Text("Queue") }
                     )
                     NavigationBarItem(
                         selected = route == "search",
