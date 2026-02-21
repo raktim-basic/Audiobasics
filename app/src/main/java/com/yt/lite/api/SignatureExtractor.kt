@@ -19,7 +19,7 @@ object SignatureExtractor {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
     fun getPrefs(ctx: Context): SharedPreferences =
@@ -49,70 +49,77 @@ object SignatureExtractor {
 
     suspend fun update(ctx: Context): Result<String> = withContext(Dispatchers.IO) {
         try {
-            // Step 1: Get YouTube homepage
+            // Step 1: Get player JS URL from YouTube
             val homeBody = fetch("https://www.youtube.com/")
                 ?: return@withContext Result.failure(Exception("Could not load YouTube homepage"))
 
-            // Step 2: Extract JS player path - multiple patterns
             val playerPath = listOf(
                 Regex(""""jsUrl"\s*:\s*"(/s/player/[^"]+\.js)""""),
                 Regex("""(/s/player/[a-f0-9]+/player_ias\.vflset/[^"']+\.js)"""),
-                Regex("""(/s/player/[a-f0-9]+/[^"']+base\.js)""")
+                Regex("""(/s/player/[a-f0-9]+/[^"']*base\.js)""")
             ).firstNotNullOfOrNull { it.find(homeBody)?.groupValues?.get(1) }
-                ?: return@withContext Result.failure(Exception("Could not find JS player URL in page"))
+                ?: return@withContext Result.failure(Exception("Could not find player URL"))
 
-            val playerVersion = Regex("""/player/([a-f0-9]+)/""")
+            val version = Regex("""/player/([a-f0-9]+)/""")
                 .find(playerPath)?.groupValues?.get(1) ?: "unknown"
 
-            // Step 3: Download JS player
+            // Step 2: Download JS
             val js = fetch("https://www.youtube.com$playerPath")
-                ?: return@withContext Result.failure(Exception("Could not download JS player"))
+                ?: return@withContext Result.failure(Exception("Could not download player JS"))
 
-            // Step 4: Find decipher function name - multiple patterns
-            val decipherName = listOf(
-                Regex("""\.get\("n"\)\)&&\(b=([a-zA-Z0-9${'$'}]{2,3})\["""),
-                Regex("""[a-zA-Z0-9${'$'}]{2,3}\.get\("alr"\).*?\.get\("n"\).*?=([a-zA-Z0-9${'$'}]{2,3})\("""),
-                Regex("""[=(,]([a-zA-Z0-9${'$'}]{2,3})\(decodeURIComponent"""),
-                Regex("""var\s+([a-zA-Z0-9${'$'}]{2,3})=function\([a-zA-Z]\)\{var\s+[a-zA-Z]=\1\.split"""),
-                Regex("""([a-zA-Z0-9${'$'}]{2,3})=function\([a-zA-Z0-9]\)\{[a-zA-Z0-9]=\1\.split\(""\)""")
+            // Step 3: Find sig decipher function name
+            // These patterns are from yt-dlp and NewPipe — most reliable known patterns
+            val sigFuncName = listOf(
+                Regex("""\.sig\s*\|\|\s*([a-zA-Z0-9${'$'}]+)\(decodeURIComponent"""),
+                Regex("""["\']signature["\']\s*,\s*([a-zA-Z0-9${'$'}]+)\("""),
+                Regex("""\.set\(["\']signature["\']\s*,\s*([a-zA-Z0-9${'$'}]+)\("""),
+                Regex("""([a-zA-Z0-9${'$'}]{2,3})\s*=\s*function\([a-zA-Z]\)\s*\{\s*[a-zA-Z]\s*=\s*\1\.split\(""\)"""),
+                Regex("""function\s+([a-zA-Z0-9${'$'}]{2,3})\s*\([a-zA-Z]\)\s*\{\s*[a-zA-Z]\s*=\s*[a-zA-Z]\.split\(""\)"""),
+                Regex("""([a-zA-Z0-9${'$'}]+)\.split\(""\);[a-zA-Z0-9${'$'}]+\.[a-zA-Z0-9${'$'}]+\("""),
+                Regex("""a=a\.split\(""\).*?return a\.join.*?\}.*?var ([a-zA-Z0-9${'$'}]+)=\{""")
             ).firstNotNullOfOrNull { regex ->
-                regex.find(js)?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
-            } ?: return@withContext Result.failure(Exception("Could not find decipher function name"))
+                regex.find(js)?.groupValues?.get(1)?.takeIf { it.length in 2..4 }
+            } ?: return@withContext Result.failure(Exception("Could not find sig function. YouTube may have changed their player format."))
 
-            // Step 5: Extract decipher function body
-            val escapedName = Regex.escape(decipherName)
+            // Step 4: Extract function body
+            val escapedSig = Regex.escape(sigFuncName)
             val funcBody = listOf(
-                Regex("""${escapedName}=function\([a-zA-Z0-9]+\)\{(.*?)\}""", RegexOption.DOT_MATCHES_ALL),
-                Regex("""function\s+${escapedName}\s*\([^)]*\)\s*\{(.*?)\}""", RegexOption.DOT_MATCHES_ALL)
+                Regex("""${escapedSig}=function\([a-zA-Z0-9_]+\)\{([^}]+(?:\{[^}]*\}[^}]*)*)\}"""),
+                Regex("""function\s+${escapedSig}\s*\([^)]*\)\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}""")
             ).firstNotNullOfOrNull { it.find(js)?.groupValues?.get(1) }
-                ?: return@withContext Result.failure(Exception("Could not extract decipher function body"))
+                ?: return@withContext Result.failure(Exception("Could not extract function body"))
 
-            // Step 6: Find helper object name
-            val helperName = Regex("""([a-zA-Z0-9${'$'}]{2,3})\.[a-zA-Z0-9${'$'}]{2,3}\([a-zA-Z0-9],\d+\)""")
-                .find(funcBody)?.groupValues?.get(1)
-                ?: Regex("""([a-zA-Z0-9${'$'}]{2,3})\.[a-zA-Z0-9${'$'}]+\(""")
-                    .find(funcBody)?.groupValues?.get(1)
-                ?: return@withContext Result.failure(Exception("Could not find helper object name"))
+            // Step 5: Get helper object name from the function body
+            val helperName = listOf(
+                Regex("""([a-zA-Z0-9${'$'}]{2,3})\.[a-zA-Z0-9${'$'}]+\([a-zA-Z0-9${'$'}]+,\d+\)"""),
+                Regex("""([a-zA-Z0-9${'$'}]{2,3})\.[a-zA-Z0-9${'$'}]{2,3}\(""")
+            ).firstNotNullOfOrNull { regex ->
+                regex.find(funcBody)?.groupValues?.get(1)?.takeIf { it.length in 2..3 }
+            } ?: return@withContext Result.failure(Exception("Could not find helper object name"))
 
-            // Step 7: Extract helper object body
+            // Step 6: Extract helper object body
             val escapedHelper = Regex.escape(helperName)
             val helperBody = listOf(
-                Regex("""var\s+${escapedHelper}\s*=\s*\{(.*?)\};""", RegexOption.DOT_MATCHES_ALL),
-                Regex("""${escapedHelper}\s*=\s*\{(.*?)\};\s*[a-zA-Z]""", RegexOption.DOT_MATCHES_ALL)
+                Regex("""var\s+${escapedHelper}\s*=\s*\{([\s\S]+?)\}\s*;"""),
+                Regex("""${escapedHelper}\s*=\s*\{([\s\S]+?)\}\s*;""")
             ).firstNotNullOfOrNull { it.find(js)?.groupValues?.get(1) }
-                ?: return@withContext Result.failure(Exception("Could not find helper object body"))
+                ?: return@withContext Result.failure(Exception("Could not find helper object"))
 
-            // Step 8: Identify which method does what
-            val reverseFunc = Regex("""([a-zA-Z0-9${'$'}]+)\s*:\s*function\s*\([^)]*\)\s*\{[^}]*reverse[^}]*\}""")
+            // Step 7: Identify operations
+            val reverseFunc = Regex("""([a-zA-Z0-9${'$'}]+)\s*:\s*function\s*\([^)]*\)\s*\{[^}]*\.reverse\(\)[^}]*\}""")
                 .find(helperBody)?.groupValues?.get(1)
-            val spliceFunc = Regex("""([a-zA-Z0-9${'$'}]+)\s*:\s*function\s*\([^,)]+,[^)]+\)\s*\{[^}]*splice[^}]*\}""")
+            val spliceFunc = Regex("""([a-zA-Z0-9${'$'}]+)\s*:\s*function\s*\([^,)]+,[^)]+\)\s*\{[^}]*\.splice\([^}]*\}""")
                 .find(helperBody)?.groupValues?.get(1)
             val swapFunc = Regex("""([a-zA-Z0-9${'$'}]+)\s*:\s*function\s*\([^,)]+,[^)]+\)\s*\{[^}]*\[0\][^}]*\}""")
                 .find(helperBody)?.groupValues?.get(1)
 
-            // Step 9: Parse call sequence from function body
+            if (reverseFunc == null && spliceFunc == null && swapFunc == null) {
+                return@withContext Result.failure(Exception("Could not identify any cipher operations in helper"))
+            }
+
+            // Step 8: Parse operation sequence
             val operations = mutableListOf<CipherOperation>()
-            val callRegex = Regex("""${escapedHelper}\.([a-zA-Z0-9${'$'}]+)\([a-zA-Z0-9],(\d+)\)""")
+            val callRegex = Regex("""${escapedHelper}\.([a-zA-Z0-9${'$'}]+)\([a-zA-Z0-9${'$'}]+,(\d+)\)""")
             for (match in callRegex.findAll(funcBody)) {
                 val method = match.groupValues[1]
                 val param = match.groupValues[2].toIntOrNull() ?: 0
@@ -124,23 +131,20 @@ object SignatureExtractor {
             }
 
             if (operations.isEmpty()) {
-                return@withContext Result.failure(Exception("Could not parse cipher operations — YouTube may have updated. Try again later."))
+                return@withContext Result.failure(Exception("Could not parse operation sequence"))
             }
 
-            // Step 10: Save
+            // Step 9: Save
             val serialized = operations.joinToString("|") { op ->
-                when (op.type) {
-                    "reverse" -> "reverse"
-                    else -> "${op.type},${op.param}"
-                }
+                if (op.type == "reverse") "reverse" else "${op.type},${op.param}"
             }
             getPrefs(ctx).edit()
-                .putString(KEY_VERSION, playerVersion)
+                .putString(KEY_VERSION, version)
                 .putString(KEY_OPERATIONS, serialized)
                 .putLong(KEY_UPDATED_AT, System.currentTimeMillis())
                 .apply()
 
-            Result.success(playerVersion)
+            Result.success(version)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -153,30 +157,24 @@ object SignatureExtractor {
             when (op.type) {
                 "reverse" -> chars.reverse()
                 "splice" -> repeat(op.param) { if (chars.isNotEmpty()) chars.removeAt(0) }
-                "swap" -> {
-                    if (chars.isNotEmpty()) {
-                        val i = op.param % chars.size
-                        val temp = chars[0]
-                        chars[0] = chars[i]
-                        chars[i] = temp
-                    }
+                "swap" -> if (chars.isNotEmpty()) {
+                    val i = op.param % chars.size
+                    val temp = chars[0]
+                    chars[0] = chars[i]
+                    chars[i] = temp
                 }
             }
         }
         return chars.joinToString("")
     }
 
-    private fun fetch(url: String): String? {
-        return try {
-            val req = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .build()
-            http.newCall(req).execute().body?.string()
-        } catch (e: Exception) {
-            null
-        }
-    }
+    private fun fetch(url: String): String? = try {
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .build()
+        http.newCall(req).execute().body?.string()
+    } catch (e: Exception) { null }
 }
