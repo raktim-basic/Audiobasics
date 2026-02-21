@@ -34,12 +34,15 @@ object Innertube {
         }
     }
 
-    private fun androidContext() = buildJsonObject {
+    private fun iosContext() = buildJsonObject {
         putJsonObject("context") {
             putJsonObject("client") {
-                put("clientName", "ANDROID_MUSIC")
-                put("clientVersion", "5.28.1")
-                put("androidSdkVersion", 30)
+                put("clientName", "IOS_MUSIC")
+                put("clientVersion", "5.21")
+                put("deviceMake", "Apple")
+                put("deviceModel", "iPhone14,3")
+                put("osName", "iPhone")
+                put("osVersion", "15.7.1.19H117")
                 put("hl", "en")
                 put("gl", "US")
             }
@@ -77,21 +80,14 @@ object Innertube {
         return parseSearch(resp)
     }
 
-    suspend fun getHomeSongs(): List<Song> {
-        val body = buildJsonObject {
-            webContext().forEach { (k, v) -> put(k, v) }
-            put("browseId", "FEmusic_home")
-        }
-        val resp = post("browse", body) ?: return search("top songs 2024")
-        return parseHome(resp).ifEmpty { search("top songs 2024") }
-    }
-
     suspend fun getStreamUrl(videoId: String): String? {
         val body = buildJsonObject {
-            androidContext().forEach { (k, v) -> put(k, v) }
+            iosContext().forEach { (k, v) -> put(k, v) }
             put("videoId", videoId)
+            put("contentCheckOk", true)
+            put("racyCheckOk", true)
         }
-        val ua = "com.google.android.apps.youtube.music/5.28.1 (Linux; U; Android 10; en_US) gzip"
+        val ua = "com.google.ios.youtubemusic/5.21 (iPhone14,3; U; CPU iOS 15_7_1 like Mac OS X)"
         val resp = post("player", body, ua) ?: return null
 
         val formats = resp["streamingData"]?.jsonObject
@@ -124,41 +120,6 @@ object Innertube {
                 for (item in items) {
                     parseSong(item.jsonObject)?.let { songs.add(it) }
                 }
-            }
-        } catch (_: Exception) {}
-        return songs
-    }
-
-    private fun parseHome(data: JsonObject): List<Song> {
-        val songs = mutableListOf<Song>()
-        try {
-            val sections = data["contents"]?.jsonObject
-                ?.get("singleColumnBrowseResultsRenderer")?.jsonObject
-                ?.get("tabs")?.jsonArray?.firstOrNull()?.jsonObject
-                ?.get("tabRenderer")?.jsonObject
-                ?.get("content")?.jsonObject
-                ?.get("sectionListRenderer")?.jsonObject
-                ?.get("contents")?.jsonArray ?: return songs
-            for (section in sections) {
-                val items = section.jsonObject["musicCarouselShelfRenderer"]?.jsonObject
-                    ?.get("contents")?.jsonArray ?: continue
-                for (item in items.take(5)) {
-                    val r = item.jsonObject["musicTwoRowItemRenderer"]?.jsonObject ?: continue
-                    val id = r["navigationEndpoint"]?.jsonObject
-                        ?.get("watchEndpoint")?.jsonObject
-                        ?.get("videoId")?.jsonPrimitive?.content ?: continue
-                    val title = r["title"]?.jsonObject?.get("runs")?.jsonArray
-                        ?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: continue
-                    val artist = r["subtitle"]?.jsonObject?.get("runs")?.jsonArray
-                        ?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: ""
-                    val thumb = r["thumbnailRenderer"]?.jsonObject
-                        ?.get("musicThumbnailRenderer")?.jsonObject
-                        ?.get("thumbnail")?.jsonObject
-                        ?.get("thumbnails")?.jsonArray?.lastOrNull()?.jsonObject
-                        ?.get("url")?.jsonPrimitive?.content ?: ""
-                    songs.add(Song(id, title, artist, thumb))
-                }
-                if (songs.size >= 20) break
             }
         } catch (_: Exception) {}
         return songs
