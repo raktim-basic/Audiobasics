@@ -74,9 +74,8 @@ object Innertube {
                     put("androidSdkVersion", 30)
                     put("hl", "en")
                     put("gl", "US")
-                )
+                }
             }
-        }
             put("videoId", videoId)
             put("contentCheckOk", true)
             put("racyCheckOk", true)
@@ -96,7 +95,6 @@ object Innertube {
             .map { it.jsonObject }
             .filter { it["mimeType"]?.jsonPrimitive?.content?.startsWith("audio/") == true }
 
-        // Try plain URL first
         val withUrl = audio.filter { it["url"] != null }
         if (withUrl.isNotEmpty()) {
             return (withUrl.firstOrNull {
@@ -106,7 +104,6 @@ object Innertube {
             })?.get("url")?.jsonPrimitive?.content
         }
 
-        // Decipher signatureCipher
         val withCipher = audio.filter { it["signatureCipher"] != null }
         val best = withCipher.firstOrNull {
             it["mimeType"]?.jsonPrimitive?.content?.contains("mp4") == true
