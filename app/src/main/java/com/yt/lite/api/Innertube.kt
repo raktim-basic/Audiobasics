@@ -1,5 +1,6 @@
 package com.yt.lite.api
 
+import android.content.Context
 import com.yt.lite.data.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -8,6 +9,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
 
 object Innertube {
@@ -61,57 +63,75 @@ object Innertube {
         return parseSearch(resp)
     }
 
-    suspend fun getStreamUrl(videoId: String): String? {
-        // TVHTML5_SIMPLY_EMBEDDED_PLAYER returns plain unsigned URLs — no cipher needed
+    suspend fun getStreamUrl(ctx: Context, videoId: String): String? {
+        if (!SignatureExtractor.isReady(ctx)) return null
+
         val body = buildJsonObject {
             putJsonObject("context") {
                 putJsonObject("client") {
-                    put("clientName", "TVHTML5_SIMPLY_EMBEDDED_PLAYER")
-                    put("clientVersion", "2.0")
+                    put("clientName", "ANDROID")
+                    put("clientVersion", "17.36.4")
+                    put("androidSdkVersion", 30)
                     put("hl", "en")
                     put("gl", "US")
-                }
-                putJsonObject("thirdParty") {
-                    put("embedUrl", "https://www.youtube.com/")
-                }
+                )
             }
+        }
             put("videoId", videoId)
             put("contentCheckOk", true)
             put("racyCheckOk", true)
         }
 
-        val resp = post("player", body) ?: return null
+        val ua = "com.google.android.youtube/17.36.4 (Linux; U; Android 10; GB) gzip"
+        val resp = post("player", body, ua) ?: return null
 
         val status = resp["playabilityStatus"]?.jsonObject
             ?.get("status")?.jsonPrimitive?.content
         if (status != "OK") return null
 
-        val adaptiveFormats = resp["streamingData"]?.jsonObject
-            ?.get("adaptiveFormats")?.jsonArray
-
         val formats = resp["streamingData"]?.jsonObject
-            ?.get("formats")?.jsonArray
+            ?.get("adaptiveFormats")?.jsonArray ?: return null
 
-        // Try adaptiveFormats first, then formats
-        val allAudio = (adaptiveFormats ?: JsonArray(emptyList()))
+        val audio = formats
             .map { it.jsonObject }
             .filter { it["mimeType"]?.jsonPrimitive?.content?.startsWith("audio/") == true }
-            .filter { it["url"] != null }
 
-        if (allAudio.isNotEmpty()) {
-            return (allAudio.firstOrNull {
+        // Try plain URL first
+        val withUrl = audio.filter { it["url"] != null }
+        if (withUrl.isNotEmpty()) {
+            return (withUrl.firstOrNull {
                 it["mimeType"]?.jsonPrimitive?.content?.contains("mp4") == true
-            } ?: allAudio.maxByOrNull {
+            } ?: withUrl.maxByOrNull {
                 it["bitrate"]?.jsonPrimitive?.intOrNull ?: 0
             })?.get("url")?.jsonPrimitive?.content
         }
 
-        // Fallback: try regular formats (these have both audio+video but will still play)
-        return (formats ?: JsonArray(emptyList()))
-            .map { it.jsonObject }
-            .filter { it["url"] != null }
-            .maxByOrNull { it["bitrate"]?.jsonPrimitive?.intOrNull ?: 0 }
-            ?.get("url")?.jsonPrimitive?.content
+        // Decipher signatureCipher
+        val withCipher = audio.filter { it["signatureCipher"] != null }
+        val best = withCipher.firstOrNull {
+            it["mimeType"]?.jsonPrimitive?.content?.contains("mp4") == true
+        } ?: withCipher.maxByOrNull {
+            it["bitrate"]?.jsonPrimitive?.intOrNull ?: 0
+        } ?: return null
+
+        val cipher = best["signatureCipher"]?.jsonPrimitive?.content ?: return null
+        return decipherUrl(ctx, cipher)
+    }
+
+    private fun decipherUrl(ctx: Context, signatureCipher: String): String? {
+        return try {
+            val params = signatureCipher.split("&").associate {
+                val (k, v) = it.split("=", limit = 2)
+                k to URLDecoder.decode(v, "UTF-8")
+            }
+            val sig = params["s"] ?: return null
+            val url = params["url"] ?: return null
+            val sp = params["sp"] ?: "signature"
+            val deciphered = SignatureExtractor.decipher(ctx, sig)
+            "$url&$sp=$deciphered"
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun parseSearch(data: JsonObject): List<Song> {
