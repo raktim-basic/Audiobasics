@@ -35,7 +35,6 @@ object Innertube {
                 .post(body.toString().toRequestBody(MEDIA_TYPE))
                 .header("Content-Type", "application/json")
                 .header("User-Agent", userAgent)
-                .header("X-Goog-Api-Format-Version", "1")
                 .build()
             val resp = http.newCall(req).execute()
             if (!resp.isSuccessful) return@withContext null
@@ -63,41 +62,56 @@ object Innertube {
     }
 
     suspend fun getStreamUrl(videoId: String): String? {
+        // TVHTML5_SIMPLY_EMBEDDED_PLAYER returns plain unsigned URLs — no cipher needed
         val body = buildJsonObject {
             putJsonObject("context") {
                 putJsonObject("client") {
-                    put("clientName", "ANDROID")
-                    put("clientVersion", "17.36.4")
-                    put("androidSdkVersion", 30)
+                    put("clientName", "TVHTML5_SIMPLY_EMBEDDED_PLAYER")
+                    put("clientVersion", "2.0")
                     put("hl", "en")
                     put("gl", "US")
-                    put("platform", "MOBILE")
+                }
+                putJsonObject("thirdParty") {
+                    put("embedUrl", "https://www.youtube.com/")
                 }
             }
             put("videoId", videoId)
             put("contentCheckOk", true)
             put("racyCheckOk", true)
         }
-        val ua = "com.google.android.youtube/17.36.4 (Linux; U; Android 10; GB) gzip"
-        val resp = post("player", body, ua) ?: return null
+
+        val resp = post("player", body) ?: return null
 
         val status = resp["playabilityStatus"]?.jsonObject
             ?.get("status")?.jsonPrimitive?.content
         if (status != "OK") return null
 
-        val formats = resp["streamingData"]?.jsonObject
-            ?.get("adaptiveFormats")?.jsonArray ?: return null
+        val adaptiveFormats = resp["streamingData"]?.jsonObject
+            ?.get("adaptiveFormats")?.jsonArray
 
-        val audio = formats
+        val formats = resp["streamingData"]?.jsonObject
+            ?.get("formats")?.jsonArray
+
+        // Try adaptiveFormats first, then formats
+        val allAudio = (adaptiveFormats ?: JsonArray(emptyList()))
             .map { it.jsonObject }
             .filter { it["mimeType"]?.jsonPrimitive?.content?.startsWith("audio/") == true }
             .filter { it["url"] != null }
 
-        return (audio.firstOrNull {
-            it["mimeType"]?.jsonPrimitive?.content?.contains("mp4") == true
-        } ?: audio.maxByOrNull {
-            it["bitrate"]?.jsonPrimitive?.intOrNull ?: 0
-        })?.get("url")?.jsonPrimitive?.content
+        if (allAudio.isNotEmpty()) {
+            return (allAudio.firstOrNull {
+                it["mimeType"]?.jsonPrimitive?.content?.contains("mp4") == true
+            } ?: allAudio.maxByOrNull {
+                it["bitrate"]?.jsonPrimitive?.intOrNull ?: 0
+            })?.get("url")?.jsonPrimitive?.content
+        }
+
+        // Fallback: try regular formats (these have both audio+video but will still play)
+        return (formats ?: JsonArray(emptyList()))
+            .map { it.jsonObject }
+            .filter { it["url"] != null }
+            .maxByOrNull { it["bitrate"]?.jsonPrimitive?.intOrNull ?: 0 }
+            ?.get("url")?.jsonPrimitive?.content
     }
 
     private fun parseSearch(data: JsonObject): List<Song> {
