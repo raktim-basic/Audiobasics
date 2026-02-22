@@ -8,7 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +28,6 @@ fun UpdaterScreen() {
 
     val currentVersion = "v0.28.3"
 
-    // Fetch ALL releases including pre-releases, find highest version
     suspend fun fetchLatestVersion(): String? = withContext(Dispatchers.IO) {
         try {
             val client = OkHttpClient()
@@ -40,10 +38,7 @@ fun UpdaterScreen() {
             val resp = client.newCall(req).execute()
             val body = resp.body?.string() ?: return@withContext null
             val arr = JSONArray(body)
-            // Get the first (most recent) release tag
-            if (arr.length() > 0) {
-                arr.getJSONObject(0).getString("tag_name")
-            } else null
+            if (arr.length() > 0) arr.getJSONObject(0).getString("tag_name") else null
         } catch (e: Exception) {
             null
         }
@@ -100,7 +95,9 @@ fun UpdaterScreen() {
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
+
                 Spacer(Modifier.height(12.dp))
+
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -120,7 +117,9 @@ fun UpdaterScreen() {
                         }
                     )
                 }
+
                 Spacer(Modifier.height(12.dp))
+
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -209,3 +208,4 @@ fun UpdaterScreen() {
             textAlign = TextAlign.Center
         )
     }
+}
