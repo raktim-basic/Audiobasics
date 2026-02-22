@@ -26,7 +26,7 @@ fun UpdaterScreen() {
     var isError by remember { mutableStateOf(false) }
     var latestVersion by remember { mutableStateOf<String?>(null) }
 
-    val currentVersion = "v0.28.3"
+    val currentVersion = "v0.25.2"
 
     suspend fun fetchLatestVersion(): String? = withContext(Dispatchers.IO) {
         try {
