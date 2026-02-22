@@ -1,6 +1,7 @@
 package com.yt.lite.ui
 
 import android.app.Application
+import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
@@ -10,13 +11,15 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import com.yt.lite.api.Innertube
 import com.yt.lite.data.Song
+import com.yt.lite.player.MusicService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -25,7 +28,8 @@ import org.json.JSONObject
 class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("ytlite", Context.MODE_PRIVATE)
-    private val player = ExoPlayer.Builder(app).build()
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var controller: MediaController? = null
 
     private val _currentSong = MutableStateFlow<Song?>(null)
     val currentSong: StateFlow<Song?> = _currentSong
@@ -45,12 +49,29 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _likedSongs = MutableStateFlow<List<Song>>(loadLikedSongs())
     val likedSongs: StateFlow<List<Song>> = _likedSongs
 
+    private val listener = object : Player.Listener {
+        override fun onIsPlayingChanged(playing: Boolean) {
+            _isPlaying.value = playing
+        }
+    }
+
     init {
-        player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) {
-                _isPlaying.value = playing
-            }
-        })
+        val token = SessionToken(
+            getApplication(),
+            ComponentName(getApplication(), MusicService::class.java)
+        )
+        controllerFuture = MediaController.Builder(getApplication(), token).buildAsync()
+        controllerFuture?.addListener(
+            {
+                try {
+                    controller = controllerFuture?.get()
+                    controller?.addListener(listener)
+                } catch (e: Exception) {
+                    Log.e("YTLite", "MediaController init failed", e)
+                }
+            },
+            { it.run() }
+        )
     }
 
     fun play(song: Song) {
@@ -64,37 +85,32 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val url = Innertube.getStreamUrl(getApplication(), song.id)
                 if (url == null) {
-                    val msg = "Could not get stream URL for this song"
+                    val msg = "Could not get stream URL"
                     _error.value = msg
                     Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
                     return@launch
                 }
 
-                Log.d("YTLite", "Playing: $url")
-                Toast.makeText(getApplication(), "Playing: ${song.title}", Toast.LENGTH_SHORT).show()
+                Log.d("YTLite", "Playing: ${url.take(80)}")
 
-                val dataSourceFactory = DefaultHttpDataSource.Factory()
-                    .setDefaultRequestProperties(mapOf(
-                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36",
-                        "Referer" to "https://www.youtube.com/"
-                    ))
-
-                val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(
-                        MediaItem.Builder()
-                            .setUri(url)
-                            .setMediaMetadata(
-                                MediaMetadata.Builder()
-                                    .setTitle(song.title)
-                                    .setArtist(song.artist)
-                                    .build()
-                            )
+                val mediaItem = MediaItem.Builder()
+                    .setUri(url)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(song.title)
+                            .setArtist(song.artist)
+                            .setArtworkUri(android.net.Uri.parse(song.thumbnail))
                             .build()
                     )
+                    .build()
 
-                player.setMediaSource(mediaSource)
-                player.prepare()
-                player.play()
+                controller?.run {
+                    setMediaItem(mediaItem)
+                    prepare()
+                    play()
+                } ?: run {
+                    Toast.makeText(getApplication(), "Player not ready, try again", Toast.LENGTH_SHORT).show()
+                }
 
             } catch (e: Exception) {
                 val msg = e.message ?: "Unknown error"
@@ -108,8 +124,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
-        _isPlaying.value = player.isPlaying
+        controller?.run { if (isPlaying) pause() else play() }
     }
 
     fun toggleLike(song: Song) {
@@ -151,7 +166,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        player.release()
+        controller?.removeListener(listener)
+        MediaController.releaseFuture(controllerFuture!!)
         super.onCleared()
     }
 }
