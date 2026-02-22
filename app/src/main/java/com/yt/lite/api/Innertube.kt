@@ -37,11 +37,23 @@ object Innertube {
                 val rb = Request.Builder()
                     .url(request.url())
                     .method(request.httpMethod(), methodBody)
+
+                // Add all headers from NewPipe
                 request.headers().forEach { (key, values) ->
                     values.forEach { rb.addHeader(key, it) }
                 }
-                // Always add a real browser UA so YouTube doesn't block
-                rb.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+                // Override with a real browser UA
+                rb.header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+
+                // Critical: YouTube GDPR consent cookie
+                // Without this YouTube returns "page needs to be reloaded"
+                rb.header("Cookie", "CONSENT=YES+cb.20210328-17-p0.en+FX+119; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
+                rb.header("Accept-Language", "en-US,en;q=0.9")
+                rb.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
                 val resp = http.newCall(rb.build()).execute()
                 val headers = mutableMapOf<String, MutableList<String>>()
@@ -105,18 +117,17 @@ object Innertube {
                 extractor.fetchPage()
 
                 val audioStreams = extractor.audioStreams
-                android.util.Log.d("YTLite", "Audio streams count: ${audioStreams?.size}")
+                android.util.Log.d("YTLite", "Audio streams: ${audioStreams?.size}")
 
                 if (audioStreams.isNullOrEmpty()) {
-                    android.util.Log.e("YTLite", "No audio streams found for $videoId")
-                    return@withContext null
+                    throw Exception("No audio streams found")
                 }
 
                 val best = audioStreams
                     .filter { !it.content.isNullOrEmpty() }
                     .maxByOrNull { it.bitrate }
 
-                android.util.Log.d("YTLite", "Best stream: ${best?.content}")
+                android.util.Log.d("YTLite", "Best stream URL: ${best?.content?.take(80)}")
                 best?.content
 
             } catch (e: Exception) {
