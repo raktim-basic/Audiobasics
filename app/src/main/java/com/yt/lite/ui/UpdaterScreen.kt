@@ -16,11 +16,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
+import org.json.JSONArray
 
 @Composable
 fun UpdaterScreen() {
-    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var isChecking by remember { mutableStateOf(false) }
@@ -30,16 +29,21 @@ fun UpdaterScreen() {
 
     val currentVersion = "v0.28.3"
 
+    // Fetch ALL releases including pre-releases, find highest version
     suspend fun fetchLatestVersion(): String? = withContext(Dispatchers.IO) {
         try {
             val client = OkHttpClient()
             val req = Request.Builder()
-                .url("https://api.github.com/repos/TeamNewPipe/NewPipeExtractor/releases/latest")
+                .url("https://api.github.com/repos/TeamNewPipe/NewPipeExtractor/releases?per_page=10")
                 .header("Accept", "application/vnd.github.v3+json")
                 .build()
             val resp = client.newCall(req).execute()
             val body = resp.body?.string() ?: return@withContext null
-            JSONObject(body).getString("tag_name")
+            val arr = JSONArray(body)
+            // Get the first (most recent) release tag
+            if (arr.length() > 0) {
+                arr.getJSONObject(0).getString("tag_name")
+            } else null
         } catch (e: Exception) {
             null
         }
@@ -107,12 +111,13 @@ fun UpdaterScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        latestVersion ?: "tap check to find out",
+                        latestVersion ?: "—",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (latestVersion != null && latestVersion != currentVersion)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.primary
+                        color = when {
+                            latestVersion == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                            latestVersion == currentVersion -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.error
+                        }
                     )
                 }
                 Spacer(Modifier.height(12.dp))
@@ -126,17 +131,17 @@ fun UpdaterScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        if (latestVersion != null && latestVersion != currentVersion)
-                            "Update available"
-                        else if (latestVersion == currentVersion)
-                            "Up to date"
-                        else
-                            "Active",
+                        when {
+                            latestVersion == null -> "Active"
+                            latestVersion == currentVersion -> "Up to date ✓"
+                            else -> "Update available"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (latestVersion != null && latestVersion != currentVersion)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.primary
+                        color = when {
+                            latestVersion == null -> MaterialTheme.colorScheme.primary
+                            latestVersion == currentVersion -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.error
+                        }
                     )
                 }
             }
@@ -156,7 +161,7 @@ fun UpdaterScreen() {
                         statusMessage = if (v == currentVersion)
                             "You're on the latest version!"
                         else
-                            "New version $v available! A future app update will include it."
+                            "New version $v available! Update the app to get it."
                     } else {
                         isError = true
                         statusMessage = "Could not check for updates. Check your connection."
@@ -204,4 +209,3 @@ fun UpdaterScreen() {
             textAlign = TextAlign.Center
         )
     }
-}
