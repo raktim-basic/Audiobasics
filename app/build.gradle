@@ -72,5 +72,5 @@ dependencies {
     implementation 'io.coil-kt:coil-compose:2.6.0'
 
     // NewPipe Extractor — handles YouTube stream extraction
-    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.24.2'
+    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.25.2'
 }
