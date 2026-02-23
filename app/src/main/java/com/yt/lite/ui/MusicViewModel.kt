@@ -42,12 +42,17 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
-    // Full queue of Songs (metadata only, no stream URLs yet)
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue
 
     private val _likedSongs = MutableStateFlow<List<Song>>(loadLikedSongs())
     val likedSongs: StateFlow<List<Song>> = _likedSongs
+
+    private val _searchResults = MutableStateFlow<List<Song>>(emptyList())
+    val searchResults: StateFlow<List<Song>> = _searchResults
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
@@ -55,7 +60,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            // When player moves to next/prev item, resolve which song it is
             val index = controller?.currentMediaItemIndex ?: return
             _currentSong.value = _queue.value.getOrNull(index)
         }
@@ -86,12 +90,24 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    // Play a single song, replacing queue
+    fun search(query: String) {
+        if (query.isBlank()) return
+        viewModelScope.launch {
+            _isSearching.value = true
+            try {
+                _searchResults.value = Innertube.search(query)
+            } catch (e: Exception) {
+                Log.e("YTLite", "Search error: ${e.message}", e)
+            } finally {
+                _isSearching.value = false
+            }
+        }
+    }
+
     fun play(song: Song) {
         playWithQueue(song, listOf(song))
     }
 
-    // Play a song within a specific queue (e.g. liked songs playlist)
     fun playWithQueue(song: Song, queue: List<Song>) {
         viewModelScope.launch {
             _currentSong.value = song
@@ -108,9 +124,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
                 Log.d("YTLite", "Playing: ${song.title}")
 
-                // Build MediaItems for entire queue
-                // Only the current song has a real URI — others are stubs
-                // When player transitions, onMediaItemTransition fires and we load the next URL
                 val songIndex = queue.indexOf(song)
                 val mediaItems = queue.mapIndexed { i, s ->
                     MediaItem.Builder()
@@ -143,7 +156,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // Add song at end of queue
     fun addToQueue(song: Song) {
         val newQueue = _queue.value.toMutableList()
         if (newQueue.none { it.id == song.id }) {
@@ -167,12 +179,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // Play song right after the current one
     fun playNext(song: Song) {
         val currentIndex = controller?.currentMediaItemIndex ?: 0
         val insertIndex = currentIndex + 1
         val newQueue = _queue.value.toMutableList()
-        // Remove if already in queue
         newQueue.removeAll { it.id == song.id }
         newQueue.add(insertIndex.coerceAtMost(newQueue.size), song)
         _queue.value = newQueue
@@ -198,7 +208,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleLike(song: Song) {
-        // New liked songs appear at top
         _likedSongs.value = if (_likedSongs.value.any { it.id == song.id }) {
             _likedSongs.value.filter { it.id != song.id }
         } else {
