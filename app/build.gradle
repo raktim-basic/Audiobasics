@@ -77,5 +77,5 @@ dependencies {
     implementation 'io.coil-kt:coil-compose:2.6.0'
 
     // NewPipe Extractor
-    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.25.2'
+    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.0'
 }
