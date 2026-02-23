@@ -3,61 +3,49 @@ package com.yt.lite.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import com.yt.lite.api.Innertube
-import com.yt.lite.data.Song
-import kotlinx.coroutines.launch
 
 @Composable
 fun SearchScreen(vm: MusicViewModel) {
     var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var loading by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val results by vm.searchResults.collectAsState()
+    val isSearching by vm.isSearching.collectAsState()
 
-    fun doSearch() {
-        if (query.isBlank()) return
-        scope.launch {
-            loading = true
-            results = try {
-                Innertube.search(query)
-            } catch (_: Exception) {
-                emptyList()
-            }
-            loading = false
-        }
-    }
-
-    Column(Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("Search songs, artists...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { doSearch() }),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(16.dp),
+            placeholder = { Text("Search songs...") },
+            trailingIcon = {
+                IconButton(onClick = { vm.search(query) }) {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
+                }
+            },
+            singleLine = true
         )
-        Box(Modifier.fillMaxSize()) {
-            if (loading) {
-                CircularProgressIndicator(Modifier.align(Alignment.Center))
-            } else {
-                LazyColumn {
-                    items(results, key = { it.id }) { song ->
-                        SongItem(song = song) { vm.play(song) }
-                    }
+
+        if (isSearching) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn {
+                items(results) { song ->
+                    SongItem(
+                        song = song,
+                        onClick = { vm.play(song) },
+                        onAddToQueue = { vm.addToQueue(song) },
+                        onPlayNext = { vm.playNext(song) }
+                    )
                 }
             }
         }
