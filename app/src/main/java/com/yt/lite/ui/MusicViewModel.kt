@@ -19,7 +19,6 @@ import com.yt.lite.data.Song
 import com.yt.lite.player.MusicService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -43,6 +42,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    // Full queue of Songs (metadata only, no stream URLs yet)
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue
 
@@ -52,6 +52,18 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
             _isPlaying.value = playing
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // When player moves to next/prev item, resolve which song it is
+            val index = controller?.currentMediaItemIndex ?: return
+            _currentSong.value = _queue.value.getOrNull(index)
+        }
+
+        override fun onPlaybackStateChanged(state: Int) {
+            if (state == Player.STATE_ENDED) {
+                _isPlaying.value = false
+            }
         }
     }
 
@@ -74,43 +86,51 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    // Play a single song, replacing queue
     fun play(song: Song) {
+        playWithQueue(song, listOf(song))
+    }
+
+    // Play a song within a specific queue (e.g. liked songs playlist)
+    fun playWithQueue(song: Song, queue: List<Song>) {
         viewModelScope.launch {
             _currentSong.value = song
             _isLoading.value = true
             _error.value = null
-            if (_queue.value.none { it.id == song.id }) {
-                _queue.value = _queue.value + song
-            }
+            _queue.value = queue
+
             try {
                 val url = Innertube.getStreamUrl(getApplication(), song.id)
                 if (url == null) {
-                    val msg = "Could not get stream URL"
-                    _error.value = msg
-                    Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
+                    Toast.makeText(getApplication(), "Could not get stream URL", Toast.LENGTH_LONG).show()
                     return@launch
                 }
 
-                Log.d("YTLite", "Playing: ${url.take(80)}")
+                Log.d("YTLite", "Playing: ${song.title}")
 
-                val mediaItem = MediaItem.Builder()
-                    .setUri(url)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(song.title)
-                            .setArtist(song.artist)
-                            .setArtworkUri(android.net.Uri.parse(song.thumbnail))
-                            .build()
-                    )
-                    .build()
+                // Build MediaItems for entire queue
+                // Only the current song has a real URI — others are stubs
+                // When player transitions, onMediaItemTransition fires and we load the next URL
+                val songIndex = queue.indexOf(song)
+                val mediaItems = queue.mapIndexed { i, s ->
+                    MediaItem.Builder()
+                        .setMediaId(s.id)
+                        .setUri(if (i == songIndex) url else "https://www.youtube.com/watch?v=${s.id}")
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(s.title)
+                                .setArtist(s.artist)
+                                .setArtworkUri(android.net.Uri.parse(s.thumbnail))
+                                .build()
+                        )
+                        .build()
+                }
 
                 controller?.run {
-                    setMediaItem(mediaItem)
+                    setMediaItems(mediaItems, songIndex, 0L)
                     prepare()
                     play()
-                } ?: run {
-                    Toast.makeText(getApplication(), "Player not ready, try again", Toast.LENGTH_SHORT).show()
-                }
+                } ?: Toast.makeText(getApplication(), "Player not ready, try again", Toast.LENGTH_SHORT).show()
 
             } catch (e: Exception) {
                 val msg = e.message ?: "Unknown error"
@@ -123,15 +143,66 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // Add song at end of queue
+    fun addToQueue(song: Song) {
+        val newQueue = _queue.value.toMutableList()
+        if (newQueue.none { it.id == song.id }) {
+            newQueue.add(song)
+            _queue.value = newQueue
+            val mediaItem = MediaItem.Builder()
+                .setMediaId(song.id)
+                .setUri("https://www.youtube.com/watch?v=${song.id}")
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(song.title)
+                        .setArtist(song.artist)
+                        .setArtworkUri(android.net.Uri.parse(song.thumbnail))
+                        .build()
+                )
+                .build()
+            controller?.addMediaItem(mediaItem)
+            Toast.makeText(getApplication(), "Added to queue", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(getApplication(), "Already in queue", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Play song right after the current one
+    fun playNext(song: Song) {
+        val currentIndex = controller?.currentMediaItemIndex ?: 0
+        val insertIndex = currentIndex + 1
+        val newQueue = _queue.value.toMutableList()
+        // Remove if already in queue
+        newQueue.removeAll { it.id == song.id }
+        newQueue.add(insertIndex.coerceAtMost(newQueue.size), song)
+        _queue.value = newQueue
+
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(song.id)
+            .setUri("https://www.youtube.com/watch?v=${song.id}")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setArtworkUri(android.net.Uri.parse(song.thumbnail))
+                    .build()
+            )
+            .build()
+        controller?.addMediaItem(insertIndex, mediaItem)
+        Toast.makeText(getApplication(), "Playing next", Toast.LENGTH_SHORT).show()
+    }
+
     fun togglePlayPause() {
         controller?.run { if (isPlaying) pause() else play() }
+        _isPlaying.value = controller?.isPlaying ?: false
     }
 
     fun toggleLike(song: Song) {
+        // New liked songs appear at top
         _likedSongs.value = if (_likedSongs.value.any { it.id == song.id }) {
             _likedSongs.value.filter { it.id != song.id }
         } else {
-            _likedSongs.value + song
+            listOf(song) + _likedSongs.value
         }
         saveLikedSongs()
     }
@@ -167,7 +238,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         controller?.removeListener(listener)
-        MediaController.releaseFuture(controllerFuture!!)
+        controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
     }
 }
