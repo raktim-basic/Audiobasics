@@ -2,13 +2,9 @@ package com.yt.lite.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -16,41 +12,43 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun HomeScreen(vm: MusicViewModel) {
     val queue by vm.queue.collectAsState()
+    val currentSong by vm.currentSong.collectAsState()
 
     if (queue.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Default.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "Your queue is empty",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Search for songs to start listening",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Queue is empty\nSearch for songs to play",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     } else {
-        LazyColumn {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
             item {
                 Text(
-                    "Up next",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(16.dp)
+                    text = "Queue",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                 )
             }
-            items(queue, key = { it.id }) { song ->
-                SongItem(song = song) { vm.play(song) }
+            itemsIndexed(queue) { _, song ->
+                SongItem(
+                    song = song,
+                    onClick = { vm.playWithQueue(song, queue) },
+                    onAddToQueue = { vm.addToQueue(song) },
+                    onPlayNext = { vm.playNext(song) }
+                )
+                if (song.id == currentSong?.id) {
+                    Divider(
+                        color = MaterialTheme.colorScheme.primary,
+                        thickness = 1.dp,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
             }
         }
     }
