@@ -26,7 +26,7 @@ fun UpdaterScreen() {
     var isError by remember { mutableStateOf(false) }
     var latestVersion by remember { mutableStateOf<String?>(null) }
 
-    val currentVersion = "v0.25.2"
+    val currentVersion = "v0.26.0"
 
     suspend fun fetchLatestVersion(): String? = withContext(Dispatchers.IO) {
         try {
@@ -160,7 +160,7 @@ fun UpdaterScreen() {
                         statusMessage = if (v == currentVersion)
                             "You're on the latest version!"
                         else
-                            "New version $v available! Update the app to get it."
+                            "New version $v available! Update the app to get it, if update not available now it'll be available shortly."
                     } else {
                         isError = true
                         statusMessage = "Could not check for updates. Check your connection."
