@@ -1,0 +1,23 @@
+name: Generate Keystore
+
+on:
+  workflow_dispatch: # run manually from Actions tab
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate keystore
+        run: |
+          keytool -genkey -v \
+            -keystore audiobasics.jks \
+            -alias audiobasics \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 99999 \
+            -storepass audiobasics123 \
+            -keypass audiobasics123 \
+            -dname "CN=Audiobasics, OU=App, O=Audiobasics, L=Unknown, S=Unknown, C=US"
+
+      - name: Print base64
+        run: base64 -w 0 audiobasics.jks
