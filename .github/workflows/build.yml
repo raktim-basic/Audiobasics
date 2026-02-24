@@ -27,39 +27,49 @@ jobs:
 
       - name: Inject app icon
         run: |
-          cat > inject_icon.py << 'EOF'
-          import base64, os, struct, zlib
-
-          icon_b64 = "${{ secrets.APP_ICON_BASE64 }}"
-
-          if not icon_b64:
-              print("No icon secret found, skipping")
-              exit(0)
-
-          icon_data = base64.b64decode(icon_b64)
+          pip install Pillow -q
+          python3 << 'EOF'
+          import base64, os
+          from PIL import Image, ImageDraw
+          import io
 
           sizes = {
               'mdpi': 48, 'hdpi': 72, 'xhdpi': 96,
               'xxhdpi': 144, 'xxxhdpi': 192
           }
 
-          try:
-              from PIL import Image
-              import io
-              img = Image.open(io.BytesIO(icon_data)).convert("RGBA")
-              for density, size in sizes.items():
-                  dir_path = f"app/src/main/res/mipmap-{density}"
-                  os.makedirs(dir_path, exist_ok=True)
-                  resized = img.resize((size, size), Image.LANCZOS)
-                  resized.save(f"{dir_path}/ic_launcher.png", "PNG")
-              print("Icons injected successfully")
-          except ImportError:
-              print("PIL not available, skipping icon injection")
-          EOF
-          pip install Pillow -q
-          python inject_icon.py
+          icon_b64 = """${{ secrets.APP_ICON_BASE64 }}"""
 
-      - name: Build signed APK
+          for density, size in sizes.items():
+              dir_path = f"app/src/main/res/mipmap-{density}"
+              os.makedirs(dir_path, exist_ok=True)
+              out_path = f"{dir_path}/ic_launcher.png"
+
+              if icon_b64.strip():
+                  try:
+                      icon_data = base64.b64decode(icon_b64.strip())
+                      img = Image.open(io.BytesIO(icon_data)).convert("RGBA")
+                      resized = img.resize((size, size), Image.LANCZOS)
+                      resized.save(out_path, "PNG")
+                      print(f"Injected icon: {out_path}")
+                      continue
+                  except Exception as e:
+                      print(f"Icon injection failed: {e}, using default")
+
+              # Default icon — dark circle with white ring
+              img = Image.new("RGBA", (size, size), (0, 0, 0, 255))
+              draw = ImageDraw.Draw(img)
+              margin = size // 8
+              draw.ellipse([margin, margin, size - margin, size - margin],
+                           outline=(255, 255, 255, 255), width=max(2, size // 16))
+              inner = size // 3
+              draw.ellipse([inner, inner, size - inner, size - inner],
+                           fill=(255, 0, 0, 255))
+              img.save(out_path, "PNG")
+              print(f"Default icon created: {out_path}")
+          EOF
+
+      - name: Build signed release APK
         run: gradle assembleRelease
         env:
           KEYSTORE_PATH: audiobasics.jks
