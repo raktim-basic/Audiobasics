@@ -57,7 +57,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
 
-    // Progress tracking
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition: StateFlow<Long> = _currentPosition
 
@@ -73,6 +72,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val index = controller?.currentMediaItemIndex ?: return
             _currentSong.value = _queue.value.getOrNull(index)
+                ?: mediaItem?.toSong()
             _currentPosition.value = 0L
             _duration.value = 0L
         }
@@ -99,12 +99,48 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 try {
                     controller = controllerFuture?.get()
                     controller?.addListener(listener)
+                    restoreStateFromController()
                 } catch (e: Exception) {
                     Log.e("YTLite", "MediaController init failed", e)
                 }
             },
             { it.run() }
         )
+    }
+
+    // Restore current song and queue from controller when app reopens
+    private fun restoreStateFromController() {
+        val ctrl = controller ?: return
+        if (ctrl.mediaItemCount == 0) return
+
+        // Restore queue
+        val restoredQueue = (0 until ctrl.mediaItemCount).mapNotNull { i ->
+            ctrl.getMediaItemAt(i).toSong()
+        }
+        if (restoredQueue.isNotEmpty()) {
+            _queue.value = restoredQueue
+        }
+
+        // Restore current song
+        val currentIndex = ctrl.currentMediaItemIndex
+        _currentSong.value = restoredQueue.getOrNull(currentIndex)
+
+        // Restore playing state
+        _isPlaying.value = ctrl.isPlaying
+        _duration.value = ctrl.duration.takeIf { it > 0 } ?: 0L
+        _currentPosition.value = ctrl.currentPosition.coerceAtLeast(0L)
+
+        if (ctrl.isPlaying) startProgressTracking()
+    }
+
+    // Convert MediaItem back to Song using metadata
+    private fun MediaItem.toSong(): Song? {
+        val meta = mediaMetadata
+        val id = mediaId.takeIf { it.isNotBlank() } ?: return null
+        val title = meta.title?.toString() ?: return null
+        val artist = meta.artist?.toString() ?: ""
+        val thumbnail = meta.artworkUri?.toString() ?: ""
+        return Song(id, title, artist, thumbnail)
     }
 
     private fun startProgressTracking() {
@@ -186,7 +222,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     setMediaItems(mediaItems, songIndex, 0L)
                     prepare()
                     play()
-                } ?: Toast.makeText(getApplication(), "Player not ready, try again", Toast.LENGTH_SHORT).show()
+                } ?: Toast.makeText(
+                    getApplication(),
+                    "Player not ready, try again",
+                    Toast.LENGTH_SHORT
+                ).show()
 
             } catch (e: Exception) {
                 val msg = e.message ?: "Unknown error"
