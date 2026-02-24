@@ -23,6 +23,7 @@ import com.yt.lite.ui.HomeScreen
 import com.yt.lite.ui.LikedScreen
 import com.yt.lite.ui.MusicViewModel
 import com.yt.lite.ui.PlayerBar
+import com.yt.lite.ui.PlayerDialog
 import com.yt.lite.ui.SearchScreen
 import com.yt.lite.ui.UpdaterScreen
 import com.yt.lite.ui.theme.AppTheme
@@ -49,6 +50,16 @@ fun YTLiteApp() {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
 
+    var showPlayerDialog by remember { mutableStateOf(false) }
+
+    // Show player dialog
+    if (showPlayerDialog && currentSong != null) {
+        PlayerDialog(
+            vm = vm,
+            onDismiss = { showPlayerDialog = false }
+        )
+    }
+
     Scaffold(
         bottomBar = {
             Column {
@@ -60,7 +71,8 @@ fun YTLiteApp() {
                         isLoading = isLoading,
                         isLiked = isLiked,
                         onToggle = vm::togglePlayPause,
-                        onLike = { vm.toggleLike(song) }
+                        onLike = { vm.toggleLike(song) },
+                        onTap = { showPlayerDialog = true }
                     )
                 }
                 NavigationBar {
