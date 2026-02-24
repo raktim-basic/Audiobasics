@@ -2,6 +2,7 @@ package com.yt.lite.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,7 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -172,7 +175,6 @@ fun PlayerDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Previous
                         IconButton(onClick = { vm.skipToPrevious() }) {
                             Icon(
                                 Icons.Default.ArrowBack,
@@ -182,7 +184,6 @@ fun PlayerDialog(
                             )
                         }
 
-                        // Play/Pause button
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
@@ -217,7 +218,6 @@ fun PlayerDialog(
                             }
                         }
 
-                        // Next
                         IconButton(onClick = { vm.skipToNext() }) {
                             Icon(
                                 Icons.Default.ArrowForward,
@@ -243,9 +243,38 @@ fun DashedProgressBar(
 ) {
     val totalDashes = 30
     val filledDashes = (progress * totalDashes).toInt()
+    var barWidthPx by remember { mutableStateOf(0f) }
+    var dragProgress by remember { mutableStateOf<Float?>(null) }
+
+    val displayProgress = dragProgress ?: progress
+    val displayFilled = (displayProgress * totalDashes).toInt()
 
     Row(
-        modifier = modifier,
+        modifier = modifier
+            .height(24.dp)
+            .onSizeChanged { barWidthPx = it.width.toFloat() }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        if (barWidthPx > 0) {
+                            dragProgress = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                        }
+                    },
+                    onDragEnd = {
+                        dragProgress?.let { onSeek(it) }
+                        dragProgress = null
+                    },
+                    onDragCancel = {
+                        dragProgress = null
+                    },
+                    onHorizontalDrag = { _, dragAmount ->
+                        if (barWidthPx > 0) {
+                            val current = dragProgress ?: progress
+                            dragProgress = (current + dragAmount / barWidthPx).coerceIn(0f, 1f)
+                        }
+                    }
+                )
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
@@ -256,7 +285,7 @@ fun DashedProgressBar(
                     .height(3.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(
-                        if (index < filledDashes) Color(0xFFFF0000)
+                        if (index < displayFilled) Color(0xFFFF0000)
                         else Color(0xFF333333)
                     )
                     .clickable(
