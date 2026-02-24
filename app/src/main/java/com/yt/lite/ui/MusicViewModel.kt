@@ -17,6 +17,8 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.yt.lite.api.Innertube
 import com.yt.lite.data.Song
 import com.yt.lite.player.MusicService
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -29,6 +31,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("ytlite", Context.MODE_PRIVATE)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
+    private var progressJob: Job? = null
 
     private val _currentSong = MutableStateFlow<Song?>(null)
     val currentSong: StateFlow<Song?> = _currentSong
@@ -54,19 +57,33 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
 
+    // Progress tracking
+    private val _currentPosition = MutableStateFlow(0L)
+    val currentPosition: StateFlow<Long> = _currentPosition
+
+    private val _duration = MutableStateFlow(0L)
+    val duration: StateFlow<Long> = _duration
+
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
             _isPlaying.value = playing
+            if (playing) startProgressTracking() else stopProgressTracking()
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val index = controller?.currentMediaItemIndex ?: return
             _currentSong.value = _queue.value.getOrNull(index)
+            _currentPosition.value = 0L
+            _duration.value = 0L
         }
 
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_ENDED) {
                 _isPlaying.value = false
+                stopProgressTracking()
+            }
+            if (state == Player.STATE_READY) {
+                _duration.value = controller?.duration?.takeIf { it > 0 } ?: 0L
             }
         }
     }
@@ -88,6 +105,30 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             },
             { it.run() }
         )
+    }
+
+    private fun startProgressTracking() {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            while (true) {
+                controller?.let {
+                    _currentPosition.value = it.currentPosition.coerceAtLeast(0L)
+                    if (_duration.value <= 0L) {
+                        _duration.value = it.duration.takeIf { d -> d > 0 } ?: 0L
+                    }
+                }
+                delay(500)
+            }
+        }
+    }
+
+    private fun stopProgressTracking() {
+        progressJob?.cancel()
+    }
+
+    fun seekTo(position: Long) {
+        controller?.seekTo(position)
+        _currentPosition.value = position
     }
 
     fun search(query: String) {
@@ -114,6 +155,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _isLoading.value = true
             _error.value = null
             _queue.value = queue
+            _currentPosition.value = 0L
+            _duration.value = 0L
 
             try {
                 val url = Innertube.getStreamUrl(getApplication(), song.id)
@@ -186,7 +229,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         newQueue.removeAll { it.id == song.id }
         newQueue.add(insertIndex.coerceAtMost(newQueue.size), song)
         _queue.value = newQueue
-
         val mediaItem = MediaItem.Builder()
             .setMediaId(song.id)
             .setUri("https://www.youtube.com/watch?v=${song.id}")
@@ -200,6 +242,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             .build()
         controller?.addMediaItem(insertIndex, mediaItem)
         Toast.makeText(getApplication(), "Playing next", Toast.LENGTH_SHORT).show()
+    }
+
+    fun skipToNext() {
+        controller?.seekToNextMediaItem()
+    }
+
+    fun skipToPrevious() {
+        controller?.seekToPreviousMediaItem()
     }
 
     fun togglePlayPause() {
@@ -246,6 +296,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        stopProgressTracking()
         controller?.removeListener(listener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
