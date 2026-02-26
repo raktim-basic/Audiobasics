@@ -14,6 +14,7 @@ import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.stream.AudioStream
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.util.concurrent.TimeUnit
 
 object Innertube {
@@ -27,14 +28,50 @@ object Innertube {
         }
     }
 
-    // Get highest resolution YouTube thumbnail
     private fun bestThumbnail(thumbnails: List<org.schabi.newpipe.extractor.Image>): String {
         return thumbnails.maxByOrNull { it.width * it.height }?.url ?: ""
     }
 
-    // For video IDs, use maxresdefault which is 1280x720 minimum
     private fun ytThumbnail(videoId: String): String {
         return "https://img.youtube.com/vi/$videoId/maxresdefault.jpg"
+    }
+
+    // Detect explicit content from title or tags
+    private fun isExplicit(name: String): Boolean {
+        val lower = name.lowercase()
+        return lower.contains("(explicit)") ||
+            lower.contains("[explicit]") ||
+            lower.contains("explicit version") ||
+            lower.contains("(dirty)") ||
+            lower.contains("[dirty]")
+    }
+
+    // Filter out non-music items from related (podcasts, compilations, etc.)
+    private fun isMusicStream(item: StreamInfoItem): Boolean {
+        val durationSecs = item.duration
+        // Skip items shorter than 30s or longer than 20 minutes (likely not songs)
+        if (durationSecs < 30 || durationSecs > 1200) return false
+        val name = item.name?.lowercase() ?: return false
+        // Skip obvious non-music content
+        val skipKeywords = listOf(
+            "podcast", "interview", "episode", "lecture",
+            "audiobook", "chapter", "debate", "sermon",
+            "comedy special", "stand up", "stand-up"
+        )
+        return skipKeywords.none { name.contains(it) }
+    }
+
+    // When searching, prefer explicit version if both exist
+    private fun deduplicatePreferExplicit(songs: List<Song>): List<Song> {
+        val grouped = songs.groupBy { it.title.lowercase().trim()
+            .replace("(explicit)", "")
+            .replace("[explicit]", "")
+            .replace("(dirty)", "")
+            .trim()
+        }
+        return grouped.map { (_, versions) ->
+            versions.firstOrNull { it.isExplicit } ?: versions.first()
+        }
     }
 
     suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {
@@ -64,15 +101,17 @@ object Innertube {
                                 )
                             }
                         }
-                        item is org.schabi.newpipe.extractor.stream.StreamInfoItem -> {
+                        item is StreamInfoItem -> {
                             val id = extractId(item.url)
+                            val title = item.name ?: continue
                             songs.add(
                                 Song(
                                     id = id,
-                                    title = item.name ?: continue,
+                                    title = title,
                                     artist = item.uploaderName ?: "",
                                     thumbnail = ytThumbnail(id),
-                                    duration = item.duration * 1000
+                                    duration = item.duration * 1000,
+                                    isExplicit = isExplicit(title)
                                 )
                             )
                         }
@@ -85,9 +124,11 @@ object Innertube {
             Log.e("Innertube", "Search error: ${e.message}")
         }
 
+        val deduped = deduplicatePreferExplicit(songs)
+
         val results = mutableListOf<Song>()
         results.addAll(albums)
-        results.addAll(songs)
+        results.addAll(deduped)
         results
     }
 
@@ -107,7 +148,8 @@ object Innertube {
                 title = title,
                 artist = artist,
                 thumbnail = ytThumbnail(videoId),
-                duration = duration
+                duration = duration,
+                isExplicit = isExplicit(title)
             )
         } catch (e: Exception) {
             Log.e("Innertube", "Metadata fetch error for $videoId: ${e.message}")
@@ -149,15 +191,17 @@ object Innertube {
                 for (item in related) {
                     if (results.size >= limit) break
                     try {
-                        if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
+                        if (item is StreamInfoItem && isMusicStream(item)) {
                             val id = extractId(item.url)
+                            val title = item.name ?: continue
                             results.add(
                                 Song(
                                     id = id,
-                                    title = item.name ?: continue,
+                                    title = title,
                                     artist = item.uploaderName ?: "",
                                     thumbnail = ytThumbnail(id),
-                                    duration = item.duration * 1000
+                                    duration = item.duration * 1000,
+                                    isExplicit = isExplicit(title)
                                 )
                             )
                         }
@@ -195,16 +239,18 @@ object Innertube {
 
                 for (item in items) {
                     try {
-                        if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
+                        if (item is StreamInfoItem) {
                             val id = extractId(item.url)
+                            val title = item.name ?: continue
                             songs.add(
                                 Song(
                                     id = id,
-                                    title = item.name ?: continue,
+                                    title = title,
                                     artist = item.uploaderName ?: "",
                                     thumbnail = ytThumbnail(id),
                                     duration = item.duration * 1000,
-                                    albumId = playlistId
+                                    albumId = playlistId,
+                                    isExplicit = isExplicit(title)
                                 )
                             )
                         }
