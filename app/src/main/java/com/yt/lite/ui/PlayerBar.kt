@@ -30,19 +30,23 @@ fun PlayerBar(
     isPlaying: Boolean,
     isLoading: Boolean,
     isLiked: Boolean,
+    isDarkMode: Boolean,
     onToggle: () -> Unit,
     onLike: () -> Unit,
     onTap: () -> Unit
 ) {
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
+            .background(bgColor)
             .clickable { onTap() }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Artwork
         AsyncImage(
             model = song.thumbnail,
             contentDescription = null,
@@ -54,14 +58,13 @@ fun PlayerBar(
 
         Spacer(Modifier.width(12.dp))
 
-        // Title + Artist
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = Color.Black,
+                color = textColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -70,34 +73,34 @@ fun PlayerBar(
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Normal,
                 fontSize = 12.sp,
-                color = Color(0xFF888888),
+                color = subTextColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
-        // Like button
         IconButton(onClick = onLike) {
             Icon(
-                imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                imageVector = if (isLiked) Icons.Default.Favorite
+                else Icons.Default.FavoriteBorder,
                 contentDescription = "Like",
-                tint = if (isLiked) Color.Red else Color.Gray
+                tint = if (isLiked) Color.Red else subTextColor
             )
         }
 
-        // Play/Pause button
         IconButton(onClick = onToggle) {
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
-                    color = Color.Black
+                    color = textColor
                 )
             } else {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    imageVector = if (isPlaying) Icons.Default.Pause
+                    else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = Color.Black
+                    tint = textColor
                 )
             }
         }
