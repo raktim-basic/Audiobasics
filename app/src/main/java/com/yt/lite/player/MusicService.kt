@@ -31,18 +31,19 @@ class MusicService : MediaSessionService() {
             .setConnectTimeoutMs(15000)
             .setReadTimeoutMs(15000)
 
-        val dataSourceFactory = DataSource.Factory {
-            val httpDataSource = httpFactory.createDataSource()
-            httpDataSource
+        val combinedFactory = DataSource.Factory {
+            FileDataSource()
         }
 
-        val resolvingFactory = ResolvingDataSource.Factory(dataSourceFactory) { dataSpec ->
+        val finalFactory = ResolvingDataSource.Factory(
+            DataSource.Factory {
+                httpFactory.createDataSource()
+            }
+        ) { dataSpec ->
             val uriString = dataSpec.uri.toString()
             when {
                 uriString.startsWith("file://") -> {
-                    // Use file data source for cached files
-                    val filePath = uriString.removePrefix("file://")
-                    dataSpec.withUri(Uri.parse("file://$filePath"))
+                    dataSpec.withUri(Uri.parse(uriString))
                 }
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
                     val videoId = extractVideoId(uriString)
@@ -50,29 +51,42 @@ class MusicService : MediaSessionService() {
                         val realUrl = runBlocking {
                             Innertube.getStreamUrl(this@MusicService, videoId)
                         }
-                        if (realUrl != null) {
-                            dataSpec.withUri(Uri.parse(realUrl))
-                        } else {
-                            dataSpec
-                        }
-                    } else {
-                        dataSpec
-                    }
+                        if (realUrl != null) dataSpec.withUri(Uri.parse(realUrl))
+                        else dataSpec
+                    } else dataSpec
                 }
                 else -> dataSpec
             }
         }
 
-        val combinedFactory = DataSource.Factory {
-            val uri = it?.uri?.toString() ?: ""
-            if (uri.startsWith("file://")) {
-                FileDataSource()
-            } else {
-                httpFactory.createDataSource()
+        val smartFactory = DataSource.Factory {
+            object : androidx.media3.datasource.DataSource {
+                private var inner: androidx.media3.datasource.DataSource? = null
+
+                override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
+                    val uri = dataSpec.uri.toString()
+                    inner = if (uri.startsWith("file://")) {
+                        FileDataSource()
+                    } else {
+                        httpFactory.createDataSource()
+                    }
+                    return inner!!.open(dataSpec)
+                }
+
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+                    inner!!.read(buffer, offset, length)
+
+                override fun getUri(): Uri? = inner?.uri
+
+                override fun close() = inner?.close() ?: Unit
+
+                override fun addTransferListener(
+                    transferListener: com.google.android.exoplayer2.upstream.TransferListener
+                ) {}
             }
         }
 
-        val finalFactory = ResolvingDataSource.Factory(combinedFactory) { dataSpec ->
+        val resolvingSmartFactory = ResolvingDataSource.Factory(smartFactory) { dataSpec ->
             val uriString = dataSpec.uri.toString()
             when {
                 uriString.startsWith("file://") -> dataSpec
