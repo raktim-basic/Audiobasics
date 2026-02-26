@@ -27,6 +27,16 @@ object Innertube {
         }
     }
 
+    // Get highest resolution YouTube thumbnail
+    private fun bestThumbnail(thumbnails: List<org.schabi.newpipe.extractor.Image>): String {
+        return thumbnails.maxByOrNull { it.width * it.height }?.url ?: ""
+    }
+
+    // For video IDs, use maxresdefault which is 1280x720 minimum
+    private fun ytThumbnail(videoId: String): String {
+        return "https://img.youtube.com/vi/$videoId/maxresdefault.jpg"
+    }
+
     suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {
         init()
         val albums = mutableListOf<Song>()
@@ -42,24 +52,26 @@ object Innertube {
                     when {
                         item is org.schabi.newpipe.extractor.playlist.PlaylistInfoItem -> {
                             if (albums.size < 3) {
+                                val id = extractId(item.url)
                                 albums.add(
                                     Song(
-                                        id = extractId(item.url),
+                                        id = id,
                                         title = item.name ?: continue,
                                         artist = "(Album) ${item.uploaderName ?: ""}",
-                                        thumbnail = item.thumbnails.firstOrNull()?.url ?: "",
+                                        thumbnail = bestThumbnail(item.thumbnails),
                                         isAlbum = true
                                     )
                                 )
                             }
                         }
                         item is org.schabi.newpipe.extractor.stream.StreamInfoItem -> {
+                            val id = extractId(item.url)
                             songs.add(
                                 Song(
-                                    id = extractId(item.url),
+                                    id = id,
                                     title = item.name ?: continue,
                                     artist = item.uploaderName ?: "",
-                                    thumbnail = item.thumbnails.firstOrNull()?.url ?: "",
+                                    thumbnail = ytThumbnail(id),
                                     duration = item.duration * 1000
                                 )
                             )
@@ -88,15 +100,13 @@ object Innertube {
 
             val title = extractor.name ?: return@withContext null
             val artist = extractor.uploaderName ?: ""
-            val thumbnail = extractor.thumbnails.firstOrNull()?.url
-                ?: "https://img.youtube.com/vi/$videoId/0.jpg"
             val duration = extractor.length * 1000L
 
             Song(
                 id = videoId,
                 title = title,
                 artist = artist,
-                thumbnail = thumbnail,
+                thumbnail = ytThumbnail(videoId),
                 duration = duration
             )
         } catch (e: Exception) {
@@ -140,12 +150,13 @@ object Innertube {
                     if (results.size >= limit) break
                     try {
                         if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
+                            val id = extractId(item.url)
                             results.add(
                                 Song(
-                                    id = extractId(item.url),
+                                    id = id,
                                     title = item.name ?: continue,
                                     artist = item.uploaderName ?: "",
-                                    thumbnail = item.thumbnails.firstOrNull()?.url ?: "",
+                                    thumbnail = ytThumbnail(id),
                                     duration = item.duration * 1000
                                 )
                             )
@@ -177,7 +188,7 @@ object Innertube {
                     id = playlistId,
                     title = extractor.name ?: "Unknown Album",
                     artist = extractor.uploaderName ?: "Unknown Artist",
-                    thumbnail = extractor.thumbnails.firstOrNull()?.url ?: "",
+                    thumbnail = bestThumbnail(extractor.thumbnails),
                     songCount = items.size,
                     youtubeUrl = url
                 )
@@ -185,12 +196,13 @@ object Innertube {
                 for (item in items) {
                     try {
                         if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
+                            val id = extractId(item.url)
                             songs.add(
                                 Song(
-                                    id = extractId(item.url),
+                                    id = id,
                                     title = item.name ?: continue,
                                     artist = item.uploaderName ?: "",
-                                    thumbnail = item.thumbnails.firstOrNull()?.url ?: "",
+                                    thumbnail = ytThumbnail(id),
                                     duration = item.duration * 1000,
                                     albumId = playlistId
                                 )
