@@ -3,15 +3,30 @@ package com.yt.lite
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.yt.lite.data.Album
-import com.yt.lite.ui.*
+import com.yt.lite.ui.AlbumScreen
+import com.yt.lite.ui.HomeScreen
+import com.yt.lite.ui.LikedScreen
+import com.yt.lite.ui.MusicViewModel
+import com.yt.lite.ui.PlayerBar
+import com.yt.lite.ui.PlayerDialog
+import com.yt.lite.ui.QueueScreen
+import com.yt.lite.ui.SavedAlbumsScreen
+import com.yt.lite.ui.SearchScreen
+import com.yt.lite.ui.SettingsScreen
 import com.yt.lite.ui.theme.AppTheme
+import com.yt.lite.ui.theme.NothingFont
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
@@ -62,37 +77,33 @@ fun AudiobasicsApp(vm: MusicViewModel, isDarkMode: Boolean) {
         }
     }
 
-    // Storage low popup
     if (showStorageLow) {
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { vm.dismissStorageLow() },
             title = {
-                androidx.compose.material3.Text(
+                Text(
                     "Storage Low",
-                    fontFamily = com.yt.lite.ui.theme.NothingFont
+                    fontFamily = NothingFont
                 )
             },
             text = {
-                androidx.compose.material3.Text(
+                Text(
                     "Cannot cache song — less than 1GB storage available.",
-                    fontFamily = com.yt.lite.ui.theme.NothingFont
+                    fontFamily = NothingFont
                 )
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = { vm.dismissStorageLow() }
-                ) {
-                    androidx.compose.material3.Text(
+                TextButton(onClick = { vm.dismissStorageLow() }) {
+                    Text(
                         "OK",
-                        fontFamily = com.yt.lite.ui.theme.NothingFont,
-                        color = androidx.compose.ui.graphics.Color.Red
+                        fontFamily = NothingFont,
+                        color = Color.Red
                     )
                 }
             }
         )
     }
 
-    // Player dialog
     if (showPlayerDialog && currentSong != null) {
         PlayerDialog(
             vm = vm,
@@ -102,10 +113,7 @@ fun AudiobasicsApp(vm: MusicViewModel, isDarkMode: Boolean) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Main content
-        androidx.compose.foundation.layout.Box(
-            modifier = Modifier.weight(1f)
-        ) {
+        Box(modifier = Modifier.weight(1f)) {
             when (val screen = currentScreen) {
                 is Screen.Home -> HomeScreen(
                     vm = vm,
@@ -154,7 +162,6 @@ fun AudiobasicsApp(vm: MusicViewModel, isDarkMode: Boolean) {
             }
         }
 
-        // Mini player bar
         currentSong?.let { song ->
             val isLiked = likedSongs.any { it.id == song.id }
             PlayerBar(
@@ -169,54 +176,4 @@ fun AudiobasicsApp(vm: MusicViewModel, isDarkMode: Boolean) {
             )
         }
     }
-}
-Also update app/src/main/java/com/yt/lite/ui/theme/Theme.kt — replace everything to support dark mode:
-package com.yt.lite.ui.theme
-
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-
-private val LightColors = lightColorScheme(
-    primary = Color(0xFFFF0000),
-    onPrimary = Color.White,
-    secondary = Color(0xFF1A1A1A),
-    onSecondary = Color.White,
-    background = Color(0xFFF5F5F5),
-    onBackground = Color(0xFF1A1A1A),
-    surface = Color.White,
-    onSurface = Color(0xFF1A1A1A),
-    surfaceVariant = Color(0xFFEEEEEE),
-    onSurfaceVariant = Color(0xFF666666),
-    error = Color(0xFFB00020),
-    onError = Color.White,
-)
-
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFFFF0000),
-    onPrimary = Color.White,
-    secondary = Color(0xFFEEEEEE),
-    onSecondary = Color.Black,
-    background = Color(0xFF121212),
-    onBackground = Color.White,
-    surface = Color(0xFF1E1E1E),
-    onSurface = Color.White,
-    surfaceVariant = Color(0xFF2A2A2A),
-    onSurfaceVariant = Color(0xFFAAAAAA),
-    error = Color(0xFFCF6679),
-    onError = Color.Black,
-)
-
-@Composable
-fun AppTheme(
-    darkTheme: Boolean = false,
-    content: @Composable () -> Unit
-) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        typography = AppTypography,
-        content = content
-    )
 }
