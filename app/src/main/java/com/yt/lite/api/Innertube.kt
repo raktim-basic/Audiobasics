@@ -79,6 +79,32 @@ object Innertube {
         results
     }
 
+    suspend fun getVideoMetadata(videoId: String): Song? = withContext(Dispatchers.IO) {
+        init()
+        try {
+            val url = "https://www.youtube.com/watch?v=$videoId"
+            val extractor = ServiceList.YouTube.getStreamExtractor(url)
+            extractor.fetchPage()
+
+            val title = extractor.name ?: return@withContext null
+            val artist = extractor.uploaderName ?: ""
+            val thumbnail = extractor.thumbnails.firstOrNull()?.url
+                ?: "https://img.youtube.com/vi/$videoId/0.jpg"
+            val duration = extractor.length * 1000L
+
+            Song(
+                id = videoId,
+                title = title,
+                artist = artist,
+                thumbnail = thumbnail,
+                duration = duration
+            )
+        } catch (e: Exception) {
+            Log.e("Innertube", "Metadata fetch error for $videoId: ${e.message}")
+            null
+        }
+    }
+
     suspend fun getStreamUrl(context: Context, videoId: String): String? =
         withContext(Dispatchers.IO) {
             init()
