@@ -14,11 +14,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.yt.lite.ui.theme.NothingFont
 
 @Composable
@@ -36,7 +38,10 @@ fun QueueScreen(
 
     // Drag state
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragTargetIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    var targetIndex by remember { mutableStateOf<Int?>(null) }
+    val itemHeightPx = remember { mutableStateOf(0f) }
+    val listState = rememberLazyListState()
 
     Column(
         modifier = Modifier
@@ -73,7 +78,10 @@ fun QueueScreen(
             )
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth())
+        DashedDivider(
+            modifier = Modifier.fillMaxWidth(),
+            isDarkMode = isDarkMode
+        )
 
         if (queue.isEmpty()) {
             Box(
@@ -92,28 +100,90 @@ fun QueueScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                state = rememberLazyListState()
+                state = listState
             ) {
-                itemsIndexed(queue) { index, song ->
+                itemsIndexed(
+                    items = queue,
+                    key = { _, song -> song.id }
+                ) { index, song ->
                     val isCurrentSong = song.id == currentSong?.id
                     val isLiked = likedSongs.any { it.id == song.id }
                     val isDragging = draggingIndex == index
-                    val isTarget = dragTargetIndex == index
+                    val isTarget = targetIndex == index
 
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .graphicsLayer {
+                                translationY = if (isDragging) dragOffsetY else 0f
+                                alpha = if (isDragging) 0.85f else 1f
+                                scaleX = if (isDragging) 1.02f else 1f
+                                scaleY = if (isDragging) 1.02f else 1f
+                            }
                             .background(
                                 when {
-                                    isDragging -> Color.Red.copy(alpha = 0.15f)
-                                    isTarget -> Color.Gray.copy(alpha = 0.15f)
+                                    isDragging -> if (isDarkMode)
+                                        Color.White.copy(alpha = 0.1f)
+                                    else Color.Black.copy(alpha = 0.06f)
+                                    isTarget -> Color.Red.copy(alpha = 0.08f)
                                     isCurrentSong -> if (isDarkMode)
                                         Color.White.copy(alpha = 0.05f)
                                     else Color.Black.copy(alpha = 0.04f)
                                     else -> Color.Transparent
                                 }
                             )
+                            .onGloballyPositioned { coords ->
+                                if (index == 0) {
+                                    itemHeightPx.value = coords.size.height.toFloat()
+                                }
+                            }
+                            .pointerInput(index) {
+                                if (draggingIndex == index) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            draggingIndex = index
+                                            dragOffsetY = 0f
+                                        },
+                                        onDrag = { _, dragAmount ->
+                                            dragOffsetY += dragAmount.y
+                                            val h = itemHeightPx.value
+                                                .takeIf { it > 0 } ?: 80f
+                                            val newTarget = (index + (dragOffsetY / h)
+                                                .toInt())
+                                                .coerceIn(0, queue.size - 1)
+                                            targetIndex = newTarget
+                                        },
+                                        onDragEnd = {
+                                            val from = draggingIndex
+                                            val to = targetIndex
+                                            if (from != null && to != null && from != to) {
+                                                vm.reorderQueue(from, to)
+                                            }
+                                            draggingIndex = null
+                                            dragOffsetY = 0f
+                                            targetIndex = null
+                                        },
+                                        onDragCancel = {
+                                            draggingIndex = null
+                                            dragOffsetY = 0f
+                                            targetIndex = null
+                                        }
+                                    )
+                                }
+                            }
                     ) {
+                        // Current song red bar
+                        if (isCurrentSong) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .width(3.dp)
+                                    .height(52.dp)
+                                    .background(Color.Red)
+                            )
+                        }
+
                         SongItem(
                             song = song,
                             isDarkMode = isDarkMode,
@@ -124,41 +194,22 @@ fun QueueScreen(
                             onShare = {},
                             onRemoveFromQueue = { vm.removeFromQueue(song) },
                             onReorder = {
-                                // Activate drag for this song
+                                // Activate drag mode for this item
                                 draggingIndex = index
-                            }
+                                dragOffsetY = 0f
+                            },
+                            onRetryCache = { vm.retryCache(song) },
+                            onRemoveLike = { vm.toggleLike(song) }
                         )
-
-                        // Current song indicator
-                        if (isCurrentSong) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.CenterStart)
-                                    .width(3.dp)
-                                    .height(40.dp)
-                                    .background(Color.Red)
-                            )
-                        }
                     }
                 }
             }
         }
 
-        // Bottom bar
         QueueBottomBar(
             isDarkMode = isDarkMode,
             onBack = onBack
         )
-    }
-
-    // Handle drag and drop
-    LaunchedEffect(draggingIndex) {
-        if (draggingIndex != null) {
-            // Auto-exit drag mode after 3 seconds if no action
-            kotlinx.coroutines.delay(3000)
-            draggingIndex = null
-            dragTargetIndex = null
-        }
     }
 }
 
