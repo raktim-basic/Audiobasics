@@ -1,11 +1,14 @@
 package com.yt.lite.ui
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -28,7 +31,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 
 @UnstableApi
 class MusicViewModel(app: Application) : AndroidViewModel(app) {
@@ -48,14 +50,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
 
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error
-
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition: StateFlow<Long> = _currentPosition
 
     private val _duration = MutableStateFlow(0L)
     val duration: StateFlow<Long> = _duration
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
 
     // Queue
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
@@ -72,9 +74,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _likedSongs = MutableStateFlow<List<Song>>(loadLikedSongs())
     val likedSongs: StateFlow<List<Song>> = _likedSongs
 
-    // Cache size display
+    // Cache
     private val _cacheSize = MutableStateFlow("")
     val cacheSize: StateFlow<String> = _cacheSize
+
+    private val _showStorageLow = MutableStateFlow(false)
+    val showStorageLow: StateFlow<Boolean> = _showStorageLow
+
+    // Bulk cache progress
+    private val _cacheProgress = MutableStateFlow<Pair<Int, Int>?>(null) // done to total
+    val cacheProgress: StateFlow<Pair<Int, Int>?> = _cacheProgress
 
     // Saved albums
     private val _savedAlbums = MutableStateFlow<List<Album>>(loadSavedAlbums())
@@ -83,10 +92,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // Dark mode
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", false))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
-
-    // Storage low popup
-    private val _showStorageLow = MutableStateFlow(false)
-    val showStorageLow: StateFlow<Boolean> = _showStorageLow
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
@@ -97,8 +102,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             _isLoading.value = true
             val index = controller?.currentMediaItemIndex ?: return
-            _currentSong.value = _queue.value.getOrNull(index)
-                ?: mediaItem?.toSong()
+            _currentSong.value = _queue.value.getOrNull(index) ?: mediaItem?.toSong()
             _currentPosition.value = 0L
             _duration.value = 0L
         }
@@ -169,7 +173,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         return Song(id, title, artist, thumbnail)
     }
 
-    // Progress tracking
     private fun startProgressTracking() {
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
@@ -194,7 +197,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _currentPosition.value = position
     }
 
-    // Search — returns songs + albums mixed, albums first (max 3)
+    // Search
     fun search(query: String) {
         if (query.isBlank()) return
         viewModelScope.launch {
@@ -209,7 +212,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // Play from search — auto-queues 10 similar songs
+    // Play a single song from search — auto queues similar
     fun play(song: Song) {
         viewModelScope.launch {
             _currentSong.value = song
@@ -220,21 +223,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _duration.value = 0L
 
             try {
-                val url = resolveUrl(song)
-                if (url == null) {
-                    Toast.makeText(getApplication(), "Could not get stream URL", Toast.LENGTH_LONG).show()
-                    _isLoading.value = false
-                    return@launch
-                }
-
-                val mediaItem = buildMediaItem(song, url)
+                val uri = resolveUri(song)
+                val mediaItem = buildMediaItem(song, uri)
                 controller?.run {
                     setMediaItem(mediaItem)
                     prepare()
                     play()
                 } ?: Toast.makeText(getApplication(), "Player not ready", Toast.LENGTH_SHORT).show()
 
-                // Fetch similar songs in background and add to queue
+                // Fetch similar songs in background
                 fetchAndQueueSimilar(song)
 
             } catch (e: Exception) {
@@ -250,28 +247,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val newQueue = listOf(song) + similar
                 _queue.value = newQueue
                 similar.forEach { s ->
-                    controller?.addMediaItem(
-                        MediaItem.Builder()
-                            .setMediaId(s.id)
-                            .setUri("https://www.youtube.com/watch?v=${s.id}")
-                            .setMediaMetadata(
-                                MediaMetadata.Builder()
-                                    .setTitle(s.title)
-                                    .setArtist(s.artist)
-                                    .setArtworkUri(Uri.parse(s.thumbnail))
-                                    .build()
-                            )
-                            .build()
-                    )
+                    val stubUri = "https://www.youtube.com/watch?v=${s.id}"
+                    controller?.addMediaItem(buildMediaItem(s, stubUri))
                 }
-                Log.d("YTLite", "Added ${similar.size} similar songs to queue")
             }
         } catch (e: Exception) {
-            Log.e("YTLite", "Failed to fetch similar songs: ${e.message}")
+            Log.e("YTLite", "Failed to fetch similar: ${e.message}")
         }
     }
 
-    // Play with a specific queue (liked songs, album)
+    // Play with a specific queue (liked, album, shuffle)
     fun playWithQueue(song: Song, queue: List<Song>) {
         viewModelScope.launch {
             _currentSong.value = song
@@ -282,26 +267,20 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _duration.value = 0L
 
             try {
-                val url = resolveUrl(song)
-                if (url == null) {
-                    Toast.makeText(getApplication(), "Could not get stream URL", Toast.LENGTH_LONG).show()
-                    _isLoading.value = false
-                    return@launch
-                }
+                val songIndex = queue.indexOf(song).takeIf { it >= 0 } ?: 0
+                val resolvedUri = resolveUri(song)
 
-                val songIndex = queue.indexOf(song)
                 val mediaItems = queue.mapIndexed { i, s ->
-                    MediaItem.Builder()
-                        .setMediaId(s.id)
-                        .setUri(if (i == songIndex) url else "https://www.youtube.com/watch?v=${s.id}")
-                        .setMediaMetadata(
-                            MediaMetadata.Builder()
-                                .setTitle(s.title)
-                                .setArtist(s.artist)
-                                .setArtworkUri(Uri.parse(s.thumbnail))
-                                .build()
-                        )
-                        .build()
+                    if (i == songIndex) {
+                        buildMediaItem(s, resolvedUri)
+                    } else {
+                        val stubUri = if (CacheManager.isCached(getApplication(), s.id)) {
+                            "file://${CacheManager.getCachedFilePath(getApplication(), s.id)}"
+                        } else {
+                            "https://www.youtube.com/watch?v=${s.id}"
+                        }
+                        buildMediaItem(s, stubUri)
+                    }
                 }
 
                 controller?.run {
@@ -316,7 +295,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // Play by YouTube URL (link play)
+    // Play by YouTube URL — fetches real metadata
     fun playByUrl(url: String) {
         viewModelScope.launch {
             val videoId = extractVideoId(url)
@@ -324,34 +303,35 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 Toast.makeText(getApplication(), "Invalid YouTube URL", Toast.LENGTH_SHORT).show()
                 return@launch
             }
+
             _isLoading.value = true
+
+            // Placeholder while loading
+            val placeholder = Song(
+                id = videoId,
+                title = "Loading...",
+                artist = "",
+                thumbnail = "https://img.youtube.com/vi/$videoId/0.jpg"
+            )
+            _currentSong.value = placeholder
+            _queue.value = listOf(placeholder)
+
             try {
+                // Fetch real metadata and stream URL in parallel
+                val metadata = Innertube.getVideoMetadata(videoId)
                 val streamUrl = Innertube.getStreamUrl(getApplication(), videoId)
+
                 if (streamUrl == null) {
                     Toast.makeText(getApplication(), "Could not load song", Toast.LENGTH_LONG).show()
                     _isLoading.value = false
                     return@launch
                 }
-                val song = Song(
-                    id = videoId,
-                    title = "Loading...",
-                    artist = "",
-                    thumbnail = "https://img.youtube.com/vi/$videoId/0.jpg"
-                )
+
+                val song = metadata ?: placeholder.copy(title = "YouTube Song")
                 _currentSong.value = song
                 _queue.value = listOf(song)
 
-                val mediaItem = MediaItem.Builder()
-                    .setMediaId(videoId)
-                    .setUri(streamUrl)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle("YouTube Song")
-                            .setArtworkUri(Uri.parse(song.thumbnail))
-                            .build()
-                    )
-                    .build()
-
+                val mediaItem = buildMediaItem(song, streamUrl)
                 controller?.run {
                     setMediaItem(mediaItem)
                     prepare()
@@ -359,8 +339,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 handlePlaybackError(e)
-            } finally {
-                _isLoading.value = false
             }
         }
     }
@@ -378,20 +356,20 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         return null
     }
 
-    // Resolve URL — use cache if available
-    private suspend fun resolveUrl(song: Song): String? {
+    // Resolve URI — use cached file if available, else stub for service to resolve
+    private fun resolveUri(song: Song): String {
         val cachedPath = CacheManager.getCachedFilePath(getApplication(), song.id)
-        if (cachedPath != null) {
-            Log.d("YTLite", "Using cached file for: ${song.title}")
-            return "file://$cachedPath"
+        return if (cachedPath != null) {
+            "file://$cachedPath"
+        } else {
+            "https://www.youtube.com/watch?v=${song.id}"
         }
-        return Innertube.getStreamUrl(getApplication(), song.id)
     }
 
-    private fun buildMediaItem(song: Song, url: String): MediaItem {
+    private fun buildMediaItem(song: Song, uri: String): MediaItem {
         return MediaItem.Builder()
             .setMediaId(song.id)
-            .setUri(url)
+            .setUri(uri)
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(song.title)
@@ -416,19 +394,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         if (newQueue.none { it.id == song.id }) {
             newQueue.add(song)
             _queue.value = newQueue
-            controller?.addMediaItem(
-                MediaItem.Builder()
-                    .setMediaId(song.id)
-                    .setUri("https://www.youtube.com/watch?v=${song.id}")
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(song.title)
-                            .setArtist(song.artist)
-                            .setArtworkUri(Uri.parse(song.thumbnail))
-                            .build()
-                    )
-                    .build()
-            )
+            val uri = resolveUri(song)
+            controller?.addMediaItem(buildMediaItem(song, uri))
             Toast.makeText(getApplication(), "Added to queue", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(getApplication(), "Already in queue", Toast.LENGTH_SHORT).show()
@@ -442,20 +409,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         newQueue.removeAll { it.id == song.id }
         newQueue.add(insertIndex.coerceAtMost(newQueue.size), song)
         _queue.value = newQueue
-        controller?.addMediaItem(
-            insertIndex,
-            MediaItem.Builder()
-                .setMediaId(song.id)
-                .setUri("https://www.youtube.com/watch?v=${song.id}")
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(song.title)
-                        .setArtist(song.artist)
-                        .setArtworkUri(Uri.parse(song.thumbnail))
-                        .build()
-                )
-                .build()
-        )
+        val uri = resolveUri(song)
+        controller?.addMediaItem(insertIndex, buildMediaItem(song, uri))
         Toast.makeText(getApplication(), "Playing next", Toast.LENGTH_SHORT).show()
     }
 
@@ -472,7 +427,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun reorderQueue(fromIndex: Int, toIndex: Int) {
         val newQueue = _queue.value.toMutableList()
         if (fromIndex < 0 || toIndex < 0 ||
-            fromIndex >= newQueue.size || toIndex >= newQueue.size) return
+            fromIndex >= newQueue.size || toIndex >= newQueue.size
+        ) return
         val song = newQueue.removeAt(fromIndex)
         newQueue.add(toIndex, song)
         _queue.value = newQueue
@@ -505,11 +461,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun like(song: Song) {
         val updatedSong = song.copy(isCached = false, cacheFailed = false)
-        _likedSongs.value = listOf(updatedSong) + _likedSongs.value
+        _likedSongs.value = listOf(updatedSong) + _likedSongs.value.filter { it.id != song.id }
         saveLikedSongs()
-        // Cache in background
         viewModelScope.launch {
-            cacheSong(updatedSong)
+            cacheSongSilently(updatedSong)
         }
     }
 
@@ -520,12 +475,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         refreshCacheSize()
     }
 
-    private suspend fun cacheSong(song: Song) {
+    private suspend fun cacheSongSilently(song: Song) {
         val result = CacheManager.cacheSong(getApplication(), song)
         when (result) {
             is CacheResult.Success -> {
                 updateLikedSongCacheStatus(song.id, isCached = true, cacheFailed = false)
                 refreshCacheSize()
+                Log.d("YTLite", "Cached: ${song.title}")
             }
             is CacheResult.StorageLow -> {
                 _showStorageLow.value = true
@@ -533,6 +489,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
             is CacheResult.Failed -> {
                 updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
+                Log.e("YTLite", "Cache failed for ${song.title}: ${result.reason}")
             }
         }
     }
@@ -548,20 +505,79 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         saveLikedSongs()
     }
 
+    // Retry cache — only retries, does NOT unlike
     fun retryCache(song: Song) {
         viewModelScope.launch {
             updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = false)
-            cacheSong(song)
+            cacheSongSilently(song)
         }
     }
 
+    // Cache all liked songs with progress
     fun cacheAllLiked() {
-        viewModelScope.launch {
-            val uncached = _likedSongs.value.filter { !it.isCached && !it.cacheFailed }
-            uncached.forEach { song ->
-                cacheSong(song)
-            }
+        val uncached = _likedSongs.value.filter { !it.isCached }
+        if (uncached.isEmpty()) {
+            Toast.makeText(getApplication(), "All songs already cached!", Toast.LENGTH_SHORT).show()
+            return
         }
+
+        viewModelScope.launch {
+            val total = uncached.size
+            var done = 0
+            _cacheProgress.value = Pair(0, total)
+
+            createCacheNotificationChannel()
+
+            uncached.forEach { song ->
+                cacheSongSilently(song)
+                done++
+                _cacheProgress.value = Pair(done, total)
+                updateCacheNotification(done, total)
+            }
+
+            _cacheProgress.value = null
+            refreshCacheSize()
+            cancelCacheNotification()
+            Toast.makeText(
+                getApplication(),
+                "Caching complete!",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private fun createCacheNotificationChannel() {
+        val channel = NotificationChannel(
+            "cache_channel",
+            "Cache Progress",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        val manager = getApplication<Application>()
+            .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(channel)
+    }
+
+    private fun updateCacheNotification(done: Int, total: Int) {
+        val percent = ((done.toFloat() / total.toFloat()) * 100).toInt()
+        val manager = getApplication<Application>()
+            .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        val notification = NotificationCompat.Builder(getApplication(), "cache_channel")
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("Caching songs")
+            .setContentText("$done / $total ($percent%)")
+            .setProgress(total, done, false)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        manager.notify(1001, notification)
+    }
+
+    private fun cancelCacheNotification() {
+        val manager = getApplication<Application>()
+            .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(1001)
     }
 
     fun shuffleLiked() {
@@ -570,7 +586,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         playWithQueue(shuffled.first(), shuffled)
     }
 
-    // Cache size
     fun refreshCacheSize() {
         _cacheSize.value = CacheManager.getCacheSizeString(getApplication())
     }
@@ -622,16 +637,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             val arr = JSONArray(json)
             (0 until arr.length()).map { i ->
                 val obj = arr.getJSONObject(i)
+                val id = obj.getString("id")
+                val isCached = CacheManager.isCached(
+                    getApplication(), id
+                )
                 Song(
-                    id = obj.getString("id"),
+                    id = id,
                     title = obj.getString("title"),
                     artist = obj.getString("artist"),
                     thumbnail = obj.getString("thumbnail"),
-                    isCached = obj.optBoolean("isCached", false),
-                    cacheFailed = obj.optBoolean("cacheFailed", false)
+                    isCached = isCached,
+                    cacheFailed = if (isCached) false else obj.optBoolean("cacheFailed", false)
                 )
             }
-        } catch (_: Exception) { emptyList() }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private fun saveSavedAlbums() {
@@ -666,7 +687,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     youtubeUrl = obj.optString("youtubeUrl", "")
                 )
             }
-        } catch (_: Exception) { emptyList() }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     // Import / Export
@@ -710,8 +733,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun importData(context: Context, uri: Uri) {
         viewModelScope.launch {
             try {
-                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
-                    ?: return@launch
+                val text = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()?.readText() ?: return@launch
                 val root = JSONObject(text)
 
                 val songsArr = root.getJSONArray("liked_songs")
@@ -723,7 +746,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         artist = obj.getString("artist"),
                         thumbnail = obj.getString("thumbnail"),
                         isCached = false,
-                        cacheFailed = true // all imported songs need re-caching
+                        cacheFailed = true
                     )
                 }
 
@@ -752,7 +775,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     Toast.LENGTH_LONG
                 ).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    context,
+                    "Import failed: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
