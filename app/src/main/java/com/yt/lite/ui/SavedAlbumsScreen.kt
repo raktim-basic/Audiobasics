@@ -1,8 +1,5 @@
 package com.yt.lite.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,11 +46,9 @@ fun SavedAlbumsScreen(
     var isSearching by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
-    val isScrolled by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 0 ||
-            listState.firstVisibleItemScrollOffset > 100
-        }
+
+    val isHeaderCollapsed by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
@@ -72,39 +68,31 @@ fun SavedAlbumsScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Collapsing header
-        AnimatedVisibility(
-            visible = !isScrolled,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Bookmark,
-                        contentDescription = null,
-                        tint = textColor,
-                        modifier = Modifier.size(90.dp)
-                    )
-
-                    Spacer(Modifier.width(16.dp))
-
-                    Text(
-                        text = "Saved Albums (${savedAlbums.size})",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
-                        color = textColor
-                    )
-                }
-
-                DashedDivider(modifier = Modifier.fillMaxWidth())
+        // Collapsed mini header
+        if (isHeaderCollapsed) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(bgColor)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Bookmark,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Saved Albums (${savedAlbums.size})",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = textColor
+                )
             }
+            DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
         }
 
         // Search bar
@@ -117,11 +105,7 @@ fun SavedAlbumsScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .border(2.dp, Color.Red, RoundedCornerShape(8.dp)),
                 placeholder = {
-                    Text(
-                        "Search albums...",
-                        fontFamily = NothingFont,
-                        color = Color.Gray
-                    )
+                    Text("Search albums...", fontFamily = NothingFont, color = Color.Gray)
                 },
                 textStyle = androidx.compose.ui.text.TextStyle(
                     fontFamily = NothingFont,
@@ -140,26 +124,60 @@ fun SavedAlbumsScreen(
             )
         }
 
-        if (filteredAlbums.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (searchQuery.isBlank()) "No saved albums yet\nSearch for albums to save"
-                    else "No albums found",
-                    fontFamily = NothingFont,
-                    color = Color.Gray,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            state = listState
+        ) {
+            // Full header as first list item
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Bookmark,
+                            contentDescription = null,
+                            tint = textColor,
+                            modifier = Modifier.size(90.dp)
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            text = "Saved Albums (${savedAlbums.size})",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = textColor
+                        )
+                    }
+                    DashedDivider(
+                        modifier = Modifier.fillMaxWidth(),
+                        isDarkMode = isDarkMode
+                    )
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = listState
-            ) {
+
+            if (filteredAlbums.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 80.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (searchQuery.isBlank())
+                                "No saved albums yet\nSearch for albums to save"
+                            else "No albums found",
+                            fontFamily = NothingFont,
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
                 items(filteredAlbums) { album ->
                     AlbumItem(
                         album = album,
@@ -170,7 +188,6 @@ fun SavedAlbumsScreen(
             }
         }
 
-        // Bottom bar
         AlbumsBottomBar(
             isDarkMode = isDarkMode,
             isSearching = isSearching,
