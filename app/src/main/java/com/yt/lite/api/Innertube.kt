@@ -6,6 +6,8 @@ import com.yt.lite.data.Album
 import com.yt.lite.data.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
@@ -27,7 +29,6 @@ object Innertube {
 
     suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {
         init()
-        val results = mutableListOf<Song>()
         val albums = mutableListOf<Song>()
         val songs = mutableListOf<Song>()
 
@@ -72,7 +73,7 @@ object Innertube {
             Log.e("Innertube", "Search error: ${e.message}")
         }
 
-        // Albums first (max 3), then songs
+        val results = mutableListOf<Song>()
         results.addAll(albums)
         results.addAll(songs)
         results
@@ -93,7 +94,7 @@ object Innertube {
 
                 stream?.content
             } catch (e: Exception) {
-                Log.e("Innertube", "Stream error for $videoId: ${e.javaClass.simpleName}: ${e.message}")
+                Log.e("Innertube", "Stream error for $videoId: ${e.message}")
                 null
             }
         }
@@ -144,7 +145,6 @@ object Innertube {
                 val extractor = ServiceList.YouTube.getPlaylistExtractor(url)
                 extractor.fetchPage()
 
-                val totalDuration = 0L
                 val items = extractor.initialPage.items
 
                 album = Album(
@@ -220,25 +220,22 @@ object NewPipeDownloader : Downloader() {
             "POST" -> {
                 val body = request.dataToSend() ?: ByteArray(0)
                 requestBuilder.post(
-                    okhttp3.RequestBody.create(
-                        okhttp3.MediaType.parse("application/json"),
-                        body
-                    )
+                    body.toRequestBody("application/json".toMediaTypeOrNull())
                 )
             }
             else -> requestBuilder.get()
         }
 
         val response = client.newCall(requestBuilder.build()).execute()
-        val responseBody = response.body()?.string() ?: ""
+        val responseBody = response.body?.string() ?: ""
         val headers = mutableMapOf<String, MutableList<String>>()
-        response.headers().names().forEach { name ->
+        response.headers.names().forEach { name ->
             headers[name] = response.headers(name).toMutableList()
         }
 
         return Response(
-            response.code(),
-            response.message(),
+            response.code,
+            response.message,
             headers,
             responseBody,
             request.url()
