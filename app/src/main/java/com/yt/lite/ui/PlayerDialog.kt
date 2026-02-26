@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -87,7 +88,7 @@ fun PlayerDialog(
                     .clickable(enabled = false) {}
             ) {
                 Column {
-                    // Top padding + X button
+                    // X button
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -146,7 +147,7 @@ fun PlayerDialog(
 
                     Spacer(Modifier.height(24.dp))
 
-                    // Time + Scrub bar
+                    // Progress bar
                     val progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f
 
                     Row(
@@ -268,10 +269,7 @@ fun PlayerDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Like
-                        IconButton(onClick = {
-                            song?.let { vm.toggleLike(it) }
-                        }) {
+                        IconButton(onClick = { song?.let { vm.toggleLike(it) } }) {
                             Icon(
                                 imageVector = if (isLiked) Icons.Default.Favorite
                                 else Icons.Default.FavoriteBorder,
@@ -281,7 +279,6 @@ fun PlayerDialog(
                             )
                         }
 
-                        // Lyrics
                         Text(
                             text = "LYRICS",
                             fontFamily = NothingFont,
@@ -291,7 +288,6 @@ fun PlayerDialog(
                             modifier = Modifier.clickable { showLyrics = true }
                         )
 
-                        // Share
                         IconButton(onClick = {
                             song?.let { s ->
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
