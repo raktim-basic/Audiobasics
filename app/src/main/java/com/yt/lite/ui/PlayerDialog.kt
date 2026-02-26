@@ -1,5 +1,6 @@
 package com.yt.lite.ui
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -10,17 +11,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,13 +37,32 @@ import com.yt.lite.ui.theme.NothingFont
 @Composable
 fun PlayerDialog(
     vm: MusicViewModel,
+    isDarkMode: Boolean,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val song by vm.currentSong.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
     val position by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
+    val likedSongs by vm.likedSongs.collectAsState()
+    val isLiked = likedSongs.any { it.id == song?.id }
+
+    var showLyrics by remember { mutableStateOf(false) }
+
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
+
+    if (showLyrics) {
+        LyricsScreen(
+            vm = vm,
+            isDarkMode = isDarkMode,
+            onBack = { showLyrics = false }
+        )
+        return
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -60,31 +83,32 @@ fun PlayerDialog(
                 modifier = Modifier
                     .fillMaxWidth(0.88f)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFFF0F0F0))
+                    .background(bgColor)
                     .clickable(enabled = false) {}
-                    .padding(20.dp)
             ) {
                 Column {
-                    // X button
+                    // Top padding + X button
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.End
                     ) {
                         IconButton(onClick = onDismiss) {
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Close",
-                                tint = Color.Black
+                                tint = textColor
                             )
                         }
                     }
 
-                    Spacer(Modifier.height(4.dp))
-
                     // Artwork + Song info
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
                     ) {
                         AsyncImage(
                             model = song?.thumbnail,
@@ -99,17 +123,17 @@ fun PlayerDialog(
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = song?.title?.uppercase() ?: "SONG NAME",
+                                text = song?.title ?: "Song Name",
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
-                                color = Color.Black,
+                                color = textColor,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                text = song?.artist?.uppercase() ?: "ARTIST NAME",
+                                text = song?.artist ?: "Artist Name",
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Normal,
                                 fontSize = 13.sp,
@@ -126,7 +150,9 @@ fun PlayerDialog(
                     val progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -134,7 +160,7 @@ fun PlayerDialog(
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = Color.Black
+                            color = textColor
                         )
 
                         Spacer(Modifier.width(8.dp))
@@ -163,7 +189,7 @@ fun PlayerDialog(
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
-                            color = Color.Black
+                            color = textColor
                         )
                     }
 
@@ -171,7 +197,9 @@ fun PlayerDialog(
 
                     // Controls
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -179,7 +207,7 @@ fun PlayerDialog(
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Previous",
-                                tint = Color.Black,
+                                tint = textColor,
                                 modifier = Modifier.size(36.dp)
                             )
                         }
@@ -187,7 +215,7 @@ fun PlayerDialog(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color.White)
+                                .background(surfaceColor)
                                 .clickable { vm.togglePlayPause() }
                                 .padding(horizontal = 32.dp, vertical = 14.dp),
                             contentAlignment = Alignment.Center
@@ -196,14 +224,15 @@ fun PlayerDialog(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     strokeWidth = 2.dp,
-                                    color = Color.Black
+                                    color = textColor
                                 )
                             } else {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        imageVector = if (isPlaying) Icons.Default.Pause
+                                        else Icons.Default.PlayArrow,
                                         contentDescription = if (isPlaying) "Pause" else "Play",
-                                        tint = Color.Black,
+                                        tint = textColor,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(Modifier.width(6.dp))
@@ -212,7 +241,7 @@ fun PlayerDialog(
                                         fontFamily = NothingFont,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 16.sp,
-                                        color = Color.Black
+                                        color = textColor
                                     )
                                 }
                             }
@@ -222,13 +251,69 @@ fun PlayerDialog(
                             Icon(
                                 Icons.Default.ArrowForward,
                                 contentDescription = "Next",
-                                tint = Color.Black,
+                                tint = textColor,
                                 modifier = Modifier.size(36.dp)
                             )
                         }
                     }
 
                     Spacer(Modifier.height(8.dp))
+
+                    // Bottom bar — Like / Lyrics / Share
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(surfaceColor)
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Like
+                        IconButton(onClick = {
+                            song?.let { vm.toggleLike(it) }
+                        }) {
+                            Icon(
+                                imageVector = if (isLiked) Icons.Default.Favorite
+                                else Icons.Default.FavoriteBorder,
+                                contentDescription = "Like",
+                                tint = if (isLiked) Color.Red else textColor,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+
+                        // Lyrics
+                        Text(
+                            text = "LYRICS",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = textColor,
+                            modifier = Modifier.clickable { showLyrics = true }
+                        )
+
+                        // Share
+                        IconButton(onClick = {
+                            song?.let { s ->
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "https://www.youtube.com/watch?v=${s.id}"
+                                    )
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(shareIntent, "Share song")
+                                )
+                            }
+                        }) {
+                            Icon(
+                                Icons.Default.Share,
+                                contentDescription = "Share",
+                                tint = textColor,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -242,7 +327,6 @@ fun DashedProgressBar(
     modifier: Modifier = Modifier
 ) {
     val totalDashes = 30
-    val filledDashes = (progress * totalDashes).toInt()
     var barWidthPx by remember { mutableStateOf(0f) }
     var dragProgress by remember { mutableStateOf<Float?>(null) }
 
@@ -264,9 +348,7 @@ fun DashedProgressBar(
                         dragProgress?.let { onSeek(it) }
                         dragProgress = null
                     },
-                    onDragCancel = {
-                        dragProgress = null
-                    },
+                    onDragCancel = { dragProgress = null },
                     onHorizontalDrag = { _, dragAmount ->
                         if (barWidthPx > 0) {
                             val current = dragProgress ?: progress
