@@ -1,9 +1,6 @@
 package com.yt.lite.ui
 
 import android.content.Intent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,6 +29,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,7 +48,9 @@ fun AlbumScreen(
 ) {
     val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
-    val isSaved = vm.isAlbumSaved(album.id)
+    val isSaved by remember(vm.savedAlbums.collectAsState().value) {
+        derivedStateOf { vm.isAlbumSaved(album.id) }
+    }
 
     var albumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -58,11 +58,9 @@ fun AlbumScreen(
     var isSearching by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
-    val isScrolled by remember {
-        derivedStateOf {
-            listState.firstVisibleItemIndex > 0 ||
-            listState.firstVisibleItemScrollOffset > 100
-        }
+
+    val isHeaderCollapsed by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
@@ -70,14 +68,13 @@ fun AlbumScreen(
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
-    // Load album songs
     LaunchedEffect(album.id) {
         isLoading = true
         try {
-            val (_, songs) = com.yt.lite.api.Innertube.getAlbumSongs(album.id)
+            val (fetchedAlbum, songs) = com.yt.lite.api.Innertube.getAlbumSongs(album.id)
             albumSongs = songs
         } catch (e: Exception) {
-            android.util.Log.e("AlbumScreen", "Failed to load songs: ${e.message}")
+            android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
         } finally {
             isLoading = false
         }
@@ -96,166 +93,35 @@ fun AlbumScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Collapsing header
-        AnimatedVisibility(
-            visible = !isScrolled,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Album info
-                Row(
+        // Collapsed mini header
+        if (isHeaderCollapsed) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(bgColor)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AsyncImage(
+                    model = album.thumbnail,
+                    contentDescription = null,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AsyncImage(
-                        model = album.thumbnail,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(110.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-
-                    Spacer(Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = album.title,
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            color = textColor,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = album.artist,
-                            fontFamily = NothingFont,
-                            fontSize = 14.sp,
-                            color = subTextColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = formatTime(album.duration),
-                            fontFamily = NothingFont,
-                            fontSize = 13.sp,
-                            color = subTextColor
-                        )
-                    }
-                }
-
-                // Action row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    // Save + Share
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Save button
-                        Row(
-                            modifier = Modifier
-                                .clickable {
-                                    if (isSaved) vm.unsaveAlbum(album)
-                                    else vm.saveAlbum(album)
-                                }
-                                .padding(end = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (isSaved) Icons.Default.Bookmark
-                                else Icons.Default.BookmarkBorder,
-                                contentDescription = "Save",
-                                tint = textColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = if (isSaved) "Saved" else "Save",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = textColor
-                            )
-                        }
-
-                        // Share button
-                        Row(
-                            modifier = Modifier
-                                .clickable {
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(
-                                            Intent.EXTRA_TEXT,
-                                            album.youtubeUrl.ifBlank {
-                                                "https://www.youtube.com/playlist?list=${album.id}"
-                                            }
-                                        )
-                                    }
-                                    context.startActivity(
-                                        Intent.createChooser(shareIntent, "Share album")
-                                    )
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Share,
-                                contentDescription = "Share",
-                                tint = textColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = "Share",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = textColor
-                            )
-                        }
-                    }
-
-                    // Play button
-                    Box(
-                        modifier = Modifier
-                            .border(2.dp, textColor, RoundedCornerShape(6.dp))
-                            .clickable {
-                                if (albumSongs.isNotEmpty()) {
-                                    vm.playWithQueue(albumSongs.first(), albumSongs)
-                                }
-                            }
-                            .padding(horizontal = 20.dp, vertical = 8.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = "Play",
-                                tint = textColor,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                "Play",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = textColor
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-                DashedDivider(modifier = Modifier.fillMaxWidth())
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = album.title,
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = textColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
+            DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
         }
 
         // Search bar
@@ -268,11 +134,7 @@ fun AlbumScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .border(2.dp, Color.Red, RoundedCornerShape(8.dp)),
                 placeholder = {
-                    Text(
-                        "Search in album...",
-                        fontFamily = NothingFont,
-                        color = Color.Gray
-                    )
+                    Text("Search in album...", fontFamily = NothingFont, color = Color.Gray)
                 },
                 textStyle = androidx.compose.ui.text.TextStyle(
                     fontFamily = NothingFont,
@@ -291,7 +153,6 @@ fun AlbumScreen(
             )
         }
 
-        // Song list
         if (isLoading) {
             Box(
                 modifier = Modifier
@@ -301,42 +162,208 @@ fun AlbumScreen(
             ) {
                 CircularProgressIndicator(color = Color.Red)
             }
-        } else if (filteredSongs.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (searchQuery.isBlank()) "No songs found" else "No results",
-                    fontFamily = NothingFont,
-                    color = Color.Gray
-                )
-            }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 state = listState
             ) {
-                items(filteredSongs) { song ->
-                    val isLiked = likedSongs.any { it.id == song.id }
-                    SongItem(
-                        song = song,
-                        isDarkMode = isDarkMode,
-                        isLiked = isLiked,
-                        isInQueue = false,
-                        onClick = { vm.playWithQueue(song, albumSongs) },
-                        onAddToQueue = { vm.addToQueue(song) },
-                        onPlayNext = { vm.playNext(song) },
-                        onLike = { vm.toggleLike(song) },
-                        onShare = {}
-                    )
+                // Full header as first list item
+                item {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = album.thumbnail,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(110.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = album.title,
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp,
+                                    color = textColor,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = album.artist,
+                                    fontFamily = NothingFont,
+                                    fontSize = 14.sp,
+                                    color = subTextColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (album.duration > 0) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = formatTime(album.duration),
+                                        fontFamily = NothingFont,
+                                        fontSize = 13.sp,
+                                        color = subTextColor
+                                    )
+                                }
+                            }
+                        }
+
+                        // Action row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Save button
+                                Row(
+                                    modifier = Modifier
+                                        .clickable {
+                                            if (isSaved) vm.unsaveAlbum(album)
+                                            else vm.saveAlbum(album)
+                                        }
+                                        .padding(end = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (isSaved) Icons.Default.Bookmark
+                                        else Icons.Default.BookmarkBorder,
+                                        contentDescription = "Save",
+                                        tint = textColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isSaved) "Saved" else "Save",
+                                        fontFamily = NothingFont,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = textColor
+                                    )
+                                }
+
+                                // Share button
+                                Row(
+                                    modifier = Modifier
+                                        .clickable {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(
+                                                    Intent.EXTRA_TEXT,
+                                                    album.youtubeUrl.ifBlank {
+                                                        "https://www.youtube.com/playlist?list=${album.id}"
+                                                    }
+                                                )
+                                            }
+                                            context.startActivity(
+                                                Intent.createChooser(shareIntent, "Share album")
+                                            )
+                                        },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Share,
+                                        contentDescription = "Share",
+                                        tint = textColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = "Share",
+                                        fontFamily = NothingFont,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = textColor
+                                    )
+                                }
+                            }
+
+                            // Play button
+                            Box(
+                                modifier = Modifier
+                                    .border(2.dp, textColor, RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        if (albumSongs.isNotEmpty()) {
+                                            vm.playWithQueue(albumSongs.first(), albumSongs)
+                                        }
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.PlayArrow,
+                                        contentDescription = "Play",
+                                        tint = textColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        "Play",
+                                        fontFamily = NothingFont,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = textColor
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+                        DashedDivider(
+                            modifier = Modifier.fillMaxWidth(),
+                            isDarkMode = isDarkMode
+                        )
+                    }
+                }
+
+                if (filteredSongs.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 80.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (searchQuery.isBlank()) "No songs found"
+                                else "No results",
+                                fontFamily = NothingFont,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    items(filteredSongs) { song ->
+                        val isLiked = likedSongs.any { it.id == song.id }
+                        SongItem(
+                            song = song,
+                            isDarkMode = isDarkMode,
+                            isLiked = isLiked,
+                            isInQueue = false,
+                            onClick = { vm.playWithQueue(song, albumSongs) },
+                            onAddToQueue = { vm.addToQueue(song) },
+                            onPlayNext = { vm.playNext(song) },
+                            onLike = { vm.toggleLike(song) },
+                            onShare = {},
+                            onRetryCache = { vm.retryCache(song) },
+                            onRemoveLike = { vm.toggleLike(song) }
+                        )
+                    }
                 }
             }
         }
 
-        // Bottom bar
         AlbumScreenBottomBar(
             isDarkMode = isDarkMode,
             isSearching = isSearching,
