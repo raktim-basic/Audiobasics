@@ -8,12 +8,20 @@ import com.yt.lite.api.Innertube
 import com.yt.lite.data.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 object CacheManager {
 
     private const val CACHE_DIR = "audiobasics_cache"
     private const val MIN_STORAGE_BYTES = 1L * 1024 * 1024 * 1024 // 1GB
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
 
     fun getCacheDir(context: Context): File {
         val dir = File(context.filesDir, CACHE_DIR)
@@ -26,7 +34,8 @@ object CacheManager {
     }
 
     fun isCached(context: Context, songId: String): Boolean {
-        return getCacheFile(context, songId).exists()
+        val file = getCacheFile(context, songId)
+        return file.exists() && file.length() > 0
     }
 
     fun hasEnoughStorage(context: Context): Boolean {
@@ -36,7 +45,7 @@ object CacheManager {
             val available = stat.availableBlocksLong * stat.blockSizeLong
             available > MIN_STORAGE_BYTES
         } catch (e: Exception) {
-            true // assume enough if we can't check
+            true
         }
     }
 
@@ -50,6 +59,7 @@ object CacheManager {
     fun getCacheSizeString(context: Context): String {
         val bytes = getCacheSizeBytes(context)
         return when {
+            bytes <= 0 -> ""
             bytes < 1024 * 1024 -> "${bytes / 1024}KB"
             bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024.0))}MB"
             else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))}GB"
@@ -64,30 +74,53 @@ object CacheManager {
                 }
 
                 val cacheFile = getCacheFile(context, song.id)
-                if (cacheFile.exists()) {
+                if (cacheFile.exists() && cacheFile.length() > 0) {
                     return@withContext CacheResult.Success
                 }
 
-                val url = Innertube.getStreamUrl(context, song.id)
+                // Get stream URL
+                val streamUrl = Innertube.getStreamUrl(context, song.id)
                     ?: return@withContext CacheResult.Failed("Could not get stream URL")
 
-                val connection = java.net.URL(url).openConnection()
-                connection.connectTimeout = 15000
-                connection.readTimeout = 30000
-                connection.connect()
+                // Download using OkHttp
+                val request = Request.Builder()
+                    .url(streamUrl)
+                    .addHeader(
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    )
+                    .build()
 
-                val input = connection.getInputStream()
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    return@withContext CacheResult.Failed("HTTP ${response.code}")
+                }
+
+                val body = response.body
+                    ?: return@withContext CacheResult.Failed("Empty response")
+
                 val tempFile = File(getCacheDir(context), "${song.id}.tmp")
 
-                input.use { ins ->
-                    tempFile.outputStream().use { out ->
-                        ins.copyTo(out)
+                body.byteStream().use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
                     }
                 }
 
-                tempFile.renameTo(cacheFile)
-                Log.d("CacheManager", "Cached: ${song.title}")
-                CacheResult.Success
+                // Verify temp file has content
+                if (tempFile.length() == 0L) {
+                    tempFile.delete()
+                    return@withContext CacheResult.Failed("Downloaded file is empty")
+                }
+
+                // Rename to final file
+                if (tempFile.renameTo(cacheFile)) {
+                    Log.d("CacheManager", "Cached: ${song.title} (${cacheFile.length()} bytes)")
+                    CacheResult.Success
+                } else {
+                    tempFile.delete()
+                    CacheResult.Failed("Failed to save file")
+                }
 
             } catch (e: Exception) {
                 Log.e("CacheManager", "Cache failed for ${song.id}: ${e.message}")
@@ -102,11 +135,14 @@ object CacheManager {
             file.delete()
             Log.d("CacheManager", "Removed cache for: $songId")
         }
+        // Also clean up any temp files
+        val tempFile = File(getCacheDir(context), "$songId.tmp")
+        if (tempFile.exists()) tempFile.delete()
     }
 
     fun getCachedFilePath(context: Context, songId: String): String? {
         val file = getCacheFile(context, songId)
-        return if (file.exists()) file.absolutePath else null
+        return if (file.exists() && file.length() > 0) file.absolutePath else null
     }
 }
 
