@@ -28,6 +28,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.yt.lite.data.Album
 import com.yt.lite.ui.theme.NothingFont
 
 @Composable
@@ -35,7 +36,8 @@ fun SearchScreen(
     vm: MusicViewModel,
     isDarkMode: Boolean,
     onBack: () -> Unit,
-    onNavigateQueue: () -> Unit
+    onNavigateQueue: () -> Unit,
+    onAlbumClick: (Album) -> Unit
 ) {
     val results by vm.searchResults.collectAsState()
     val isSearching by vm.isSearching.collectAsState()
@@ -71,7 +73,7 @@ fun SearchScreen(
         ) {
             Spacer(Modifier.height(16.dp))
 
-            // Search box with red border
+            // Search box
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -106,23 +108,23 @@ fun SearchScreen(
             // YouTube link option
             Text(
                 text = buildAnnotatedString {
-                    withStyle(SpanStyle(
-                        fontFamily = NothingFont,
-                        color = textColor,
-                        fontSize = 13.sp,
-                        fontStyle = FontStyle.Italic
-                    )) {
-                        append("Cannot find the song?  ")
-                    }
-                    withStyle(SpanStyle(
-                        fontFamily = NothingFont,
-                        color = Color(0xFF1565C0),
-                        fontSize = 13.sp,
-                        fontStyle = FontStyle.Italic,
-                        textDecoration = TextDecoration.Underline
-                    )) {
-                        append("Try with YouTube link here.")
-                    }
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = NothingFont,
+                            color = textColor,
+                            fontSize = 13.sp,
+                            fontStyle = FontStyle.Italic
+                        )
+                    ) { append("Cannot find the song?  ") }
+                    withStyle(
+                        SpanStyle(
+                            fontFamily = NothingFont,
+                            color = Color(0xFF1565C0),
+                            fontSize = 13.sp,
+                            fontStyle = FontStyle.Italic,
+                            textDecoration = TextDecoration.Underline
+                        )
+                    ) { append("Try with YouTube link here.") }
                 },
                 modifier = Modifier.clickable { showLinkDialog = true }
             )
@@ -131,7 +133,9 @@ fun SearchScreen(
 
             if (isSearching) {
                 Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(color = Color.Red)
@@ -145,9 +149,18 @@ fun SearchScreen(
                             isDarkMode = isDarkMode,
                             isLiked = isLiked,
                             isInQueue = false,
+                            showMenu = !song.isAlbum,
                             onClick = {
                                 if (song.isAlbum) {
-                                    // navigate to album — handled by MainActivity
+                                    onAlbumClick(
+                                        Album(
+                                            id = song.id,
+                                            title = song.title,
+                                            artist = song.artist
+                                                .removePrefix("(Album) "),
+                                            thumbnail = song.thumbnail
+                                        )
+                                    )
                                 } else {
                                     vm.play(song)
                                 }
@@ -155,16 +168,15 @@ fun SearchScreen(
                             onAddToQueue = { vm.addToQueue(song) },
                             onPlayNext = { vm.playNext(song) },
                             onLike = { vm.toggleLike(song) },
-                            onShare = {
-                                // share handled in SongItem
-                            }
+                            onShare = {},
+                            onRetryCache = { vm.retryCache(song) },
+                            onRemoveLike = { vm.toggleLike(song) }
                         )
                     }
                 }
             }
         }
 
-        // Bottom bar
         SearchBottomBar(
             isDarkMode = isDarkMode,
             onBack = onBack,
@@ -267,11 +279,7 @@ fun PlayByLinkDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text(
-                            "Cancel",
-                            fontFamily = NothingFont,
-                            color = Color.Gray
-                        )
+                        Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
                     }
                     Spacer(Modifier.width(8.dp))
                     Box(
