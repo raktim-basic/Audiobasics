@@ -24,6 +24,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.yt.lite.data.Album
@@ -45,12 +48,11 @@ class MainActivity : ComponentActivity() {
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* permission result handled silently */ }
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Request notification permission on first launch (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     this,
@@ -64,6 +66,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: MusicViewModel = viewModel()
             val isDarkMode by vm.isDarkMode.collectAsState()
+
+            // Sync state every time app comes to foreground
+            val lifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        vm.syncState()
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
             AppTheme(darkTheme = isDarkMode) {
                 AudiobasicsApp(vm = vm, isDarkMode = isDarkMode)
             }
@@ -104,18 +121,14 @@ fun AudiobasicsApp(vm: MusicViewModel, isDarkMode: Boolean) {
         }
     }
 
-    // Native back button support
     BackHandler(enabled = screenStack.size > 1) {
         navigateBack()
     }
 
-    // Storage low popup
     if (showStorageLow) {
         AlertDialog(
             onDismissRequest = { vm.dismissStorageLow() },
-            title = {
-                Text("Storage Low", fontFamily = NothingFont)
-            },
+            title = { Text("Storage Low", fontFamily = NothingFont) },
             text = {
                 Text(
                     "Cannot cache song — less than 1GB storage available.",
@@ -130,7 +143,6 @@ fun AudiobasicsApp(vm: MusicViewModel, isDarkMode: Boolean) {
         )
     }
 
-    // Player dialog
     if (showPlayerDialog && currentSong != null) {
         PlayerDialog(
             vm = vm,
@@ -144,14 +156,14 @@ fun AudiobasicsApp(vm: MusicViewModel, isDarkMode: Boolean) {
             AnimatedContent(
                 targetState = currentScreen,
                 transitionSpec = {
-                    val isGoingDeeper = targetState !is Screen.Home ||
-                            initialState is Screen.Home
-                    if (isGoingDeeper) {
-                        (scaleIn(initialScale = 0.92f) + fadeIn()) togetherWith
-                                (scaleOut(targetScale = 0.92f) + fadeOut())
+                    val goingDeeper = screenStack.size > 1 &&
+                            targetState != Screen.Home
+                    if (goingDeeper) {
+                        (scaleIn(initialScale = 0.93f) + fadeIn()) togetherWith
+                                (scaleOut(targetScale = 0.97f) + fadeOut())
                     } else {
-                        (scaleIn(initialScale = 1.08f) + fadeIn()) togetherWith
-                                (scaleOut(targetScale = 1.08f) + fadeOut())
+                        (scaleIn(initialScale = 1.03f) + fadeIn()) togetherWith
+                                (scaleOut(targetScale = 1.07f) + fadeOut())
                     }
                 },
                 label = "screen_transition"
@@ -206,7 +218,6 @@ fun AudiobasicsApp(vm: MusicViewModel, isDarkMode: Boolean) {
             }
         }
 
-        // Mini player
         currentSong?.let { song ->
             val isLiked = likedSongs.any { it.id == song.id }
             PlayerBar(
