@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -36,12 +37,10 @@ fun QueueScreen(
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
 
-    // Drag state
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetY by remember { mutableStateOf(0f) }
     var targetIndex by remember { mutableStateOf<Int?>(null) }
-    val itemHeightPx = remember { mutableStateOf(0f) }
-    val listState = rememberLazyListState()
+    var itemHeightPx by remember { mutableStateOf(80f) }
 
     Column(
         modifier = Modifier
@@ -100,7 +99,7 @@ fun QueueScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                state = listState
+                state = rememberLazyListState()
             ) {
                 itemsIndexed(
                     items = queue,
@@ -114,6 +113,11 @@ fun QueueScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .onGloballyPositioned { coords ->
+                                if (index == 0) {
+                                    itemHeightPx = coords.size.height.toFloat()
+                                }
+                            }
                             .zIndex(if (isDragging) 1f else 0f)
                             .graphicsLayer {
                                 translationY = if (isDragging) dragOffsetY else 0f
@@ -133,47 +137,41 @@ fun QueueScreen(
                                     else -> Color.Transparent
                                 }
                             )
-                            .onGloballyPositioned { coords ->
-                                if (index == 0) {
-                                    itemHeightPx.value = coords.size.height.toFloat()
-                                }
-                            }
-                            .pointerInput(index) {
-                                if (draggingIndex == index) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            draggingIndex = index
-                                            dragOffsetY = 0f
-                                        },
-                                        onDrag = { _, dragAmount ->
-                                            dragOffsetY += dragAmount.y
-                                            val h = itemHeightPx.value
-                                                .takeIf { it > 0 } ?: 80f
-                                            val newTarget = (index + (dragOffsetY / h)
-                                                .toInt())
-                                                .coerceIn(0, queue.size - 1)
-                                            targetIndex = newTarget
-                                        },
-                                        onDragEnd = {
-                                            val from = draggingIndex
-                                            val to = targetIndex
-                                            if (from != null && to != null && from != to) {
-                                                vm.reorderQueue(from, to)
+                            .then(
+                                if (isDragging) {
+                                    Modifier.pointerInput(index) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                dragOffsetY = 0f
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                dragOffsetY += dragAmount.y
+                                                val h = itemHeightPx.takeIf { it > 0 } ?: 80f
+                                                val newTarget = (index + (dragOffsetY / h).toInt())
+                                                    .coerceIn(0, queue.size - 1)
+                                                targetIndex = newTarget
+                                            },
+                                            onDragEnd = {
+                                                val from = draggingIndex
+                                                val to = targetIndex
+                                                if (from != null && to != null && from != to) {
+                                                    vm.reorderQueue(from, to)
+                                                }
+                                                draggingIndex = null
+                                                dragOffsetY = 0f
+                                                targetIndex = null
+                                            },
+                                            onDragCancel = {
+                                                draggingIndex = null
+                                                dragOffsetY = 0f
+                                                targetIndex = null
                                             }
-                                            draggingIndex = null
-                                            dragOffsetY = 0f
-                                            targetIndex = null
-                                        },
-                                        onDragCancel = {
-                                            draggingIndex = null
-                                            dragOffsetY = 0f
-                                            targetIndex = null
-                                        }
-                                    )
-                                }
-                            }
+                                        )
+                                    }
+                                } else Modifier
+                            )
                     ) {
-                        // Current song red bar
                         if (isCurrentSong) {
                             Box(
                                 modifier = Modifier
@@ -194,7 +192,6 @@ fun QueueScreen(
                             onShare = {},
                             onRemoveFromQueue = { vm.removeFromQueue(song) },
                             onReorder = {
-                                // Activate drag mode for this item
                                 draggingIndex = index
                                 dragOffsetY = 0f
                             },
