@@ -68,8 +68,11 @@ fun HomeScreen(
             )
         }
 
-        // Dashed divider
-        DashedDivider(modifier = Modifier.fillMaxWidth())
+        // Dashed divider — red + white in dark, red + black in light
+        DashedDivider(
+            modifier = Modifier.fillMaxWidth(),
+            isDarkMode = isDarkMode
+        )
 
         Spacer(Modifier.weight(1f))
 
@@ -87,7 +90,7 @@ fun HomeScreen(
                 Icon(
                     Icons.Default.Bookmark,
                     contentDescription = null,
-                    tint = Color.Black,
+                    tint = Color.White,
                     modifier = Modifier.size(28.dp)
                 )
                 Spacer(Modifier.width(12.dp))
@@ -135,7 +138,7 @@ fun HomeScreen(
                         fontSize = 20.sp,
                         color = Color.White
                     )
-                    if (cacheSize.isNotBlank() && cacheSize != "0KB") {
+                    if (cacheSize.isNotBlank()) {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = cacheSize,
@@ -207,7 +210,12 @@ fun HomeBottomBar(
 }
 
 @Composable
-fun DashedDivider(modifier: Modifier = Modifier) {
+fun DashedDivider(
+    modifier: Modifier = Modifier,
+    isDarkMode: Boolean = false
+) {
+    val secondColor = if (isDarkMode) Color.White else Color.Black
+
     Canvas(modifier = modifier.height(12.dp)) {
         val totalWidth = size.width
         val halfWidth = totalWidth / 2f
@@ -215,7 +223,6 @@ fun DashedDivider(modifier: Modifier = Modifier) {
         val dashWidth = 16f
         val dashGap = 8f
 
-        // Red half
         drawLine(
             color = Color.Red,
             start = Offset(0f, y),
@@ -224,9 +231,8 @@ fun DashedDivider(modifier: Modifier = Modifier) {
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
         )
 
-        // Black half
         drawLine(
-            color = Color.Black,
+            color = secondColor,
             start = Offset(halfWidth, y),
             end = Offset(totalWidth, y),
             strokeWidth = 3f,
