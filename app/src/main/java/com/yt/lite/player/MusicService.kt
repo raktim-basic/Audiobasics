@@ -31,19 +31,17 @@ class MusicService : MediaSessionService() {
             .setConnectTimeoutMs(15000)
             .setReadTimeoutMs(15000)
 
-        val combinedFactory = DataSource.Factory {
-            FileDataSource()
+        // Factory that picks file or http based on URI scheme
+        val uriAwareFactory = DataSource.Factory {
+            httpFactory.createDataSource()
         }
 
-        val finalFactory = ResolvingDataSource.Factory(
-            DataSource.Factory {
-                httpFactory.createDataSource()
-            }
-        ) { dataSpec ->
+        val resolvingFactory = ResolvingDataSource.Factory(uriAwareFactory) { dataSpec ->
             val uriString = dataSpec.uri.toString()
             when {
                 uriString.startsWith("file://") -> {
-                    dataSpec.withUri(Uri.parse(uriString))
+                    // Already a local file — no resolution needed
+                    dataSpec
                 }
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
                     val videoId = extractVideoId(uriString)
@@ -59,34 +57,37 @@ class MusicService : MediaSessionService() {
             }
         }
 
-        val smartFactory = DataSource.Factory {
+        // Wrap with a factory that routes file:// to FileDataSource
+        val finalFactory = DataSource.Factory {
             object : androidx.media3.datasource.DataSource {
-                private var inner: androidx.media3.datasource.DataSource? = null
+                private var delegate: androidx.media3.datasource.DataSource =
+                    httpFactory.createDataSource()
 
                 override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
-                    val uri = dataSpec.uri.toString()
-                    inner = if (uri.startsWith("file://")) {
+                    delegate = if (dataSpec.uri.scheme == "file") {
                         FileDataSource()
                     } else {
                         httpFactory.createDataSource()
                     }
-                    return inner!!.open(dataSpec)
+                    return delegate.open(dataSpec)
                 }
 
                 override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
-                    inner!!.read(buffer, offset, length)
+                    delegate.read(buffer, offset, length)
 
-                override fun getUri(): Uri? = inner?.uri
+                override fun getUri(): Uri? = delegate.uri
 
-                override fun close() = inner?.close() ?: Unit
+                override fun close() = delegate.close()
 
                 override fun addTransferListener(
-                    transferListener: com.google.android.exoplayer2.upstream.TransferListener
-                ) {}
+                    transferListener: androidx.media3.datasource.TransferListener
+                ) {
+                    delegate.addTransferListener(transferListener)
+                }
             }
         }
 
-        val resolvingSmartFactory = ResolvingDataSource.Factory(smartFactory) { dataSpec ->
+        val finalResolvingFactory = ResolvingDataSource.Factory(finalFactory) { dataSpec ->
             val uriString = dataSpec.uri.toString()
             when {
                 uriString.startsWith("file://") -> dataSpec
@@ -112,7 +113,7 @@ class MusicService : MediaSessionService() {
                     .build(),
                 true
             )
-            .setMediaSourceFactory(DefaultMediaSourceFactory(finalFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(finalResolvingFactory))
             .setHandleAudioBecomingNoisy(true)
             .build()
 
