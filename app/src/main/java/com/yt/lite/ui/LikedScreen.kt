@@ -1,8 +1,5 @@
 package com.yt.lite.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,8 +42,10 @@ fun LikedScreen(
     var isSearching by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
-    val isScrolled by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 100 }
+
+    // Header is collapsed only when user has actually scrolled past it
+    val isHeaderCollapsed by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
@@ -66,86 +65,34 @@ fun LikedScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Collapsing header
-        AnimatedVisibility(
-            visible = !isScrolled,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Favorite,
-                        contentDescription = null,
-                        tint = Color.Red,
-                        modifier = Modifier.size(90.dp)
-                    )
-
-                    Spacer(Modifier.width(16.dp))
-
-                    Column {
-                        Text(
-                            text = "Liked Songs (${likedSongs.size})",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            color = textColor
-                        )
-                        if (cacheSize.isNotBlank() && cacheSize != "0KB") {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = cacheSize,
-                                fontFamily = NothingFont,
-                                fontSize = 14.sp,
-                                color = Color.Gray
-                            )
-                        }
-                    }
-                }
-
-                // Shuffle button
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .border(2.dp, textColor, RoundedCornerShape(6.dp))
-                            .clickable { vm.shuffleLiked() }
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Shuffle,
-                                contentDescription = "Shuffle",
-                                tint = textColor,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "Shuffle",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = textColor
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-                DashedDivider(modifier = Modifier.fillMaxWidth())
+        // Collapsed mini header shown when scrolled
+        if (isHeaderCollapsed) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(bgColor)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Favorite,
+                    contentDescription = null,
+                    tint = Color.Red,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Liked Songs (${likedSongs.size})",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = textColor
+                )
             }
+            DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
         }
 
-        // Search bar (only when searching)
+        // Search bar
         if (isSearching) {
             OutlinedTextField(
                 value = searchQuery,
@@ -155,11 +102,7 @@ fun LikedScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .border(2.dp, Color.Red, RoundedCornerShape(8.dp)),
                 placeholder = {
-                    Text(
-                        "Search liked songs...",
-                        fontFamily = NothingFont,
-                        color = Color.Gray
-                    )
+                    Text("Search liked songs...", fontFamily = NothingFont, color = Color.Gray)
                 },
                 textStyle = androidx.compose.ui.text.TextStyle(
                     fontFamily = NothingFont,
@@ -178,28 +121,104 @@ fun LikedScreen(
             )
         }
 
-        // Song list
         LazyColumn(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
+            // Full header as first item in list
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Favorite,
+                            contentDescription = null,
+                            tint = Color.Red,
+                            modifier = Modifier.size(90.dp)
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = "Liked Songs (${likedSongs.size})",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp,
+                                color = textColor
+                            )
+                            if (cacheSize.isNotBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = cacheSize,
+                                    fontFamily = NothingFont,
+                                    fontSize = 14.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+
+                    // Shuffle button
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .border(2.dp, textColor, RoundedCornerShape(6.dp))
+                                .clickable { vm.shuffleLiked() }
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Shuffle,
+                                    contentDescription = "Shuffle",
+                                    tint = textColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "Shuffle",
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = textColor
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    DashedDivider(
+                        modifier = Modifier.fillMaxWidth(),
+                        isDarkMode = isDarkMode
+                    )
+                }
+            }
+
+            // Songs
             items(filteredSongs) { song ->
-                val isLiked = true
                 SongItem(
                     song = song,
                     isDarkMode = isDarkMode,
-                    isLiked = isLiked,
+                    isLiked = true,
                     isInQueue = false,
                     onClick = { vm.playWithQueue(song, filteredSongs) },
                     onAddToQueue = { vm.addToQueue(song) },
                     onPlayNext = { vm.playNext(song) },
                     onLike = { vm.toggleLike(song) },
-                    onShare = {}
+                    onShare = {},
+                    onRetryCache = { vm.retryCache(song) },
+                    onRemoveLike = { vm.toggleLike(song) }
                 )
             }
         }
 
-        // Bottom bar
         LikedBottomBar(
             isDarkMode = isDarkMode,
             isSearching = isSearching,
@@ -241,7 +260,6 @@ fun LikedBottomBar(
             )
         }
 
-        // Search LIKED button
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
