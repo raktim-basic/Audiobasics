@@ -18,8 +18,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -80,7 +83,6 @@ fun SongItem(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Thumbnail
         AsyncImage(
             model = song.thumbnail,
             contentDescription = null,
@@ -92,7 +94,6 @@ fun SongItem(
 
         Spacer(Modifier.width(12.dp))
 
-        // Title + Artist
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
@@ -103,18 +104,43 @@ fun SongItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+
+            // Artist line — show (e) tag before artist if explicit
             Text(
-                text = song.artist,
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Normal,
-                fontSize = 12.sp,
-                color = subTextColor,
+                text = buildAnnotatedString {
+                    if (song.isExplicit) {
+                        withStyle(
+                            SpanStyle(
+                                color = Color(0xFFAAAAAA),
+                                fontFamily = NothingFont,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                background = if (isDarkMode)
+                                    Color(0xFF333333) else Color(0xFFE0E0E0)
+                            )
+                        ) {
+                            append(" e ")
+                        }
+                        withStyle(SpanStyle(color = subTextColor)) {
+                            append("  ")
+                        }
+                    }
+                    withStyle(
+                        SpanStyle(
+                            color = subTextColor,
+                            fontFamily = NothingFont,
+                            fontSize = 12.sp
+                        )
+                    ) {
+                        append(song.artist)
+                    }
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
 
-        // Broken heart indicator — only show, don't intercept click
+        // Broken heart — only when liked and cache failed
         if (isLiked && song.cacheFailed) {
             IconButton(onClick = { showBrokenHeartDialog = true }) {
                 Icon(
@@ -126,7 +152,7 @@ fun SongItem(
             }
         }
 
-        // 3 dots menu — hidden for albums outside queue
+        // 3 dots menu
         if (showMenu) {
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
@@ -142,21 +168,18 @@ fun SongItem(
                     onDismissRequest = { menuExpanded = false }
                 ) {
                     if (isInQueue) {
-                        // Queue options
                         DropdownMenuItem(
                             text = { Text("Share", fontFamily = NothingFont) },
                             onClick = {
                                 menuExpanded = false
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                val i = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(
                                         Intent.EXTRA_TEXT,
                                         "https://www.youtube.com/watch?v=${song.id}"
                                     )
                                 }
-                                context.startActivity(
-                                    Intent.createChooser(shareIntent, "Share song")
-                                )
+                                context.startActivity(Intent.createChooser(i, "Share song"))
                             }
                         )
                         DropdownMenuItem(
@@ -200,21 +223,18 @@ fun SongItem(
                             }
                         )
                     } else {
-                        // Global options
                         DropdownMenuItem(
                             text = { Text("Share", fontFamily = NothingFont) },
                             onClick = {
                                 menuExpanded = false
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                val i = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(
                                         Intent.EXTRA_TEXT,
                                         "https://www.youtube.com/watch?v=${song.id}"
                                     )
                                 }
-                                context.startActivity(
-                                    Intent.createChooser(shareIntent, "Share song")
-                                )
+                                context.startActivity(Intent.createChooser(i, "Share song"))
                             }
                         )
                         DropdownMenuItem(
