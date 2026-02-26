@@ -39,7 +39,10 @@ fun SongItem(
     onLike: () -> Unit,
     onShare: () -> Unit,
     onRemoveFromQueue: (() -> Unit)? = null,
-    onReorder: (() -> Unit)? = null
+    onReorder: (() -> Unit)? = null,
+    onRetryCache: (() -> Unit)? = null,
+    onRemoveLike: (() -> Unit)? = null,
+    showMenu: Boolean = !song.isAlbum || isInQueue
 ) {
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
@@ -49,7 +52,6 @@ fun SongItem(
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
-    // Broken heart dialog
     if (showBrokenHeartDialog) {
         BrokenHeartDialog(
             song = song,
@@ -59,13 +61,13 @@ fun SongItem(
                 showBrokenHeartDialog = false
                 onClick()
             },
-            onRetryLike = {
+            onRetryCache = {
                 showBrokenHeartDialog = false
-                onLike()
+                onRetryCache?.invoke()
             },
             onRemoveLike = {
                 showBrokenHeartDialog = false
-                onLike()
+                onRemoveLike?.invoke()
             }
         )
     }
@@ -74,13 +76,7 @@ fun SongItem(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
-            .clickable {
-                if (song.cacheFailed && isLiked) {
-                    showBrokenHeartDialog = true
-                } else {
-                    onClick()
-                }
-            }
+            .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -118,7 +114,7 @@ fun SongItem(
             )
         }
 
-        // Broken heart / like indicator
+        // Broken heart indicator — only show, don't intercept click
         if (isLiked && song.cacheFailed) {
             IconButton(onClick = { showBrokenHeartDialog = true }) {
                 Icon(
@@ -130,131 +126,135 @@ fun SongItem(
             }
         }
 
-        // 3 dots menu
-        Box {
-            IconButton(onClick = { menuExpanded = true }) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "Options",
-                    tint = subTextColor
-                )
-            }
+        // 3 dots menu — hidden for albums outside queue
+        if (showMenu) {
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = subTextColor
+                    )
+                }
 
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                if (isInQueue) {
-                    // Queue-specific options
-                    DropdownMenuItem(
-                        text = {
-                            Text("Share", fontFamily = NothingFont)
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(
-                                    Intent.EXTRA_TEXT,
-                                    "https://www.youtube.com/watch?v=${song.id}"
-                                )
-                            }
-                            context.startActivity(
-                                Intent.createChooser(shareIntent, "Share song")
-                            )
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (isLiked) "Unlike" else "Like",
-                                fontFamily = NothingFont
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                if (isLiked) Icons.Default.Favorite
-                                else Icons.Default.FavoriteBorder,
-                                contentDescription = null,
-                                tint = if (isLiked) Color.Red else subTextColor
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onLike()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Reorder", fontFamily = NothingFont) },
-                        onClick = {
-                            menuExpanded = false
-                            onReorder?.invoke()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text("Remove from queue", fontFamily = NothingFont, color = Color.Red)
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onRemoveFromQueue?.invoke()
-                        }
-                    )
-                } else {
-                    // Global options
-                    DropdownMenuItem(
-                        text = { Text("Share", fontFamily = NothingFont) },
-                        onClick = {
-                            menuExpanded = false
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(
-                                    Intent.EXTRA_TEXT,
-                                    "https://www.youtube.com/watch?v=${song.id}"
-                                )
-                            }
-                            context.startActivity(
-                                Intent.createChooser(shareIntent, "Share song")
-                            )
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (isLiked) "Unlike" else "Like",
-                                fontFamily = NothingFont
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                if (isLiked) Icons.Default.Favorite
-                                else Icons.Default.FavoriteBorder,
-                                contentDescription = null,
-                                tint = if (isLiked) Color.Red else subTextColor
-                            )
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onLike()
-                        }
-                    )
-                    onPlayNext?.let {
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    if (isInQueue) {
+                        // Queue options
                         DropdownMenuItem(
-                            text = { Text("Play next", fontFamily = NothingFont) },
+                            text = { Text("Share", fontFamily = NothingFont) },
                             onClick = {
                                 menuExpanded = false
-                                it()
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "https://www.youtube.com/watch?v=${song.id}"
+                                    )
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(shareIntent, "Share song")
+                                )
                             }
                         )
-                    }
-                    onAddToQueue?.let {
                         DropdownMenuItem(
-                            text = { Text("Add to queue", fontFamily = NothingFont) },
+                            text = {
+                                Text(
+                                    if (isLiked) "Unlike" else "Like",
+                                    fontFamily = NothingFont
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isLiked) Icons.Default.Favorite
+                                    else Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (isLiked) Color.Red else subTextColor
+                                )
+                            },
                             onClick = {
                                 menuExpanded = false
-                                it()
+                                onLike()
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Reorder", fontFamily = NothingFont) },
+                            onClick = {
+                                menuExpanded = false
+                                onReorder?.invoke()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "Remove from queue",
+                                    fontFamily = NothingFont,
+                                    color = Color.Red
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onRemoveFromQueue?.invoke()
+                            }
+                        )
+                    } else {
+                        // Global options
+                        DropdownMenuItem(
+                            text = { Text("Share", fontFamily = NothingFont) },
+                            onClick = {
+                                menuExpanded = false
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "https://www.youtube.com/watch?v=${song.id}"
+                                    )
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(shareIntent, "Share song")
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isLiked) "Unlike" else "Like",
+                                    fontFamily = NothingFont
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isLiked) Icons.Default.Favorite
+                                    else Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (isLiked) Color.Red else subTextColor
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onLike()
+                            }
+                        )
+                        onPlayNext?.let {
+                            DropdownMenuItem(
+                                text = { Text("Play next", fontFamily = NothingFont) },
+                                onClick = {
+                                    menuExpanded = false
+                                    it()
+                                }
+                            )
+                        }
+                        onAddToQueue?.let {
+                            DropdownMenuItem(
+                                text = { Text("Add to queue", fontFamily = NothingFont) },
+                                onClick = {
+                                    menuExpanded = false
+                                    it()
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -268,7 +268,7 @@ fun BrokenHeartDialog(
     isDarkMode: Boolean,
     onDismiss: () -> Unit,
     onPlayOnline: () -> Unit,
-    onRetryLike: () -> Unit,
+    onRetryCache: () -> Unit,
     onRemoveLike: () -> Unit
 ) {
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
@@ -300,7 +300,7 @@ fun BrokenHeartDialog(
                     )
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
 
                 Text(
                     text = song.title,
@@ -313,7 +313,6 @@ fun BrokenHeartDialog(
 
                 Spacer(Modifier.height(16.dp))
 
-                // Play online
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -333,13 +332,14 @@ fun BrokenHeartDialog(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Retry like
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0))
-                        .clickable { onRetryLike() }
+                        .background(
+                            if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
+                        )
+                        .clickable { onRetryCache() }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -353,12 +353,13 @@ fun BrokenHeartDialog(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Remove like
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0))
+                        .background(
+                            if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
+                        )
                         .clickable { onRemoveLike() }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
