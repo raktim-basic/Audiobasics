@@ -1,8 +1,5 @@
 package com.yt.lite.ui
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,7 +26,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.core.app.NotificationCompat
 import com.yt.lite.ui.theme.NothingFont
 
 @Composable
@@ -41,6 +37,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
     val cacheSize by vm.cacheSize.collectAsState()
+    val cacheProgress by vm.cacheProgress.collectAsState()
 
     var showUpdater by remember { mutableStateOf(false) }
     var showImportWarning by remember { mutableStateOf(false) }
@@ -51,14 +48,12 @@ fun SettingsScreen(
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
 
-    // Export launcher
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let { vm.exportData(context, it) }
     }
 
-    // Import launcher
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -125,7 +120,7 @@ fun SettingsScreen(
         }
     }
 
-    // Updater screen
+    // Updater dialog
     if (showUpdater) {
         Dialog(onDismissRequest = { showUpdater = false }) {
             Box(
@@ -162,19 +157,23 @@ fun SettingsScreen(
             )
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth())
+        DashedDivider(
+            modifier = Modifier.fillMaxWidth(),
+            isDarkMode = isDarkMode
+        )
 
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
 
-            // Dark mode toggle
+            // Dark mode
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = if (isDarkMode) "Light Mode" else "Dark Mode",
-                    subtitle = if (isDarkMode) "Switch to light theme" else "Switch to dark theme",
+                    subtitle = if (isDarkMode) "Switch to light theme"
+                    else "Switch to dark theme",
                     icon = {
                         Icon(
                             imageVector = if (isDarkMode) Icons.Default.LightMode
@@ -188,10 +187,9 @@ fun SettingsScreen(
                 )
             }
 
-            // Divider
             item { SettingsDivider(isDarkMode) }
 
-            // Cache section header
+            // Cache header
             item {
                 Text(
                     text = "CACHE",
@@ -203,43 +201,76 @@ fun SettingsScreen(
                 )
             }
 
-            // Cache size display
+            // Cache size
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Cache Size",
-                    subtitle = if (cacheSize.isBlank() || cacheSize == "0KB") "No cache"
-                    else cacheSize,
+                    subtitle = if (cacheSize.isBlank()) "No cache" else cacheSize,
                     icon = {},
                     onClick = {}
                 )
             }
 
-            // Cache all liked
+            // Cache all liked — with progress
             item {
+                val uncachedCount = likedSongs.count { !it.isCached }
+                val isCurrentlyCaching = cacheProgress != null
+
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Cache All Liked Songs",
-                    subtitle = "${likedSongs.count { !it.isCached }} songs not cached",
+                    subtitle = when {
+                        isCurrentlyCaching -> {
+                            val (done, total) = cacheProgress!!
+                            val percent = if (total > 0)
+                                ((done.toFloat() / total.toFloat()) * 100).toInt()
+                            else 0
+                            "Caching... $done / $total ($percent%)"
+                        }
+                        uncachedCount == 0 -> "All songs cached!"
+                        else -> "$uncachedCount songs not cached"
+                    },
                     icon = {
-                        Icon(
-                            Icons.Default.Download,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        if (isCurrentlyCaching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.Red
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     },
                     onClick = {
-                        vm.cacheAllLiked()
-                        showCacheNotification(context, likedSongs.count { !it.isCached })
+                        if (!isCurrentlyCaching) vm.cacheAllLiked()
                     }
                 )
+
+                // Progress bar
+                if (isCurrentlyCaching) {
+                    val (done, total) = cacheProgress!!
+                    val progress = if (total > 0) done.toFloat() / total.toFloat() else 0f
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                        color = Color.Red,
+                        trackColor = if (isDarkMode) Color(0xFF333333)
+                        else Color(0xFFE0E0E0)
+                    )
+                }
             }
 
-            // Divider
             item { SettingsDivider(isDarkMode) }
 
-            // Data section header
+            // Data header
             item {
                 Text(
                     text = "DATA",
@@ -265,9 +296,7 @@ fun SettingsScreen(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = {
-                        exportLauncher.launch("audiobasics_backup.json")
-                    }
+                    onClick = { exportLauncher.launch("audiobasics_backup.json") }
                 )
             }
 
@@ -285,16 +314,13 @@ fun SettingsScreen(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = {
-                        importLauncher.launch(arrayOf("application/json"))
-                    }
+                    onClick = { importLauncher.launch(arrayOf("application/json")) }
                 )
             }
 
-            // Divider
             item { SettingsDivider(isDarkMode) }
 
-            // Version section header
+            // Version header
             item {
                 Text(
                     text = "VERSION AND UPDATE",
@@ -311,7 +337,7 @@ fun SettingsScreen(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Updater",
-                    subtitle = "Check for NewPipe Extractor updates",
+                    subtitle = "Check for updates",
                     icon = {
                         Icon(
                             Icons.Default.ArrowForward,
@@ -329,7 +355,7 @@ fun SettingsScreen(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "App Version",
-                    subtitle = "2.0.0",
+                    subtitle = "2.0",
                     icon = {},
                     onClick = {}
                 )
@@ -405,28 +431,8 @@ fun SettingsDivider(isDarkMode: Boolean) {
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFEEEEEE))
+            .background(
+                if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFEEEEEE)
+            )
     )
-}
-
-private fun showCacheNotification(context: Context, count: Int) {
-    if (count == 0) return
-    val channelId = "cache_channel"
-    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    val channel = NotificationChannel(
-        channelId,
-        "Cache Progress",
-        NotificationManager.IMPORTANCE_LOW
-    )
-    manager.createNotificationChannel(channel)
-
-    val notification = NotificationCompat.Builder(context, channelId)
-        .setSmallIcon(android.R.drawable.ic_media_play)
-        .setContentTitle("Caching songs")
-        .setContentText("Caching $count liked songs in background")
-        .setPriority(NotificationCompat.PRIORITY_LOW)
-        .setAutoCancel(true)
-        .build()
-
-    manager.notify(1001, notification)
 }
