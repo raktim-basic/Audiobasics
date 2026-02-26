@@ -2,11 +2,11 @@ package com.yt.lite.player
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.ResolvingDataSource
@@ -26,21 +26,24 @@ class MusicService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0")
             .setConnectTimeoutMs(15000)
             .setReadTimeoutMs(15000)
 
-        val resolvingFactory = ResolvingDataSource.Factory(httpDataSourceFactory) { dataSpec ->
-            val uri = dataSpec.uri
-            val uriString = uri.toString()
+        val dataSourceFactory = DataSource.Factory {
+            val httpDataSource = httpFactory.createDataSource()
+            httpDataSource
+        }
 
+        val resolvingFactory = ResolvingDataSource.Factory(dataSourceFactory) { dataSpec ->
+            val uriString = dataSpec.uri.toString()
             when {
-                // Cached file — use FileDataSource
                 uriString.startsWith("file://") -> {
-                    dataSpec
+                    // Use file data source for cached files
+                    val filePath = uriString.removePrefix("file://")
+                    dataSpec.withUri(Uri.parse("file://$filePath"))
                 }
-                // YouTube stub URL — resolve real stream
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
                     val videoId = extractVideoId(uriString)
                     if (videoId != null) {
@@ -48,7 +51,7 @@ class MusicService : MediaSessionService() {
                             Innertube.getStreamUrl(this@MusicService, videoId)
                         }
                         if (realUrl != null) {
-                            dataSpec.withUri(android.net.Uri.parse(realUrl))
+                            dataSpec.withUri(Uri.parse(realUrl))
                         } else {
                             dataSpec
                         }
@@ -60,19 +63,17 @@ class MusicService : MediaSessionService() {
             }
         }
 
-        // We need a factory that can handle both file:// and http(s)://
-        val combinedFactory = ResolvingDataSource.Factory(
-            { dataSpec ->
-                val uri = dataSpec.uri.toString()
-                if (uri.startsWith("file://")) {
-                    FileDataSource()
-                } else {
-                    httpDataSourceFactory.createDataSource()
-                }
+        val combinedFactory = DataSource.Factory {
+            val uri = it?.uri?.toString() ?: ""
+            if (uri.startsWith("file://")) {
+                FileDataSource()
+            } else {
+                httpFactory.createDataSource()
             }
-        ) { dataSpec ->
-            val uri = dataSpec.uri
-            val uriString = uri.toString()
+        }
+
+        val finalFactory = ResolvingDataSource.Factory(combinedFactory) { dataSpec ->
+            val uriString = dataSpec.uri.toString()
             when {
                 uriString.startsWith("file://") -> dataSpec
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
@@ -81,9 +82,8 @@ class MusicService : MediaSessionService() {
                         val realUrl = runBlocking {
                             Innertube.getStreamUrl(this@MusicService, videoId)
                         }
-                        if (realUrl != null) {
-                            dataSpec.withUri(android.net.Uri.parse(realUrl))
-                        } else dataSpec
+                        if (realUrl != null) dataSpec.withUri(Uri.parse(realUrl))
+                        else dataSpec
                     } else dataSpec
                 }
                 else -> dataSpec
@@ -98,9 +98,7 @@ class MusicService : MediaSessionService() {
                     .build(),
                 true
             )
-            .setMediaSourceFactory(
-                DefaultMediaSourceFactory(combinedFactory)
-            )
+            .setMediaSourceFactory(DefaultMediaSourceFactory(finalFactory))
             .setHandleAudioBecomingNoisy(true)
             .build()
 
