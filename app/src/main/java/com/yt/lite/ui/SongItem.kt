@@ -18,11 +18,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -54,6 +51,8 @@ fun SongItem(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
+    val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
 
     if (showBrokenHeartDialog) {
         BrokenHeartDialog(
@@ -83,6 +82,7 @@ fun SongItem(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Thumbnail
         AsyncImage(
             model = song.thumbnail,
             contentDescription = null,
@@ -94,6 +94,7 @@ fun SongItem(
 
         Spacer(Modifier.width(12.dp))
 
+        // Title + Artist row
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
@@ -105,42 +106,41 @@ fun SongItem(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Artist line — show (e) tag before artist if explicit
-            Text(
-                text = buildAnnotatedString {
-                    if (song.isExplicit) {
-                        withStyle(
-                            SpanStyle(
-                                color = Color(0xFFAAAAAA),
-                                fontFamily = NothingFont,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                background = if (isDarkMode)
-                                    Color(0xFF333333) else Color(0xFFE0E0E0)
-                            )
-                        ) {
-                            append(" e ")
-                        }
-                        withStyle(SpanStyle(color = subTextColor)) {
-                            append("  ")
-                        }
-                    }
-                    withStyle(
-                        SpanStyle(
-                            color = subTextColor,
-                            fontFamily = NothingFont,
-                            fontSize = 12.sp
-                        )
+            Spacer(Modifier.height(3.dp))
+
+            // Artist row — explicit badge + artist name
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (song.isExplicit) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(explicitBgColor)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        append(song.artist)
+                        Text(
+                            text = "E",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp,
+                            color = explicitTextColor
+                        )
                     }
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(
+                    text = song.artist,
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 12.sp,
+                    color = subTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
-        // Broken heart — only when liked and cache failed
+        // Broken heart button — only when liked and cache failed
         if (isLiked && song.cacheFailed) {
             IconButton(onClick = { showBrokenHeartDialog = true }) {
                 Icon(
@@ -152,7 +152,7 @@ fun SongItem(
             }
         }
 
-        // 3 dots menu
+        // 3 dots menu — hidden for albums outside queue
         if (showMenu) {
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
