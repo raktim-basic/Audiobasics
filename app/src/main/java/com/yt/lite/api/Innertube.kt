@@ -380,6 +380,8 @@ object Innertube {
                 val response = ytmPost("browse", JSONObject().put("browseId", browseId))
                     ?: return@withContext Pair(null, emptyList())
 
+                val responseText = response.toString()
+
                 // Parse header
                 val header = response.optJSONObject("header")
                     ?.optJSONObject("musicImmersiveHeaderRenderer")
@@ -416,144 +418,173 @@ object Innertube {
                     thumbArr.getJSONObject(thumbArr.length() - 1).optString("url", "")
                 else ""
 
-                // PRIMARY PATH (Metrolist method):
-                // twoColumnBrowseResultsRenderer → secondaryContents →
-                // sectionListRenderer → contents[0] → musicPlaylistShelfRenderer
-                val shelfContents = response
-                    .optJSONObject("contents")
-                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                val topContents = response.optJSONObject("contents")
+                val allItems = mutableListOf<JSONObject>()
+
+                // Path 1: twoColumnBrowseResultsRenderer → secondaryContents
+                topContents?.optJSONObject("twoColumnBrowseResultsRenderer")
                     ?.optJSONObject("secondaryContents")
                     ?.optJSONObject("sectionListRenderer")
                     ?.optJSONArray("contents")
-                    ?.optJSONObject(0)
-                    ?.optJSONObject("musicPlaylistShelfRenderer")
-                    ?.optJSONArray("contents")
+                    ?.let { sections ->
+                        for (i in 0 until sections.length()) {
+                            sections.optJSONObject(i)
+                                ?.optJSONObject("musicPlaylistShelfRenderer")
+                                ?.optJSONArray("contents")
+                                ?.let { items ->
+                                    for (j in 0 until items.length()) {
+                                        items.optJSONObject(j)
+                                            ?.optJSONObject(
+                                                "musicResponsiveListItemRenderer"
+                                            )
+                                            ?.let { allItems.add(it) }
+                                    }
+                                }
+                        }
+                    }
 
-                if (shelfContents != null) {
-                    for (i in 0 until shelfContents.length()) {
-                        try {
-                            val item = shelfContents.getJSONObject(i)
-                                .optJSONObject("musicResponsiveListItemRenderer") ?: continue
-
-                            // Video ID from overlay
-                            val videoId = item.optJSONObject("overlay")
-                                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                                ?.optJSONObject("content")
-                                ?.optJSONObject("musicPlayButtonRenderer")
-                                ?.optJSONObject("playNavigationEndpoint")
-                                ?.optJSONObject("watchEndpoint")
-                                ?.optString("videoId")
-                                ?: item.optJSONArray("flexColumns")
-                                    ?.optJSONObject(0)
-                                    ?.optJSONObject(
-                                        "musicResponsiveListItemFlexColumnRenderer"
-                                    )
-                                    ?.optJSONObject("text")
-                                    ?.optJSONArray("runs")
-                                    ?.optJSONObject(0)
-                                    ?.optJSONObject("navigationEndpoint")
-                                    ?.optJSONObject("watchEndpoint")
-                                    ?.optString("videoId")
-                                ?: continue
-
-                            val flexCols = item.optJSONArray("flexColumns") ?: continue
-                            val col0 = flexCols.optJSONObject(0)
-                                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                            val songTitle = extractText(col0, "text")
-                            if (songTitle.isBlank()) continue
-
-                            // Duration — scan all flex columns for MM:SS pattern
-                            var durationMs = 0L
-                            outer@ for (fc in 0 until flexCols.length()) {
-                                val col = flexCols.optJSONObject(fc)
-                                    ?.optJSONObject(
-                                        "musicResponsiveListItemFlexColumnRenderer"
-                                    )
-                                val runs = col?.optJSONObject("text")?.optJSONArray("runs")
-                                if (runs != null) {
-                                    for (r in 0 until runs.length()) {
-                                        val t = runs.optJSONObject(r)
-                                            ?.optString("text", "") ?: ""
-                                        if (t.matches(Regex("\\d+:\\d{2}"))) {
-                                            val parts = t.trim().split(":")
-                                            durationMs = when (parts.size) {
-                                                2 -> (parts[0].toLongOrNull() ?: 0) * 60000 +
-                                                        (parts[1].toLongOrNull() ?: 0) * 1000
-                                                3 -> (parts[0].toLongOrNull() ?: 0) * 3600000 +
-                                                        (parts[1].toLongOrNull() ?: 0) * 60000 +
-                                                        (parts[2].toLongOrNull() ?: 0) * 1000
-                                                else -> 0L
-                                            }
-                                            break@outer
-                                        }
+                // Path 2: singleColumnBrowseResultsRenderer
+                if (allItems.isEmpty()) {
+                    topContents?.optJSONObject("singleColumnBrowseResultsRenderer")
+                        ?.optJSONArray("tabs")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("tabRenderer")
+                        ?.optJSONObject("content")
+                        ?.optJSONObject("sectionListRenderer")
+                        ?.optJSONArray("contents")
+                        ?.let { sections ->
+                            for (i in 0 until sections.length()) {
+                                val sec = sections.optJSONObject(i) ?: continue
+                                val shelf = sec.optJSONObject("musicShelfRenderer")
+                                    ?: sec.optJSONObject("musicPlaylistShelfRenderer")
+                                shelf?.optJSONArray("contents")?.let { items ->
+                                    for (j in 0 until items.length()) {
+                                        items.optJSONObject(j)
+                                            ?.optJSONObject(
+                                                "musicResponsiveListItemRenderer"
+                                            )
+                                            ?.let { allItems.add(it) }
                                     }
                                 }
                             }
-
-                            songs.add(
-                                Song(
-                                    id = videoId,
-                                    title = songTitle,
-                                    artist = albumArtist,
-                                    thumbnail = ytThumbnail(videoId),
-                                    duration = durationMs,
-                                    albumId = browseId,
-                                    isExplicit = parseExplicit(item.optJSONArray("badges"))
-                                )
-                            )
-                        } catch (_: Exception) {}
-                    }
+                        }
                 }
 
-                // FALLBACK: extract OLAK5uy_ and use NewPipe
-                if (songs.isEmpty()) {
-                    val responseText = response.toString()
-                    val playlistId = if (browseId.startsWith("OLAK5uy_")) browseId
-                    else Regex("\"playlistId\":\"(OLAK5uy_[^\"]+)\"")
-                        .find(responseText)?.groupValues?.get(1)
-
-                    if (playlistId != null) {
-                        initNewPipe()
-                        for (url in listOf(
-                            "https://music.youtube.com/playlist?list=$playlistId",
-                            "https://www.youtube.com/playlist?list=$playlistId"
-                        )) {
-                            if (songs.isNotEmpty()) break
-                            try {
-                                val extractor =
-                                    ServiceList.YouTube.getPlaylistExtractor(url)
-                                extractor.fetchPage()
-                                if (albumArtist == "Unknown Artist")
-                                    albumArtist =
-                                        extractor.uploaderName ?: albumArtist
-                                var page = extractor.initialPage
-                                while (true) {
-                                    for (item in page.items) {
-                                        try {
-                                            if (item is org.schabi.newpipe.extractor
-                                                    .stream.StreamInfoItem
-                                            ) {
-                                                val id = extractIdFromUrl(item.url)
-                                                val title = item.name ?: continue
-                                                songs.add(Song(
-                                                    id = id,
-                                                    title = title,
-                                                    artist = albumArtist,
-                                                    thumbnail = ytThumbnail(id),
-                                                    duration = item.duration * 1000,
-                                                    albumId = browseId,
-                                                    isExplicit = title.lowercase()
-                                                        .contains("explicit")
-                                                ))
-                                            }
-                                        } catch (_: Exception) {}
+                // Path 3: twoColumnBrowseResultsRenderer → tabs (primary)
+                if (allItems.isEmpty()) {
+                    topContents?.optJSONObject("twoColumnBrowseResultsRenderer")
+                        ?.optJSONArray("tabs")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("tabRenderer")
+                        ?.optJSONObject("content")
+                        ?.optJSONObject("sectionListRenderer")
+                        ?.optJSONArray("contents")
+                        ?.let { sections ->
+                            for (i in 0 until sections.length()) {
+                                val sec = sections.optJSONObject(i) ?: continue
+                                val shelf = sec.optJSONObject("musicShelfRenderer")
+                                    ?: sec.optJSONObject("musicPlaylistShelfRenderer")
+                                shelf?.optJSONArray("contents")?.let { items ->
+                                    for (j in 0 until items.length()) {
+                                        items.optJSONObject(j)
+                                            ?.optJSONObject(
+                                                "musicResponsiveListItemRenderer"
+                                            )
+                                            ?.let { allItems.add(it) }
                                     }
-                                    if (page.hasNextPage())
-                                        page = extractor.getPage(page.nextPage)
-                                    else break
                                 }
-                            } catch (_: Exception) {}
+                            }
                         }
+                }
+
+                // Parse items from paths 1-3
+                for (item in allItems) {
+                    try {
+                        val videoId = item.optJSONObject("overlay")
+                            ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                            ?.optJSONObject("content")
+                            ?.optJSONObject("musicPlayButtonRenderer")
+                            ?.optJSONObject("playNavigationEndpoint")
+                            ?.optJSONObject("watchEndpoint")
+                            ?.optString("videoId")
+                            ?: item.optJSONArray("flexColumns")
+                                ?.optJSONObject(0)
+                                ?.optJSONObject(
+                                    "musicResponsiveListItemFlexColumnRenderer"
+                                )
+                                ?.optJSONObject("text")
+                                ?.optJSONArray("runs")
+                                ?.optJSONObject(0)
+                                ?.optJSONObject("navigationEndpoint")
+                                ?.optJSONObject("watchEndpoint")
+                                ?.optString("videoId")
+                            ?: continue
+
+                        val flexCols = item.optJSONArray("flexColumns") ?: continue
+                        val col0 = flexCols.optJSONObject(0)
+                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        val songTitle = extractText(col0, "text").ifBlank { "Track" }
+
+                        var durationMs = 0L
+                        outer@ for (fc in 0 until flexCols.length()) {
+                            val col = flexCols.optJSONObject(fc)
+                                ?.optJSONObject(
+                                    "musicResponsiveListItemFlexColumnRenderer"
+                                )
+                            val runs = col?.optJSONObject("text")?.optJSONArray("runs")
+                            if (runs != null) {
+                                for (r in 0 until runs.length()) {
+                                    val t = runs.optJSONObject(r)
+                                        ?.optString("text", "") ?: ""
+                                    if (t.matches(Regex("\\d+:\\d{2}"))) {
+                                        val parts = t.trim().split(":")
+                                        durationMs = when (parts.size) {
+                                            2 -> (parts[0].toLongOrNull() ?: 0) * 60000 +
+                                                    (parts[1].toLongOrNull() ?: 0) * 1000
+                                            3 -> (parts[0].toLongOrNull() ?: 0) * 3600000 +
+                                                    (parts[1].toLongOrNull() ?: 0) * 60000 +
+                                                    (parts[2].toLongOrNull() ?: 0) * 1000
+                                            else -> 0L
+                                        }
+                                        break@outer
+                                    }
+                                }
+                            }
+                        }
+
+                        songs.add(
+                            Song(
+                                id = videoId,
+                                title = songTitle,
+                                artist = albumArtist,
+                                thumbnail = ytThumbnail(videoId),
+                                duration = durationMs,
+                                albumId = browseId,
+                                isExplicit = parseExplicit(item.optJSONArray("badges"))
+                            )
+                        )
+                    } catch (_: Exception) {}
+                }
+
+                // Path 4: raw JSON regex scan — last resort
+                if (songs.isEmpty()) {
+                    val videoIds = Regex("\"watchEndpoint\":\\{\"videoId\":\"([a-zA-Z0-9_-]{11})\"")
+                        .findAll(responseText)
+                        .map { it.groupValues[1] }
+                        .distinct()
+                        .take(50)
+                        .toList()
+
+                    for (id in videoIds) {
+                        songs.add(
+                            Song(
+                                id = id,
+                                title = "Track",
+                                artist = albumArtist,
+                                thumbnail = ytThumbnail(id),
+                                albumId = browseId
+                            )
+                        )
                     }
                 }
 
