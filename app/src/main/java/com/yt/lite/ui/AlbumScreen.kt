@@ -1,6 +1,7 @@
 package com.yt.lite.ui
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,11 +71,18 @@ fun AlbumScreen(
 
     LaunchedEffect(album.id) {
         isLoading = true
+
+        // 🔍 DIAGNOSTIC TOAST — shows the browseId being passed
+        Toast.makeText(context, "browseId: ${album.id}", Toast.LENGTH_LONG).show()
+
         try {
             val (fetchedAlbum, songs) = com.yt.lite.api.Innertube.getAlbumSongs(album.id)
             albumSongs = songs
+
+            // 🔍 DIAGNOSTIC TOAST — shows how many songs came back
+            Toast.makeText(context, "Songs loaded: ${songs.size}", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
-            android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
+            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         } finally {
             isLoading = false
         }
@@ -93,7 +101,6 @@ fun AlbumScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Collapsed mini header
         if (isHeaderCollapsed) {
             Row(
                 modifier = Modifier
@@ -124,7 +131,6 @@ fun AlbumScreen(
             DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
         }
 
-        // Search bar
         if (isSearching) {
             OutlinedTextField(
                 value = searchQuery,
@@ -167,7 +173,6 @@ fun AlbumScreen(
                 modifier = Modifier.weight(1f),
                 state = listState
             ) {
-                // Full header as first list item
                 item {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -216,7 +221,6 @@ fun AlbumScreen(
                             }
                         }
 
-                        // Action row
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -225,7 +229,6 @@ fun AlbumScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                // Save button
                                 Row(
                                     modifier = Modifier
                                         .clickable {
@@ -252,23 +255,21 @@ fun AlbumScreen(
                                     )
                                 }
 
-                                // Share button
                                 Row(
-                                    modifier = Modifier
-                                        .clickable {
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(
-                                                    Intent.EXTRA_TEXT,
-                                                    album.youtubeUrl.ifBlank {
-                                                        "https://www.youtube.com/playlist?list=${album.id}"
-                                                    }
-                                                )
-                                            }
-                                            context.startActivity(
-                                                Intent.createChooser(shareIntent, "Share album")
+                                    modifier = Modifier.clickable {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(
+                                                Intent.EXTRA_TEXT,
+                                                album.youtubeUrl.ifBlank {
+                                                    "https://www.youtube.com/playlist?list=${album.id}"
+                                                }
                                             )
-                                        },
+                                        }
+                                        context.startActivity(
+                                            Intent.createChooser(shareIntent, "Share album")
+                                        )
+                                    },
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
@@ -288,7 +289,6 @@ fun AlbumScreen(
                                 }
                             }
 
-                            // Play button
                             Box(
                                 modifier = Modifier
                                     .border(2.dp, textColor, RoundedCornerShape(6.dp))
