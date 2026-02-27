@@ -36,47 +36,63 @@ object Innertube {
         return "https://img.youtube.com/vi/$videoId/maxresdefault.jpg"
     }
 
-    // Detect explicit content from title or tags
+    // Official YouTube Music album IDs start with OLAK5uy_
+    private fun isOfficialAlbum(id: String): Boolean {
+        return id.startsWith("OLAK5uy_") || id.startsWith("MPREb_")
+    }
+
+    // Detect explicit from title
     private fun isExplicit(name: String): Boolean {
         val lower = name.lowercase()
         return lower.contains("(explicit)") ||
             lower.contains("[explicit]") ||
             lower.contains("explicit version") ||
             lower.contains("(dirty)") ||
-            lower.contains("[dirty]")
+            lower.contains("[dirty]") ||
+            lower.contains("(clean)").not() && lower.contains("uncut") ||
+            lower.contains("uncensored")
     }
 
-    // Filter out non-music items from related (podcasts, compilations, etc.)
+    // Only keep actual music — filter podcasts, gaming videos, etc.
     private fun isMusicStream(item: StreamInfoItem): Boolean {
-        val durationSecs = item.duration
-        // Skip items shorter than 30s or longer than 20 minutes (likely not songs)
-        if (durationSecs < 30 || durationSecs > 1200) return false
-        val name = item.name?.lowercase() ?: return false
-        // Skip obvious non-music content
-        val skipKeywords = listOf(
-            "podcast", "interview", "episode", "lecture",
-            "audiobook", "chapter", "debate", "sermon",
-            "comedy special", "stand up", "stand-up"
+        val dur = item.duration
+        if (dur < 60 || dur > 900) return false // 1min–15min
+        val name = (item.name ?: "").lowercase()
+        val skip = listOf(
+            "podcast", "interview", "episode", "lecture", "audiobook",
+            "chapter", "debate", "sermon", "comedy", "stand up", "stand-up",
+            "reaction", "commentary", "gameplay", "gaming", "news", "trailer",
+            "teaser", "behind the scenes", "vlog", "tutorial", "how to"
         )
-        return skipKeywords.none { name.contains(it) }
+        return skip.none { name.contains(it) }
     }
 
-    // When searching, prefer explicit version if both exist
+    // Remove duplicate songs — keep explicit version if both exist
     private fun deduplicatePreferExplicit(songs: List<Song>): List<Song> {
-        val grouped = songs.groupBy { it.title.lowercase().trim()
-            .replace("(explicit)", "")
-            .replace("[explicit]", "")
-            .replace("(dirty)", "")
-            .trim()
+        val seen = mutableMapOf<String, Song>()
+        for (song in songs) {
+            val key = song.title.lowercase()
+                .replace("(explicit)", "").replace("[explicit]", "")
+                .replace("(dirty)", "").replace("[dirty]", "")
+                .replace("(clean)", "").replace("[clean]", "")
+                .replace("(radio edit)", "").replace("[radio edit]", "")
+                .trim()
+            val existing = seen[key]
+            if (existing == null) {
+                seen[key] = song
+            } else if (song.isExplicit && !existing.isExplicit) {
+                // Prefer explicit version
+                seen[key] = song
+            }
         }
-        return grouped.map { (_, versions) ->
-            versions.firstOrNull { it.isExplicit } ?: versions.first()
-        }
+        // Return explicit songs first, then non-explicit
+        return seen.values.sortedByDescending { it.isExplicit }
     }
 
     suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {
         init()
-        val albums = mutableListOf<Song>()
+        val officialAlbums = mutableListOf<Song>()
+        val otherAlbums = mutableListOf<Song>()
         val songs = mutableListOf<Song>()
 
         try {
@@ -88,32 +104,36 @@ object Innertube {
                 try {
                     when {
                         item is org.schabi.newpipe.extractor.playlist.PlaylistInfoItem -> {
-                            if (albums.size < 3) {
-                                val id = extractId(item.url)
-                                albums.add(
-                                    Song(
-                                        id = id,
-                                        title = item.name ?: continue,
-                                        artist = "(Album) ${item.uploaderName ?: ""}",
-                                        thumbnail = bestThumbnail(item.thumbnails),
-                                        isAlbum = true
-                                    )
-                                )
+                            val id = extractId(item.url)
+                            val song = Song(
+                                id = id,
+                                title = item.name ?: continue,
+                                artist = "(Album) ${item.uploaderName ?: ""}",
+                                thumbnail = bestThumbnail(item.thumbnails),
+                                isAlbum = true
+                            )
+                            if (isOfficialAlbum(id)) {
+                                if (officialAlbums.size < 3) officialAlbums.add(song)
+                            } else {
+                                if (otherAlbums.size < 2) otherAlbums.add(song)
                             }
                         }
                         item is StreamInfoItem -> {
                             val id = extractId(item.url)
                             val title = item.name ?: continue
-                            songs.add(
-                                Song(
-                                    id = id,
-                                    title = title,
-                                    artist = item.uploaderName ?: "",
-                                    thumbnail = ytThumbnail(id),
-                                    duration = item.duration * 1000,
-                                    isExplicit = isExplicit(title)
+                            // Only add music streams
+                            if (isMusicStream(item)) {
+                                songs.add(
+                                    Song(
+                                        id = id,
+                                        title = title,
+                                        artist = item.uploaderName ?: "",
+                                        thumbnail = ytThumbnail(id),
+                                        duration = item.duration * 1000,
+                                        isExplicit = isExplicit(title)
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -124,10 +144,12 @@ object Innertube {
             Log.e("Innertube", "Search error: ${e.message}")
         }
 
+        // Official albums first, then other albums, then deduped songs (explicit first)
+        val allAlbums = (officialAlbums + otherAlbums).take(3)
         val deduped = deduplicatePreferExplicit(songs)
 
         val results = mutableListOf<Song>()
-        results.addAll(albums)
+        results.addAll(allAlbums)
         results.addAll(deduped)
         results
     }
@@ -166,11 +188,10 @@ object Innertube {
                 extractor.fetchPage()
 
                 val audioStreams: List<AudioStream> = extractor.audioStreams
-                val stream = audioStreams
+                audioStreams
                     .filter { it.content != null && it.content.isNotEmpty() }
                     .maxByOrNull { it.averageBitrate }
-
-                stream?.content
+                    ?.content
             } catch (e: Exception) {
                 Log.e("Innertube", "Stream error for $videoId: ${e.message}")
                 null
@@ -206,7 +227,7 @@ object Innertube {
                             )
                         }
                     } catch (e: Exception) {
-                        Log.w("Innertube", "Skipping related item: ${e.message}")
+                        Log.w("Innertube", "Skipping related: ${e.message}")
                     }
                 }
             } catch (e: Exception) {
@@ -266,12 +287,9 @@ object Innertube {
         }
 
     private fun extractId(url: String): String {
-        val vMatch = Regex("v=([a-zA-Z0-9_-]{11})").find(url)
-        if (vMatch != null) return vMatch.groupValues[1]
-        val shortMatch = Regex("youtu\\.be/([a-zA-Z0-9_-]{11})").find(url)
-        if (shortMatch != null) return shortMatch.groupValues[1]
-        val listMatch = Regex("list=([a-zA-Z0-9_-]+)").find(url)
-        if (listMatch != null) return listMatch.groupValues[1]
+        Regex("v=([a-zA-Z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
+        Regex("youtu\\.be/([a-zA-Z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
+        Regex("list=([a-zA-Z0-9_-]+)").find(url)?.let { return it.groupValues[1] }
         return url.substringAfterLast("/").substringBefore("?")
     }
 }
