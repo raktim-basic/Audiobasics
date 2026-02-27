@@ -376,99 +376,166 @@ object Innertube {
                 var albumTitle = "Unknown Album"
                 var albumArtist = "Unknown Artist"
                 var albumThumb = ""
-                var playlistId: String? = null
 
-                // Step 1 — get metadata + find OLAK5uy_ playlist ID
                 val response = ytmPost("browse", JSONObject().put("browseId", browseId))
+                    ?: return@withContext Pair(null, emptyList())
 
-                if (response != null) {
-                    val header = response.optJSONObject("header")
-                        ?.optJSONObject("musicImmersiveHeaderRenderer")
-                        ?: response.optJSONObject("header")
-                            ?.optJSONObject("musicDetailHeaderRenderer")
+                // Parse header
+                val header = response.optJSONObject("header")
+                    ?.optJSONObject("musicImmersiveHeaderRenderer")
+                    ?: response.optJSONObject("header")
+                        ?.optJSONObject("musicDetailHeaderRenderer")
 
-                    albumTitle = header?.optJSONObject("title")
-                        ?.optJSONArray("runs")?.optJSONObject(0)
-                        ?.optString("text") ?: "Unknown Album"
+                albumTitle = header?.optJSONObject("title")
+                    ?.optJSONArray("runs")?.optJSONObject(0)
+                    ?.optString("text") ?: "Unknown Album"
 
-                    val subtitleRuns = header?.optJSONObject("subtitle")
-                        ?.optJSONArray("runs")
-                    if (subtitleRuns != null) {
-                        var nonSep = 0
-                        for (r in 0 until subtitleRuns.length()) {
-                            val t = subtitleRuns.optJSONObject(r)
-                                ?.optString("text", "") ?: ""
-                            if (t == " • " || t == "•" || t.isBlank()) continue
-                            nonSep++
-                            if (nonSep == 2 && !t.all { c -> c.isDigit() }) {
-                                albumArtist = t
-                                break
-                            }
+                val subtitleRuns = header?.optJSONObject("subtitle")
+                    ?.optJSONArray("runs")
+                if (subtitleRuns != null) {
+                    var nonSep = 0
+                    for (r in 0 until subtitleRuns.length()) {
+                        val t = subtitleRuns.optJSONObject(r)
+                            ?.optString("text", "") ?: ""
+                        if (t == " • " || t == "•" || t.isBlank()) continue
+                        nonSep++
+                        if (nonSep == 2 && !t.all { c -> c.isDigit() }) {
+                            albumArtist = t; break
                         }
                     }
-
-                    val thumbArr = header?.optJSONObject("thumbnail")
-                        ?.optJSONObject("croppedSquareThumbnailRenderer")
-                        ?.optJSONObject("thumbnail")
-                        ?.optJSONArray("thumbnails")
-                        ?: header?.optJSONObject("thumbnail")
-                            ?.optJSONObject("musicThumbnailRenderer")
-                            ?.optJSONObject("thumbnail")
-                            ?.optJSONArray("thumbnails")
-
-                    albumThumb = if (thumbArr != null && thumbArr.length() > 0)
-                        thumbArr.getJSONObject(thumbArr.length() - 1).optString("url", "")
-                    else ""
-
-                    // Search entire response JSON for OLAK5uy_ playlist ID
-                    val responseText = response.toString()
-                    playlistId = Regex("\"playlistId\":\"(OLAK5uy_[^\"]+)\"")
-                        .find(responseText)?.groupValues?.get(1)
-                        ?: Regex("\"OLAK5uy_([^\"]{30,40})\"")
-                            .find(responseText)?.let { "OLAK5uy_${it.groupValues[1]}" }
                 }
 
-                // If browseId is already OLAK5uy_, use it directly
-                if (browseId.startsWith("OLAK5uy_")) {
-                    playlistId = browseId
-                }
+                val thumbArr = header?.optJSONObject("thumbnail")
+                    ?.optJSONObject("croppedSquareThumbnailRenderer")
+                    ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                    ?: header?.optJSONObject("thumbnail")
+                        ?.optJSONObject("musicThumbnailRenderer")
+                        ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
 
-                // Step 2 — fetch songs via NewPipe using OLAK5uy_ playlist ID
-                if (playlistId != null) {
-                    initNewPipe()
+                albumThumb = if (thumbArr != null && thumbArr.length() > 0)
+                    thumbArr.getJSONObject(thumbArr.length() - 1).optString("url", "")
+                else ""
 
-                    // Try YouTube Music URL first, then plain YouTube URL
-                    val urls = listOf(
-                        "https://music.youtube.com/playlist?list=$playlistId",
-                        "https://www.youtube.com/playlist?list=$playlistId"
-                    )
+                // PRIMARY PATH (Metrolist method):
+                // twoColumnBrowseResultsRenderer → secondaryContents →
+                // sectionListRenderer → contents[0] → musicPlaylistShelfRenderer
+                val shelfContents = response
+                    .optJSONObject("contents")
+                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                    ?.optJSONObject("secondaryContents")
+                    ?.optJSONObject("sectionListRenderer")
+                    ?.optJSONArray("contents")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("musicPlaylistShelfRenderer")
+                    ?.optJSONArray("contents")
 
-                    for (url in urls) {
-                        if (songs.isNotEmpty()) break
+                if (shelfContents != null) {
+                    for (i in 0 until shelfContents.length()) {
                         try {
-                            val extractor = ServiceList.YouTube.getPlaylistExtractor(url)
-                            extractor.fetchPage()
+                            val item = shelfContents.getJSONObject(i)
+                                .optJSONObject("musicResponsiveListItemRenderer") ?: continue
 
-                            if (albumTitle == "Unknown Album") {
-                                albumTitle = extractor.name ?: "Unknown Album"
-                            }
-                            if (albumArtist == "Unknown Artist") {
-                                albumArtist = extractor.uploaderName ?: "Unknown Artist"
-                            }
-                            if (albumThumb.isEmpty()) {
-                                albumThumb = extractor.thumbnails
-                                    .maxByOrNull { it.width * it.height }?.url ?: ""
+                            // Video ID from overlay
+                            val videoId = item.optJSONObject("overlay")
+                                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                                ?.optJSONObject("content")
+                                ?.optJSONObject("musicPlayButtonRenderer")
+                                ?.optJSONObject("playNavigationEndpoint")
+                                ?.optJSONObject("watchEndpoint")
+                                ?.optString("videoId")
+                                ?: item.optJSONArray("flexColumns")
+                                    ?.optJSONObject(0)
+                                    ?.optJSONObject(
+                                        "musicResponsiveListItemFlexColumnRenderer"
+                                    )
+                                    ?.optJSONObject("text")
+                                    ?.optJSONArray("runs")
+                                    ?.optJSONObject(0)
+                                    ?.optJSONObject("navigationEndpoint")
+                                    ?.optJSONObject("watchEndpoint")
+                                    ?.optString("videoId")
+                                ?: continue
+
+                            val flexCols = item.optJSONArray("flexColumns") ?: continue
+                            val col0 = flexCols.optJSONObject(0)
+                                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                            val songTitle = extractText(col0, "text")
+                            if (songTitle.isBlank()) continue
+
+                            // Duration — scan all flex columns for MM:SS pattern
+                            var durationMs = 0L
+                            outer@ for (fc in 0 until flexCols.length()) {
+                                val col = flexCols.optJSONObject(fc)
+                                    ?.optJSONObject(
+                                        "musicResponsiveListItemFlexColumnRenderer"
+                                    )
+                                val runs = col?.optJSONObject("text")?.optJSONArray("runs")
+                                if (runs != null) {
+                                    for (r in 0 until runs.length()) {
+                                        val t = runs.optJSONObject(r)
+                                            ?.optString("text", "") ?: ""
+                                        if (t.matches(Regex("\\d+:\\d{2}"))) {
+                                            val parts = t.trim().split(":")
+                                            durationMs = when (parts.size) {
+                                                2 -> (parts[0].toLongOrNull() ?: 0) * 60000 +
+                                                        (parts[1].toLongOrNull() ?: 0) * 1000
+                                                3 -> (parts[0].toLongOrNull() ?: 0) * 3600000 +
+                                                        (parts[1].toLongOrNull() ?: 0) * 60000 +
+                                                        (parts[2].toLongOrNull() ?: 0) * 1000
+                                                else -> 0L
+                                            }
+                                            break@outer
+                                        }
+                                    }
+                                }
                             }
 
-                            var page = extractor.initialPage
-                            while (true) {
-                                for (item in page.items) {
-                                    try {
-                                        if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
-                                            val id = extractIdFromUrl(item.url)
-                                            val title = item.name ?: continue
-                                            songs.add(
-                                                Song(
+                            songs.add(
+                                Song(
+                                    id = videoId,
+                                    title = songTitle,
+                                    artist = albumArtist,
+                                    thumbnail = ytThumbnail(videoId),
+                                    duration = durationMs,
+                                    albumId = browseId,
+                                    isExplicit = parseExplicit(item.optJSONArray("badges"))
+                                )
+                            )
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                // FALLBACK: extract OLAK5uy_ and use NewPipe
+                if (songs.isEmpty()) {
+                    val responseText = response.toString()
+                    val playlistId = if (browseId.startsWith("OLAK5uy_")) browseId
+                    else Regex("\"playlistId\":\"(OLAK5uy_[^\"]+)\"")
+                        .find(responseText)?.groupValues?.get(1)
+
+                    if (playlistId != null) {
+                        initNewPipe()
+                        for (url in listOf(
+                            "https://music.youtube.com/playlist?list=$playlistId",
+                            "https://www.youtube.com/playlist?list=$playlistId"
+                        )) {
+                            if (songs.isNotEmpty()) break
+                            try {
+                                val extractor =
+                                    ServiceList.YouTube.getPlaylistExtractor(url)
+                                extractor.fetchPage()
+                                if (albumArtist == "Unknown Artist")
+                                    albumArtist =
+                                        extractor.uploaderName ?: albumArtist
+                                var page = extractor.initialPage
+                                while (true) {
+                                    for (item in page.items) {
+                                        try {
+                                            if (item is org.schabi.newpipe.extractor
+                                                    .stream.StreamInfoItem
+                                            ) {
+                                                val id = extractIdFromUrl(item.url)
+                                                val title = item.name ?: continue
+                                                songs.add(Song(
                                                     id = id,
                                                     title = title,
                                                     artist = albumArtist,
@@ -477,16 +544,16 @@ object Innertube {
                                                     albumId = browseId,
                                                     isExplicit = title.lowercase()
                                                         .contains("explicit")
-                                                )
-                                            )
-                                        }
-                                    } catch (_: Exception) {}
+                                                ))
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                    if (page.hasNextPage())
+                                        page = extractor.getPage(page.nextPage)
+                                    else break
                                 }
-                                if (page.hasNextPage()) {
-                                    page = extractor.getPage(page.nextPage)
-                                } else break
-                            }
-                        } catch (_: Exception) {}
+                            } catch (_: Exception) {}
+                        }
                     }
                 }
 
