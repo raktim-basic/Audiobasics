@@ -29,7 +29,7 @@ object Innertube {
         .build()
 
     private const val YTM_BASE = "https://music.youtube.com/youtubei/v1"
-    private const val YTM_KEY = buildString {
+    private val YTM_KEY = buildString {
         append("AIzaSyC9XL3ZjWdd")
         append("Xya6X74dJoCTL-WE")
         append("YFDNX30")
