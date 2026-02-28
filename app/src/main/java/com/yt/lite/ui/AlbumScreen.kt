@@ -1,7 +1,6 @@
 package com.yt.lite.ui
 
 import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -71,18 +70,14 @@ fun AlbumScreen(
 
     LaunchedEffect(album.id) {
         isLoading = true
-
-        // 🔍 DIAGNOSTIC TOAST — shows the browseId being passed
-        Toast.makeText(context, "browseId: ${album.id}", Toast.LENGTH_LONG).show()
-
         try {
-            val (fetchedAlbum, songs) = com.yt.lite.api.Innertube.getAlbumSongs(album.id)
+            val (_, songs) = com.yt.lite.api.Innertube.getAlbumSongs(
+                browseId = album.id,
+                fallbackArtist = album.artist
+            )
             albumSongs = songs
-
-            // 🔍 DIAGNOSTIC TOAST — shows how many songs came back
-            Toast.makeText(context, "Songs loaded: ${songs.size}", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
-            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
         } finally {
             isLoading = false
         }
@@ -92,7 +87,7 @@ fun AlbumScreen(
         if (searchQuery.isBlank()) albumSongs
         else albumSongs.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
-            it.artist.contains(searchQuery, ignoreCase = true)
+                    it.artist.contains(searchQuery, ignoreCase = true)
         }
     }
 
