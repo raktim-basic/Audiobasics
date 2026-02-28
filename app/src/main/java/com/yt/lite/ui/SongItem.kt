@@ -1,293 +1,392 @@
 package com.yt.lite.ui
 
+import android.content.Intent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.QueueMusic
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.HeartBroken
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
+import com.yt.lite.data.Song
 import com.yt.lite.ui.theme.NothingFont
 
 @Composable
-fun LikedScreen(
-    vm: MusicViewModel,
+fun SongItem(
+    song: Song,
     isDarkMode: Boolean,
-    onBack: () -> Unit,
-    onNavigateQueue: () -> Unit
+    isLiked: Boolean,
+    isInQueue: Boolean = false,
+    showExplicit: Boolean = true,
+    onClick: () -> Unit,
+    onAddToQueue: (() -> Unit)? = null,
+    onPlayNext: (() -> Unit)? = null,
+    onLike: () -> Unit,
+    onShare: () -> Unit,
+    onRemoveFromQueue: (() -> Unit)? = null,
+    onReorder: (() -> Unit)? = null,
+    onRetryCache: (() -> Unit)? = null,
+    onRemoveLike: (() -> Unit)? = null,
+    showMenu: Boolean = !song.isAlbum || isInQueue
 ) {
-    val likedSongs by vm.likedSongs.collectAsState()
-    val cacheSize by vm.cacheSize.collectAsState()
+    val context = LocalContext.current
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showBrokenHeartDialog by remember { mutableStateOf(false) }
 
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearching by remember { mutableStateOf(false) }
-
-    val listState = rememberLazyListState()
-
-    val isHeaderCollapsed by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 }
-    }
-
-    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
-    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
+    val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
 
-    val filteredSongs = remember(likedSongs, searchQuery) {
-        if (searchQuery.isBlank()) likedSongs
-        else likedSongs.filter {
-            it.title.contains(searchQuery, ignoreCase = true) ||
-            it.artist.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor)
-    ) {
-        if (isHeaderCollapsed) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(bgColor)
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Favorite,
-                    contentDescription = null,
-                    tint = Color.Red,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Liked Songs (${likedSongs.size})",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = textColor
-                )
-            }
-            DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-        }
-
-        if (isSearching) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .border(2.dp, Color.Red, RoundedCornerShape(8.dp)),
-                placeholder = {
-                    Text("Search liked songs...", fontFamily = NothingFont, color = Color.Gray)
-                },
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    fontFamily = NothingFont,
-                    color = textColor
-                ),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Red,
-                    unfocusedBorderColor = Color.Red,
-                    focusedContainerColor = surfaceColor,
-                    unfocusedContainerColor = surfaceColor
-                ),
-                shape = RoundedCornerShape(8.dp),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { })
-            )
-        }
-
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            state = listState
-        ) {
-            item {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.Favorite,
-                            contentDescription = null,
-                            tint = Color.Red,
-                            modifier = Modifier.size(90.dp)
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = "Liked Songs (${likedSongs.size})",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp,
-                                color = textColor
-                            )
-                            if (cacheSize.isNotBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = cacheSize,
-                                    fontFamily = NothingFont,
-                                    fontSize = 14.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .border(2.dp, textColor, RoundedCornerShape(6.dp))
-                                .clickable { vm.shuffleLiked() }
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.Shuffle,
-                                    contentDescription = "Shuffle",
-                                    tint = textColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "Shuffle",
-                                    fontFamily = NothingFont,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = textColor
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    DashedDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        isDarkMode = isDarkMode
-                    )
-                }
-            }
-
-            items(filteredSongs) { song ->
-                SongItem(
-                    song = song,
-                    isDarkMode = isDarkMode,
-                    isLiked = true,
-                    isInQueue = false,
-                    showExplicit = false,
-                    onClick = { vm.playWithQueue(song, filteredSongs) },
-                    onAddToQueue = { vm.addToQueue(song) },
-                    onPlayNext = { vm.playNext(song) },
-                    onLike = { vm.toggleLike(song) },
-                    onShare = {},
-                    onRetryCache = { vm.retryCache(song) },
-                    onRemoveLike = { vm.toggleLike(song) }
-                )
-            }
-        }
-
-        LikedBottomBar(
+    if (showBrokenHeartDialog) {
+        BrokenHeartDialog(
+            song = song,
             isDarkMode = isDarkMode,
-            isSearching = isSearching,
-            onBack = onBack,
-            onSearchToggle = {
-                isSearching = !isSearching
-                if (!isSearching) searchQuery = ""
+            onDismiss = { showBrokenHeartDialog = false },
+            onPlayOnline = {
+                showBrokenHeartDialog = false
+                onClick()
             },
-            onQueue = onNavigateQueue
+            onRetryCache = {
+                showBrokenHeartDialog = false
+                onRetryCache?.invoke()
+            },
+            onRemoveLike = {
+                showBrokenHeartDialog = false
+                onRemoveLike?.invoke()
+            }
         )
     }
-}
-
-@Composable
-fun LikedBottomBar(
-    isDarkMode: Boolean,
-    isSearching: Boolean,
-    onBack: () -> Unit,
-    onSearchToggle: () -> Unit,
-    onQueue: () -> Unit
-) {
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val iconColor = if (isDarkMode) Color.White else Color.Black
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
-            .padding(vertical = 12.dp, horizontal = 20.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                Icons.Default.ArrowBack,
-                contentDescription = "Back",
-                tint = iconColor,
-                modifier = Modifier.size(28.dp)
-            )
-        }
-
-        Box(
+        AsyncImage(
+            model = song.thumbnail,
+            contentDescription = null,
             modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(if (isSearching) Color.Red else Color.Transparent)
-                .clickable { onSearchToggle() }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
+                .size(52.dp)
+                .clip(RoundedCornerShape(6.dp)),
+            contentScale = ContentScale.Crop
+        )
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = song.title,
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(Modifier.height(3.dp))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = "Search liked",
-                    tint = if (isSearching) Color.White else iconColor,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(4.dp))
+                if (showExplicit && song.isExplicit) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(explicitBgColor)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "E",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp,
+                            color = explicitTextColor
+                        )
+                    }
+                    Spacer(Modifier.width(5.dp))
+                }
                 Text(
-                    "(LIKED)",
+                    text = song.artist,
                     fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = if (isSearching) Color.White else iconColor
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 12.sp,
+                    color = subTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
 
-        IconButton(onClick = onQueue) {
-            Icon(
-                Icons.Default.QueueMusic,
-                contentDescription = "Queue",
-                tint = iconColor,
-                modifier = Modifier.size(28.dp)
-            )
+        if (isLiked && song.cacheFailed) {
+            IconButton(onClick = { showBrokenHeartDialog = true }) {
+                Icon(
+                    Icons.Default.HeartBroken,
+                    contentDescription = "Cache failed",
+                    tint = Color.Red,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        if (showMenu) {
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = subTextColor
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    if (isInQueue) {
+                        DropdownMenuItem(
+                            text = { Text("Share", fontFamily = NothingFont) },
+                            onClick = {
+                                menuExpanded = false
+                                val i = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "https://www.youtube.com/watch?v=${song.id}"
+                                    )
+                                }
+                                context.startActivity(Intent.createChooser(i, "Share song"))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isLiked) "Unlike" else "Like",
+                                    fontFamily = NothingFont
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isLiked) Icons.Default.Favorite
+                                    else Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (isLiked) Color.Red else subTextColor
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onLike()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Reorder", fontFamily = NothingFont) },
+                            onClick = {
+                                menuExpanded = false
+                                onReorder?.invoke()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "Remove from queue",
+                                    fontFamily = NothingFont,
+                                    color = Color.Red
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onRemoveFromQueue?.invoke()
+                            }
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Share", fontFamily = NothingFont) },
+                            onClick = {
+                                menuExpanded = false
+                                val i = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "https://www.youtube.com/watch?v=${song.id}"
+                                    )
+                                }
+                                context.startActivity(Intent.createChooser(i, "Share song"))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isLiked) "Unlike" else "Like",
+                                    fontFamily = NothingFont
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isLiked) Icons.Default.Favorite
+                                    else Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (isLiked) Color.Red else subTextColor
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onLike()
+                            }
+                        )
+                        onPlayNext?.let {
+                            DropdownMenuItem(
+                                text = { Text("Play next", fontFamily = NothingFont) },
+                                onClick = {
+                                    menuExpanded = false
+                                    it()
+                                }
+                            )
+                        }
+                        onAddToQueue?.let {
+                            DropdownMenuItem(
+                                text = { Text("Add to queue", fontFamily = NothingFont) },
+                                onClick = {
+                                    menuExpanded = false
+                                    it()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BrokenHeartDialog(
+    song: Song,
+    isDarkMode: Boolean,
+    onDismiss: () -> Unit,
+    onPlayOnline: () -> Unit,
+    onRetryCache: () -> Unit,
+    onRemoveLike: () -> Unit
+) {
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(bgColor)
+                .padding(20.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.HeartBroken,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Cache failed",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = textColor
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                Text(
+                    text = song.title,
+                    fontFamily = NothingFont,
+                    fontSize = 13.sp,
+                    color = textColor.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Red)
+                        .clickable { onPlayOnline() }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Play online",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
+                        )
+                        .clickable { onRetryCache() }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Retry cache",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        color = textColor
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
+                        )
+                        .clickable { onRemoveLike() }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Remove from liked",
+                        fontFamily = NothingFont,
+                        color = Color.Red
+                    )
+                }
+            }
         }
     }
 }
