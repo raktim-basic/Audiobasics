@@ -1,5 +1,6 @@
 package com.yt.lite.ui
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,7 +23,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -32,16 +37,16 @@ import com.yt.lite.ui.theme.NothingFont
 fun SettingsScreen(
     vm: MusicViewModel,
     isDarkMode: Boolean,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateUpdater: () -> Unit
 ) {
     val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
     val cacheSize by vm.cacheSize.collectAsState()
     val cacheProgress by vm.cacheProgress.collectAsState()
 
-    var showUpdater by remember { mutableStateOf(false) }
     var showImportWarning by remember { mutableStateOf(false) }
-    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -50,9 +55,7 @@ fun SettingsScreen(
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        uri?.let { vm.exportData(context, it) }
-    }
+    ) { uri -> uri?.let { vm.exportData(context, it) } }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -63,7 +66,6 @@ fun SettingsScreen(
         }
     }
 
-    // Import warning dialog
     if (showImportWarning) {
         Dialog(onDismissRequest = { showImportWarning = false }) {
             Box(
@@ -120,28 +122,11 @@ fun SettingsScreen(
         }
     }
 
-    // Updater dialog
-    if (showUpdater) {
-        Dialog(onDismissRequest = { showUpdater = false }) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(surfaceColor)
-                    .padding(4.dp)
-            ) {
-                UpdaterScreen()
-            }
-        }
-        return
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -157,23 +142,18 @@ fun SettingsScreen(
             )
         }
 
-        DashedDivider(
-            modifier = Modifier.fillMaxWidth(),
-            isDarkMode = isDarkMode
-        )
+        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-
-            // Dark mode
+            // Dark/Light mode
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = if (isDarkMode) "Light Mode" else "Dark Mode",
-                    subtitle = if (isDarkMode) "Switch to light theme"
-                    else "Switch to dark theme",
+                    subtitle = if (isDarkMode) "Switch to light theme" else "Switch to dark theme",
                     icon = {
                         Icon(
                             imageVector = if (isDarkMode) Icons.Default.LightMode
@@ -189,7 +169,7 @@ fun SettingsScreen(
 
             item { SettingsDivider(isDarkMode) }
 
-            // Cache header
+            // CACHE
             item {
                 Text(
                     text = "CACHE",
@@ -201,7 +181,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Cache size
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
@@ -212,7 +191,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Cache all liked — with progress
             item {
                 val uncachedCount = likedSongs.count { !it.isCached }
                 val isCurrentlyCaching = cacheProgress != null
@@ -224,8 +202,7 @@ fun SettingsScreen(
                         isCurrentlyCaching -> {
                             val (done, total) = cacheProgress!!
                             val percent = if (total > 0)
-                                ((done.toFloat() / total.toFloat()) * 100).toInt()
-                            else 0
+                                ((done.toFloat() / total.toFloat()) * 100).toInt() else 0
                             "Caching... $done / $total ($percent%)"
                         }
                         uncachedCount == 0 -> "All songs cached!"
@@ -247,12 +224,9 @@ fun SettingsScreen(
                             )
                         }
                     },
-                    onClick = {
-                        if (!isCurrentlyCaching) vm.cacheAllLiked()
-                    }
+                    onClick = { if (!isCurrentlyCaching) vm.cacheAllLiked() }
                 )
 
-                // Progress bar
                 if (isCurrentlyCaching) {
                     val (done, total) = cacheProgress!!
                     val progress = if (total > 0) done.toFloat() / total.toFloat() else 0f
@@ -262,15 +236,14 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp, vertical = 4.dp),
                         color = Color.Red,
-                        trackColor = if (isDarkMode) Color(0xFF333333)
-                        else Color(0xFFE0E0E0)
+                        trackColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
                     )
                 }
             }
 
             item { SettingsDivider(isDarkMode) }
 
-            // Data header
+            // DATA
             item {
                 Text(
                     text = "DATA",
@@ -282,7 +255,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Export
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
@@ -300,7 +272,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Import
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
@@ -320,7 +291,7 @@ fun SettingsScreen(
 
             item { SettingsDivider(isDarkMode) }
 
-            // Version header
+            // VERSION AND UPDATE
             item {
                 Text(
                     text = "VERSION AND UPDATE",
@@ -332,7 +303,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Updater
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
@@ -346,19 +316,46 @@ fun SettingsScreen(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = { showUpdater = true }
+                    onClick = { onNavigateUpdater() }
                 )
             }
 
-            // App version
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "App Version",
-                    subtitle = "2.0",
+                    subtitle = APP_CURRENT_VERSION,
                     icon = {},
                     onClick = {}
                 )
+            }
+
+            item { SettingsDivider(isDarkMode) }
+
+            // GitHub link
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Audiobasics GitHub",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color(0xFF1565C0),
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.clickable {
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/raktim-basic/Audiobasics")
+                            )
+                            context.startActivity(intent)
+                        }
+                    )
+                }
             }
         }
 
@@ -368,7 +365,8 @@ fun SettingsScreen(
                 .fillMaxWidth()
                 .background(if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8))
                 .padding(vertical = 12.dp, horizontal = 20.dp),
-            horizontalArrangement = Arrangement.Start
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
                 Icon(
@@ -378,6 +376,34 @@ fun SettingsScreen(
                     modifier = Modifier.size(28.dp)
                 )
             }
+
+            // Made by raktim-basic
+            val madeByText = buildAnnotatedString {
+                withStyle(SpanStyle(
+                    fontFamily = NothingFont,
+                    fontSize = 14.sp,
+                    color = textColor
+                )) { append("Made by ") }
+                withStyle(SpanStyle(
+                    fontFamily = NothingFont,
+                    fontSize = 14.sp,
+                    color = Color(0xFF1565C0),
+                    textDecoration = TextDecoration.Underline
+                )) { append("raktim-basic") }
+            }
+            Text(
+                text = madeByText,
+                modifier = Modifier.clickable {
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://github.com/raktim-basic")
+                    )
+                    context.startActivity(intent)
+                }
+            )
+
+            // Spacer to balance the row
+            Spacer(Modifier.size(48.dp))
         }
     }
 }
@@ -431,8 +457,6 @@ fun SettingsDivider(isDarkMode: Boolean) {
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(
-                if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFEEEEEE)
-            )
+            .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFEEEEEE))
     )
 }
