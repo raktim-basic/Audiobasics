@@ -420,7 +420,8 @@ object Innertube {
                     if (strapRuns != null) {
                         val artists = mutableListOf<String>()
                         for (r in 0 until strapRuns.length()) {
-                            val t = strapRuns.optJSONObject(r)?.optString("text", "") ?: ""
+                            val t = strapRuns.optJSONObject(r)
+                                ?.optString("text", "") ?: ""
                             if (t == " & " || t == ", " || t.isBlank()) continue
                             artists.add(t)
                         }
@@ -520,7 +521,7 @@ object Innertube {
                                             "musicResponsiveListItemFlexColumnRenderer"
                                         )
                                     val songTitle = extractText(col0, "text")
-                                        .ifBlank { continue }
+                                    if (songTitle.isBlank()) continue
 
                                     songs.add(Song(
                                         id = videoId,
