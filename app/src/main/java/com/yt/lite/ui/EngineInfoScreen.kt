@@ -1,7 +1,6 @@
 package com.yt.lite.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,7 +22,6 @@ import okhttp3.Request
 import org.json.JSONArray
 import com.yt.lite.ui.theme.NothingFont
 
-// Hardcoded current versions — update these when you update dependencies
 private const val NEWPIPE_CURRENT = "v0.26.0"
 private const val YTM_CURRENT = "1.20240101.01.00"
 
@@ -102,7 +100,7 @@ fun EngineInfoScreen(
             Text(
                 text = "Latest version : ${
                     when {
-                        !checked -> NEWPIPE_CURRENT
+                        !checked -> "—"
                         latestNewPipe != null -> latestNewPipe!!
                         else -> "Unknown"
                     }
@@ -123,7 +121,7 @@ fun EngineInfoScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // YTM card
+        // YTM card — no latest version shown (no public API to check)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -147,14 +145,7 @@ fun EngineInfoScreen(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "Latest version : $YTM_CURRENT",
-                fontFamily = NothingFont,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "Currently version status : Active",
+                text = "Current version status : Active",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
@@ -164,7 +155,7 @@ fun EngineInfoScreen(
 
         Spacer(Modifier.weight(1f))
 
-        // Check latest version button
+        // Check latest version — only fetches NewPipe
         Box(
             modifier = Modifier
                 .fillMaxWidth()
