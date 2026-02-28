@@ -43,7 +43,6 @@ fun LikedScreen(
 
     val listState = rememberLazyListState()
 
-    // Header is collapsed only when user has actually scrolled past it
     val isHeaderCollapsed by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
@@ -65,7 +64,6 @@ fun LikedScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Collapsed mini header shown when scrolled
         if (isHeaderCollapsed) {
             Row(
                 modifier = Modifier
@@ -92,7 +90,6 @@ fun LikedScreen(
             DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
         }
 
-        // Search bar
         if (isSearching) {
             OutlinedTextField(
                 value = searchQuery,
@@ -125,7 +122,6 @@ fun LikedScreen(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Full header as first item in list
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
@@ -161,7 +157,6 @@ fun LikedScreen(
                         }
                     }
 
-                    // Shuffle button
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -201,13 +196,13 @@ fun LikedScreen(
                 }
             }
 
-            // Songs
             items(filteredSongs) { song ->
                 SongItem(
                     song = song,
                     isDarkMode = isDarkMode,
                     isLiked = true,
                     isInQueue = false,
+                    showExplicit = false,
                     onClick = { vm.playWithQueue(song, filteredSongs) },
                     onAddToQueue = { vm.addToQueue(song) },
                     onPlayNext = { vm.playNext(song) },
