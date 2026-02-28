@@ -33,6 +33,7 @@ fun SongItem(
     isDarkMode: Boolean,
     isLiked: Boolean,
     isInQueue: Boolean = false,
+    showExplicit: Boolean = true,
     onClick: () -> Unit,
     onAddToQueue: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
@@ -82,7 +83,6 @@ fun SongItem(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Thumbnail
         AsyncImage(
             model = song.thumbnail,
             contentDescription = null,
@@ -94,7 +94,6 @@ fun SongItem(
 
         Spacer(Modifier.width(12.dp))
 
-        // Title + Artist row
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
@@ -108,9 +107,8 @@ fun SongItem(
 
             Spacer(Modifier.height(3.dp))
 
-            // Artist row — explicit badge + artist name
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (song.isExplicit) {
+                if (showExplicit && song.isExplicit) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(3.dp))
@@ -140,7 +138,6 @@ fun SongItem(
             }
         }
 
-        // Broken heart button — only when liked and cache failed
         if (isLiked && song.cacheFailed) {
             IconButton(onClick = { showBrokenHeartDialog = true }) {
                 Icon(
@@ -152,7 +149,6 @@ fun SongItem(
             }
         }
 
-        // 3 dots menu — hidden for albums outside queue
         if (showMenu) {
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
