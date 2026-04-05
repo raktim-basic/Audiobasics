@@ -3,11 +3,14 @@ package com.yt.lite.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +31,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import com.yt.lite.ui.theme.NothingFont
 
-const val APP_CURRENT_VERSION = "2.0"
+const val APP_CURRENT_VERSION = "2.1"
 const val APP_GITHUB_RELEASES_API =
     "https://api.github.com/repos/raktim-basic/Audiobasics/releases?per_page=5"
 const val APP_GITHUB_RELEASES_URL =
@@ -45,8 +48,7 @@ suspend fun fetchLatestAppVersion(): String? = withContext(Dispatchers.IO) {
         val body = resp.body?.string() ?: return@withContext null
         val arr = JSONArray(body)
         if (arr.length() > 0)
-            arr.getJSONObject(0).optString("tag_name")
-                ?.removePrefix("v")
+            arr.getJSONObject(0).optString("tag_name")?.removePrefix("v")
         else null
     } catch (_: Exception) { null }
 }
@@ -74,11 +76,26 @@ fun UpdaterScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
-            .padding(horizontal = 28.dp),
+            .background(bgColor),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(60.dp))
+        // Back button top left
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, start = 4.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
 
         Text(
             text = "Updater",
@@ -129,64 +146,68 @@ fun UpdaterScreen(
 
         Spacer(Modifier.weight(1f))
 
-        // Check for updates button
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color.Red)
-                .clickable(enabled = !isChecking) {
-                    scope.launch {
-                        isChecking = true
-                        latestVersion = fetchLatestAppVersion()
-                        checked = true
-                        isChecking = false
-                    }
-                }
-                .padding(vertical = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isChecking) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    strokeWidth = 2.dp,
-                    color = Color.White
-                )
-            } else {
-                Text(
-                    text = "check for updates",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color.White
-                )
-            }
-        }
-
-        // Download and update button — only when update available
-        if (updateAvailable) {
-            Spacer(Modifier.height(12.dp))
+        Column(modifier = Modifier.padding(horizontal = 28.dp)) {
+            // Check for updates button
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Red)
-                    .clickable {
-                        val intent = Intent(Intent.ACTION_VIEW,
-                            Uri.parse(APP_GITHUB_RELEASES_URL))
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        context.startActivity(intent)
+                    .clickable(enabled = !isChecking) {
+                        scope.launch {
+                            isChecking = true
+                            latestVersion = fetchLatestAppVersion()
+                            checked = true
+                            isChecking = false
+                        }
                     }
                     .padding(vertical = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Download and update",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color.White
-                )
+                if (isChecking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
+                } else {
+                    Text(
+                        text = "check for updates",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.White
+                    )
+                }
+            }
+
+            // Download and update — only when update available
+            if (updateAvailable) {
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Red)
+                        .clickable {
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse(APP_GITHUB_RELEASES_URL)
+                            )
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        }
+                        .padding(vertical = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Download and update",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color.White
+                    )
+                }
             }
         }
 
