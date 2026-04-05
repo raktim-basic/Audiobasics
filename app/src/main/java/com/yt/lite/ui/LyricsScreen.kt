@@ -9,6 +9,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,7 +25,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.yt.lite.lyrics.LyricsRepository
-import com.yt.lite.lyrics.LyricLine
 import com.yt.lite.ui.theme.NothingFont
 import kotlinx.coroutines.launch
 
@@ -35,11 +37,13 @@ fun LyricsScreen(
     val currentSong by vm.currentSong.collectAsState()
     val currentPosition by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
+    val isPlaying by vm.isPlaying.collectAsState()
 
     var isRealTime by remember { mutableStateOf(true) }
     var lyricsResult by remember { mutableStateOf<com.yt.lite.lyrics.LyricsResult?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
+    var refreshKey by remember { mutableStateOf(0) }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -48,8 +52,8 @@ fun LyricsScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
-    // Load lyrics when song changes
-    LaunchedEffect(currentSong?.id) {
+    // Load lyrics when song changes or refresh triggered
+    LaunchedEffect(currentSong?.id, refreshKey) {
         val song = currentSong ?: return@LaunchedEffect
         isLoading = true
         hasError = false
@@ -62,14 +66,14 @@ fun LyricsScreen(
             )
             lyricsResult = result
             hasError = result == null
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             hasError = true
         } finally {
             isLoading = false
         }
     }
 
-    // Auto scroll to current line in real-time mode
+    // Current line index for real-time mode
     val currentLineIndex = remember(currentPosition, lyricsResult) {
         val lines = lyricsResult?.syncedLines ?: return@remember -1
         var idx = -1
@@ -80,6 +84,7 @@ fun LyricsScreen(
         idx
     }
 
+    // Auto-scroll to current line
     LaunchedEffect(currentLineIndex) {
         if (isRealTime && currentLineIndex >= 0) {
             scope.launch {
@@ -115,12 +120,12 @@ fun LyricsScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
 
-                    // Tabs — Real-time / Static
+                    // Top bar: Real-time | Static tabs + Refresh button
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                        horizontalArrangement = Arrangement.Start
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Real-time",
@@ -139,9 +144,21 @@ fun LyricsScreen(
                             color = if (!isRealTime) Color.Red else Color.Gray,
                             modifier = Modifier.clickable { isRealTime = false }
                         )
+                        Spacer(Modifier.weight(1f))
+                        IconButton(
+                            onClick = { refreshKey++ },
+                            enabled = !isLoading
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh lyrics",
+                                tint = if (isLoading) Color.Gray else textColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
 
-                    // Grey dashed divider
+                    // Dashed divider
                     androidx.compose.foundation.Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -189,7 +206,6 @@ fun LyricsScreen(
                                 }
                             }
                             isRealTime && lyricsResult!!.hasSynced -> {
-                                // Real-time synced lyrics
                                 LazyColumn(
                                     state = listState,
                                     modifier = Modifier.fillMaxSize(),
@@ -201,9 +217,10 @@ fun LyricsScreen(
                                         Text(
                                             text = line.text.ifBlank { " " },
                                             fontFamily = NothingFont,
+                                            // Same size for all — no scaling
                                             fontWeight = if (isCurrent) FontWeight.Bold
                                             else FontWeight.Normal,
-                                            fontSize = if (isCurrent) 18.sp else 15.sp,
+                                            fontSize = 15.sp,
                                             color = if (isCurrent) Color.Red else Color.Gray,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.fillMaxWidth()
@@ -212,7 +229,6 @@ fun LyricsScreen(
                                 }
                             }
                             else -> {
-                                // Static lyrics — plain text scrollable
                                 LazyColumn(
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(vertical = 16.dp),
@@ -234,12 +250,12 @@ fun LyricsScreen(
                         }
                     }
 
-                    // Bottom bar
+                    // Bottom bar — Back | Powered by LRCLIB | Play/Pause
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(surfaceColor)
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -250,13 +266,23 @@ fun LyricsScreen(
                                 tint = textColor
                             )
                         }
+
                         Text(
                             text = "Powered by LRCLIB",
                             fontFamily = NothingFont,
                             fontSize = 12.sp,
                             color = Color.Gray
                         )
-                        Spacer(Modifier.width(48.dp))
+
+                        IconButton(onClick = { vm.togglePlayPause() }) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause
+                                else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = textColor,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
                     }
                 }
             }
