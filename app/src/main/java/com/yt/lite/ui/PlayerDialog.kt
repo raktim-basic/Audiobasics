@@ -1,6 +1,7 @@
 package com.yt.lite.ui
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -13,9 +14,11 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,10 +54,12 @@ fun PlayerDialog(
     val isLiked = likedSongs.any { it.id == song?.id }
 
     var showLyrics by remember { mutableStateOf(false) }
+    var showInfo by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
+    val subTextColor = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
 
     if (showLyrics) {
         LyricsScreen(
@@ -88,20 +93,76 @@ fun PlayerDialog(
                     .clickable(enabled = false) {}
             ) {
                 Column {
-                    // X button
+
+                    // Top bar: Speaker | Info | Close — Windows-esque
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.End
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Speaker — Desk connect (coming soon)
+                        IconButton(onClick = {
+                            Toast.makeText(
+                                context, "Coming soon", Toast.LENGTH_SHORT
+                            ).show()
+                        }) {
+                            Icon(
+                                Icons.Default.SpeakerGroup,
+                                contentDescription = "Desk connect",
+                                tint = textColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Info
+                        IconButton(onClick = { showInfo = !showInfo }) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = "Song info",
+                                tint = if (showInfo) Color.Red else textColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Close
                         IconButton(onClick = onDismiss) {
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Close",
-                                tint = textColor
+                                tint = textColor,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
+                    }
+
+                    // Info panel — shown when ⓘ tapped
+                    if (showInfo) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(surfaceColor)
+                                .padding(horizontal = 20.dp, vertical = 14.dp)
+                        ) {
+                            Text(
+                                text = "Song info",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color.Red
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            InfoRow("Title", song?.title ?: "—", textColor, subTextColor)
+                            InfoRow("Artist", song?.artist ?: "—", textColor, subTextColor)
+                            InfoRow("Duration", formatTime(duration), textColor, subTextColor)
+                            InfoRow(
+                                "Explicit",
+                                if (song?.isExplicit == true) "Yes" else "No",
+                                textColor, subTextColor
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
                     }
 
                     // Artwork + Song info
@@ -119,9 +180,7 @@ fun PlayerDialog(
                                 .clip(RoundedCornerShape(8.dp)),
                             contentScale = ContentScale.Crop
                         )
-
                         Spacer(Modifier.width(16.dp))
-
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = song?.title ?: "Song Name",
@@ -138,14 +197,14 @@ fun PlayerDialog(
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Normal,
                                 fontSize = 13.sp,
-                                color = Color(0xFF888888),
+                                color = subTextColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(20.dp))
 
                     // Progress bar
                     val progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f
@@ -163,9 +222,7 @@ fun PlayerDialog(
                             fontSize = 15.sp,
                             color = textColor
                         )
-
                         Spacer(Modifier.width(8.dp))
-
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -175,16 +232,12 @@ fun PlayerDialog(
                             DashedProgressBar(
                                 progress = progress,
                                 onSeek = { seekProgress ->
-                                    if (duration > 0) {
-                                        vm.seekTo((seekProgress * duration).toLong())
-                                    }
+                                    if (duration > 0) vm.seekTo((seekProgress * duration).toLong())
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
-
                         Spacer(Modifier.width(8.dp))
-
                         Text(
                             text = formatTime(duration),
                             fontFamily = NothingFont,
@@ -194,9 +247,9 @@ fun PlayerDialog(
                         )
                     }
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(20.dp))
 
-                    // Controls
+                    // Controls: ← | Pause | →
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -260,7 +313,7 @@ fun PlayerDialog(
 
                     Spacer(Modifier.height(8.dp))
 
-                    // Bottom bar — Like / Lyrics / Share
+                    // Bottom bar — Heart | LYRICS | Share
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -317,6 +370,37 @@ fun PlayerDialog(
 }
 
 @Composable
+private fun InfoRow(
+    label: String,
+    value: String,
+    textColor: Color,
+    subTextColor: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            fontFamily = NothingFont,
+            fontSize = 12.sp,
+            color = subTextColor
+        )
+        Text(
+            text = value,
+            fontFamily = NothingFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.sp,
+            color = textColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
 fun DashedProgressBar(
     progress: Float,
     onSeek: (Float) -> Unit,
@@ -336,9 +420,8 @@ fun DashedProgressBar(
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
-                        if (barWidthPx > 0) {
+                        if (barWidthPx > 0)
                             dragProgress = (offset.x / barWidthPx).coerceIn(0f, 1f)
-                        }
                     },
                     onDragEnd = {
                         dragProgress?.let { onSeek(it) }
