@@ -1,7 +1,6 @@
 package com.yt.lite.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -22,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -46,6 +48,7 @@ fun SavedAlbumsScreen(
     var isSearching by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
 
     val isHeaderCollapsed by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
@@ -54,6 +57,7 @@ fun SavedAlbumsScreen(
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
     val filteredAlbums = remember(savedAlbums, searchQuery) {
         if (searchQuery.isBlank()) savedAlbums
@@ -69,7 +73,7 @@ fun SavedAlbumsScreen(
             .background(bgColor)
     ) {
         // Collapsed mini header
-        if (isHeaderCollapsed) {
+        if (isHeaderCollapsed && !isSearching) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -77,12 +81,7 @@ fun SavedAlbumsScreen(
                     .padding(horizontal = 20.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Default.Bookmark,
-                    contentDescription = null,
-                    tint = textColor,
-                    modifier = Modifier.size(22.dp)
-                )
+                Text("🔖", fontSize = 20.sp)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = "Saved Albums (${savedAlbums.size})",
@@ -95,63 +94,41 @@ fun SavedAlbumsScreen(
             DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
         }
 
-        // Search bar
-        if (isSearching) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .border(2.dp, Color.Red, RoundedCornerShape(8.dp)),
-                placeholder = {
-                    Text("Search albums...", fontFamily = NothingFont, color = Color.Gray)
-                },
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    fontFamily = NothingFont,
-                    color = textColor
-                ),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Red,
-                    unfocusedBorderColor = Color.Red,
-                    focusedContainerColor = surfaceColor,
-                    unfocusedContainerColor = surfaceColor
-                ),
-                shape = RoundedCornerShape(8.dp),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { })
-            )
-        }
-
         LazyColumn(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Full header as first list item
+            // Full header as first scroll item
             item {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Spacer(Modifier.height(32.dp))
+
+                    Text("🔖", fontSize = 100.sp)
+
+                    Spacer(Modifier.height(24.dp))
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 20.dp),
+                            .padding(horizontal = 20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Default.Bookmark,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(90.dp)
-                        )
-                        Spacer(Modifier.width(16.dp))
                         Text(
                             text = "Saved Albums (${savedAlbums.size})",
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
+                            fontSize = 18.sp,
                             color = textColor
                         )
                     }
+
+                    Spacer(Modifier.height(12.dp))
+
                     DashedDivider(
                         modifier = Modifier.fillMaxWidth(),
                         isDarkMode = isDarkMode
@@ -188,16 +165,115 @@ fun SavedAlbumsScreen(
             }
         }
 
-        AlbumsBottomBar(
-            isDarkMode = isDarkMode,
-            isSearching = isSearching,
-            onBack = onBack,
-            onSearchToggle = {
-                isSearching = !isSearching
-                if (!isSearching) searchQuery = ""
-            },
-            onQueue = onNavigateQueue
+        // Thin divider above bottom bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
+
+        // Bottom bar — search replaces bar when active
+        if (isSearching) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(barColor)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = {
+                        Text(
+                            "Search albums...",
+                            fontFamily = NothingFont,
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                    },
+                    textStyle = TextStyle(
+                        fontFamily = NothingFont,
+                        color = textColor,
+                        fontSize = 14.sp
+                    ),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Red,
+                        unfocusedBorderColor = Color.Red,
+                        focusedContainerColor = surfaceColor,
+                        unfocusedContainerColor = surfaceColor
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        focusManager.clearFocus()
+                    })
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = {
+                    isSearching = false
+                    searchQuery = ""
+                    focusManager.clearFocus()
+                }) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Cancel",
+                        tint = textColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(barColor)
+                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = textColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .clickable { isSearching = true }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "(ALBUMS)",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = textColor
+                    )
+                }
+                IconButton(onClick = onNavigateQueue) {
+                    Icon(
+                        Icons.Default.QueueMusic,
+                        contentDescription = "Queue",
+                        tint = textColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -257,71 +333,6 @@ fun AlbumItem(
                     maxLines = 1
                 )
             }
-        }
-    }
-}
-
-@Composable
-fun AlbumsBottomBar(
-    isDarkMode: Boolean,
-    isSearching: Boolean,
-    onBack: () -> Unit,
-    onSearchToggle: () -> Unit,
-    onQueue: () -> Unit
-) {
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val iconColor = if (isDarkMode) Color.White else Color.Black
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(bgColor)
-            .padding(vertical = 12.dp, horizontal = 20.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                Icons.Default.ArrowBack,
-                contentDescription = "Back",
-                tint = iconColor,
-                modifier = Modifier.size(28.dp)
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(if (isSearching) Color.Red else Color.Transparent)
-                .clickable { onSearchToggle() }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = "Search albums",
-                    tint = if (isSearching) Color.White else iconColor,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    "(ALBUMS)",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = if (isSearching) Color.White else iconColor
-                )
-            }
-        }
-
-        IconButton(onClick = onQueue) {
-            Icon(
-                Icons.Default.QueueMusic,
-                contentDescription = "Queue",
-                tint = iconColor,
-                modifier = Modifier.size(28.dp)
-            )
         }
     }
 }
