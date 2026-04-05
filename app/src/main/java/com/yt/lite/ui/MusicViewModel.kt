@@ -46,7 +46,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var syncJob: Job? = null
     private var cacheAllJob: Job? = null
 
-    // Semaphore: max 3 parallel downloads
     private val cacheSemaphore = Semaphore(3)
 
     private val _currentSong = MutableStateFlow<Song?>(null)
@@ -91,8 +90,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _savedAlbums = MutableStateFlow<List<Album>>(loadSavedAlbums())
     val savedAlbums: StateFlow<List<Album>> = _savedAlbums
 
-    private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", false))
+    private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
+
+    // Font preference: "typewriter" = NothingFont, "system" = system font
+    private val _fontPreference = MutableStateFlow(
+        prefs.getString("font_preference", "typewriter") ?: "typewriter"
+    )
+    val fontPreference: StateFlow<String> = _fontPreference
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
@@ -161,9 +166,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         refreshCacheSize()
     }
 
-    fun syncState() {
-        syncStateFromController()
-    }
+    fun syncState() { syncStateFromController() }
 
     private fun syncStateFromController() {
         val ctrl = controller ?: return
@@ -258,6 +261,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun clearSearch() {
+        _searchResults.value = emptyList()
+        _isSearching.value = false
+    }
+
     fun play(song: Song) {
         viewModelScope.launch {
             _currentSong.value = song
@@ -287,9 +295,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             if (similar.isNotEmpty()) {
                 val newQueue = listOf(song) + similar
                 _queue.value = newQueue
+                val ctrl = controller ?: return
+                // Add each similar song to the controller queue
                 similar.forEach { s ->
-                    controller?.addMediaItem(buildMediaItem(s, resolveUri(s)))
+                    ctrl.addMediaItem(buildMediaItem(s, resolveUri(s)))
                 }
+                Log.d("YTLite", "Queued ${similar.size} related songs")
             }
         } catch (e: Exception) {
             Log.e("YTLite", "Failed to fetch similar: ${e.message}")
@@ -460,7 +471,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         controller?.run { if (isPlaying) pause() else play() }
     }
 
-    // Like — immediately kicks off aggressive cache
     fun toggleLike(song: Song) {
         if (_likedSongs.value.any { it.id == song.id }) unlike(song) else like(song)
     }
@@ -470,11 +480,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _likedSongs.value = listOf(updatedSong) +
                 _likedSongs.value.filter { it.id != song.id }
         saveLikedSongs()
-        // Immediately start caching — no delay
         viewModelScope.launch {
-            cacheSemaphore.withPermit {
-                cacheSongSilently(updatedSong)
-            }
+            cacheSemaphore.withPermit { cacheSongSilently(updatedSong) }
         }
     }
 
@@ -485,7 +492,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         refreshCacheSize()
     }
 
-    // Returns true on success
     private suspend fun cacheSongSilently(song: Song): Boolean {
         return try {
             when (val result = CacheManager.cacheSong(getApplication(), song)) {
@@ -523,52 +529,42 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         saveLikedSongs()
     }
 
-    // Retry — wipe partial, clear state, re-cache immediately
     fun retryCache(song: Song) {
         updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = false)
         CacheManager.removeCachedSong(getApplication(), song.id)
         viewModelScope.launch {
             cacheSemaphore.withPermit {
                 val success = cacheSongSilently(song)
-                if (!success) {
+                if (!success)
                     updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
-                }
             }
         }
     }
 
-    // Cache all — 3 parallel downloads with live progress
     fun cacheAllLiked() {
         if (_cacheProgress.value != null) {
             Toast.makeText(getApplication(), "Already caching...", Toast.LENGTH_SHORT).show()
             return
         }
-
         val uncached = _likedSongs.value.filter { !it.isCached }
         if (uncached.isEmpty()) {
             Toast.makeText(getApplication(), "All songs cached!", Toast.LENGTH_SHORT).show()
             return
         }
-
         cacheAllJob = viewModelScope.launch {
             createCacheNotificationChannel()
             val total = uncached.size
             var done = 0
             _cacheProgress.value = Pair(0, total)
             updateCacheNotification(0, total)
-
             try {
                 coroutineScope {
                     uncached.map { song ->
                         async {
-                            // Clear any previous failed state
                             updateLikedSongCacheStatus(
                                 song.id, isCached = false, cacheFailed = false
                             )
-                            cacheSemaphore.withPermit {
-                                cacheSongSilently(song)
-                            }
-                            // Update progress atomically
+                            cacheSemaphore.withPermit { cacheSongSilently(song) }
                             synchronized(this@MusicViewModel) { done++ }
                             _cacheProgress.value = Pair(done, total)
                             updateCacheNotification(done, total)
@@ -579,9 +575,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 _cacheProgress.value = null
                 refreshCacheSize()
                 cancelCacheNotification()
-                Toast.makeText(
-                    getApplication(), "Caching complete!", Toast.LENGTH_SHORT
-                ).show()
+                Toast.makeText(getApplication(), "Caching complete!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -645,6 +639,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleDarkMode() {
         _isDarkMode.value = !_isDarkMode.value
         prefs.edit().putBoolean("dark_mode", _isDarkMode.value).apply()
+    }
+
+    fun setFontPreference(font: String) {
+        _fontPreference.value = font
+        prefs.edit().putString("font_preference", font).apply()
     }
 
     private fun saveLikedSongs() {
