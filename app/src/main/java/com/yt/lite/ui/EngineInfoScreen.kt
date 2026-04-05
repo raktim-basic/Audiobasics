@@ -4,7 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,11 +62,26 @@ fun EngineInfoScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
-            .padding(horizontal = 24.dp),
+            .background(bgColor),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(60.dp))
+        // Back button top left
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, start = 4.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
 
         Text(
             text = "Engine info.",
@@ -74,91 +93,94 @@ fun EngineInfoScreen(
 
         Spacer(Modifier.height(40.dp))
 
-        // NewPipe card
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(cardColor)
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "Newpipe extractor",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = textColor
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Current version : $NEWPIPE_CURRENT",
-                fontFamily = NothingFont,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "Latest version : ${
-                    when {
-                        !checked -> "—"
-                        latestNewPipe != null -> latestNewPipe!!
-                        else -> "Unknown"
-                    }
-                }",
-                fontFamily = NothingFont,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "Current version status : Active",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
-        }
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            // NewPipe card
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(cardColor)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Newpipe extractor",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Current version : $NEWPIPE_CURRENT",
+                    fontFamily = NothingFont,
+                    fontSize = 13.sp,
+                    color = subTextColor
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Latest version : ${
+                        when {
+                            !checked -> "—"
+                            latestNewPipe != null -> latestNewPipe!!
+                            else -> "Unknown"
+                        }
+                    }",
+                    fontFamily = NothingFont,
+                    fontSize = 13.sp,
+                    color = subTextColor
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Current version status : Active",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = subTextColor
+                )
+            }
 
-        Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
-        // YTM card — no latest version shown (no public API to check)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(cardColor)
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "YTM web remix",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = textColor
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Current version : $YTM_CURRENT",
-                fontFamily = NothingFont,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "Current version status : Active",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
+            // YTM card
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(cardColor)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "YTM web remix",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Current version : $YTM_CURRENT",
+                    fontFamily = NothingFont,
+                    fontSize = 13.sp,
+                    color = subTextColor
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Current version status : Active",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = subTextColor
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))
 
-        // Check latest version — only fetches NewPipe
+        // Check latest version button
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 24.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color.Red)
                 .clickable(enabled = !isChecking) {
