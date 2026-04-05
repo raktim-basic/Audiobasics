@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.HeartBroken
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +32,7 @@ fun SongItem(
     isDarkMode: Boolean,
     isLiked: Boolean,
     isInQueue: Boolean = false,
+    isPlaying: Boolean = false,
     showExplicit: Boolean = true,
     onClick: () -> Unit,
     onAddToQueue: (() -> Unit)? = null,
@@ -54,6 +54,9 @@ fun SongItem(
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
     val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
+
+    // Title is red when playing
+    val titleColor = if (isPlaying) Color.Red else textColor
 
     if (showBrokenHeartDialog) {
         BrokenHeartDialog(
@@ -83,6 +86,7 @@ fun SongItem(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Thumbnail
         AsyncImage(
             model = song.thumbnail,
             contentDescription = null,
@@ -94,13 +98,14 @@ fun SongItem(
 
         Spacer(Modifier.width(12.dp))
 
+        // Title + Artist
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = textColor,
+                color = titleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -138,17 +143,18 @@ fun SongItem(
             }
         }
 
+        // 💔 emoji button — only when liked and cache failed
         if (isLiked && song.cacheFailed) {
-            IconButton(onClick = { showBrokenHeartDialog = true }) {
-                Icon(
-                    Icons.Default.HeartBroken,
-                    contentDescription = "Cache failed",
-                    tint = Color.Red,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+            Text(
+                text = "💔",
+                fontSize = 20.sp,
+                modifier = Modifier
+                    .clickable { showBrokenHeartDialog = true }
+                    .padding(8.dp)
+            )
         }
 
+        // 3 dots menu
         if (showMenu) {
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
@@ -193,17 +199,11 @@ fun SongItem(
                                     tint = if (isLiked) Color.Red else subTextColor
                                 )
                             },
-                            onClick = {
-                                menuExpanded = false
-                                onLike()
-                            }
+                            onClick = { menuExpanded = false; onLike() }
                         )
                         DropdownMenuItem(
                             text = { Text("Reorder", fontFamily = NothingFont) },
-                            onClick = {
-                                menuExpanded = false
-                                onReorder?.invoke()
-                            }
+                            onClick = { menuExpanded = false; onReorder?.invoke() }
                         )
                         DropdownMenuItem(
                             text = {
@@ -213,10 +213,7 @@ fun SongItem(
                                     color = Color.Red
                                 )
                             },
-                            onClick = {
-                                menuExpanded = false
-                                onRemoveFromQueue?.invoke()
-                            }
+                            onClick = { menuExpanded = false; onRemoveFromQueue?.invoke() }
                         )
                     } else {
                         DropdownMenuItem(
@@ -248,27 +245,18 @@ fun SongItem(
                                     tint = if (isLiked) Color.Red else subTextColor
                                 )
                             },
-                            onClick = {
-                                menuExpanded = false
-                                onLike()
-                            }
+                            onClick = { menuExpanded = false; onLike() }
                         )
                         onPlayNext?.let {
                             DropdownMenuItem(
                                 text = { Text("Play next", fontFamily = NothingFont) },
-                                onClick = {
-                                    menuExpanded = false
-                                    it()
-                                }
+                                onClick = { menuExpanded = false; it() }
                             )
                         }
                         onAddToQueue?.let {
                             DropdownMenuItem(
                                 text = { Text("Add to queue", fontFamily = NothingFont) },
-                                onClick = {
-                                    menuExpanded = false
-                                    it()
-                                }
+                                onClick = { menuExpanded = false; it() }
                             )
                         }
                     }
@@ -300,12 +288,7 @@ fun BrokenHeartDialog(
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.HeartBroken,
-                        contentDescription = null,
-                        tint = Color.Red,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Text("💔", fontSize = 22.sp)
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "Cache failed",
