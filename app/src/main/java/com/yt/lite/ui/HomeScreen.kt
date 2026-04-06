@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -23,6 +24,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yt.lite.ui.theme.NothingFont
+
+// Calculates scroll progress 0f..1f from a LazyListState
+@Composable
+fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
+    return remember(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+        if (totalItems <= 1) return@remember 0f
+        val itemProgress = listState.firstVisibleItemIndex.toFloat() / (totalItems - 1).toFloat()
+        itemProgress.coerceIn(0f, 1f)
+    }
+}
 
 @Composable
 fun HomeScreen(
@@ -46,7 +57,6 @@ fun HomeScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Decorative text
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -68,7 +78,7 @@ fun HomeScreen(
             )
         }
 
-        // Dashed divider — red + white in dark, red + black in light
+        // Static divider on home
         DashedDivider(
             modifier = Modifier.fillMaxWidth(),
             isDarkMode = isDarkMode
@@ -154,7 +164,14 @@ fun HomeScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Bottom bar
+        // Thin line above bottom bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
+        )
+
         HomeBottomBar(
             isDarkMode = isDarkMode,
             onSettings = onNavigateSettings,
@@ -209,34 +226,58 @@ fun HomeBottomBar(
     }
 }
 
+// scrollProgress: null = static (Home/Settings), 0f..1f = scroll indicator
 @Composable
 fun DashedDivider(
     modifier: Modifier = Modifier,
-    isDarkMode: Boolean = false
+    isDarkMode: Boolean = false,
+    scrollProgress: Float? = null
 ) {
     val secondColor = if (isDarkMode) Color.White else Color.Black
 
     Canvas(modifier = modifier.height(12.dp)) {
         val totalWidth = size.width
-        val halfWidth = totalWidth / 2f
         val y = size.height / 2f
         val dashWidth = 16f
         val dashGap = 8f
 
-        drawLine(
-            color = Color.Red,
-            start = Offset(0f, y),
-            end = Offset(halfWidth, y),
-            strokeWidth = 3f,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
-        )
-
-        drawLine(
-            color = secondColor,
-            start = Offset(halfWidth, y),
-            end = Offset(totalWidth, y),
-            strokeWidth = 3f,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
-        )
+        if (scrollProgress == null) {
+            // Static: red left half, white/black right half
+            drawLine(
+                color = Color.Red,
+                start = Offset(0f, y),
+                end = Offset(totalWidth / 2f, y),
+                strokeWidth = 3f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
+            )
+            drawLine(
+                color = secondColor,
+                start = Offset(totalWidth / 2f, y),
+                end = Offset(totalWidth, y),
+                strokeWidth = 3f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
+            )
+        } else {
+            // Scroll progress: red = scrolled portion, gray = remaining
+            val redEnd = totalWidth * scrollProgress.coerceIn(0f, 1f)
+            if (redEnd > 0f) {
+                drawLine(
+                    color = Color.Red,
+                    start = Offset(0f, y),
+                    end = Offset(redEnd, y),
+                    strokeWidth = 3f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
+                )
+            }
+            if (redEnd < totalWidth) {
+                drawLine(
+                    color = secondColor.copy(alpha = 0.3f),
+                    start = Offset(redEnd, y),
+                    end = Offset(totalWidth, y),
+                    strokeWidth = 3f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
+                )
+            }
+        }
     }
 }
