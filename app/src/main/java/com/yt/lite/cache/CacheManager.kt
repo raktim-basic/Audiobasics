@@ -20,9 +20,9 @@ object CacheManager {
 
     private const val CACHE_DIR = "audiobasics_cache"
     private const val THUMB_DIR = "audiobasics_thumbs"
-    private const val MIN_STORAGE_BYTES = 512L * 1024 * 1024 // 512MB — less strict
+    private const val LYRICS_DIR = "audiobasics_lyrics"
+    private const val MIN_STORAGE_BYTES = 512L * 1024 * 1024
 
-    // Aggressive client — large buffers, longer timeout for big files
     private val downloadClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -30,7 +30,6 @@ object CacheManager {
         .retryOnConnectionFailure(true)
         .build()
 
-    // Fast client for thumbnails
     private val thumbClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -49,11 +48,20 @@ object CacheManager {
         return dir
     }
 
+    fun getLyricsDir(context: Context): File {
+        val dir = File(context.filesDir, LYRICS_DIR)
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
     fun getCacheFile(context: Context, songId: String): File =
         File(getCacheDir(context), "$songId.m4a")
 
     fun getThumbFile(context: Context, songId: String): File =
         File(getThumbDir(context), "$songId.jpg")
+
+    fun getLyricsFile(context: Context, songId: String): File =
+        File(getLyricsDir(context), "$songId.json")
 
     fun isCached(context: Context, songId: String): Boolean {
         val f = getCacheFile(context, songId)
@@ -62,6 +70,11 @@ object CacheManager {
 
     fun isThumbCached(context: Context, songId: String): Boolean {
         val f = getThumbFile(context, songId)
+        return f.exists() && f.length() > 0
+    }
+
+    fun isLyricsCached(context: Context, songId: String): Boolean {
+        val f = getLyricsFile(context, songId)
         return f.exists() && f.length() > 0
     }
 
@@ -75,6 +88,26 @@ object CacheManager {
         return if (f.exists() && f.length() > 0) f.absolutePath else null
     }
 
+    // Save lyrics as JSON: { synced: "[...]", plain: "...", hasSynced: bool }
+    fun saveLyrics(context: Context, songId: String, lyricsJson: String) {
+        try {
+            val f = getLyricsFile(context, songId)
+            f.writeText(lyricsJson)
+        } catch (e: Exception) {
+            Log.e("CacheManager", "Failed to save lyrics for $songId: ${e.message}")
+        }
+    }
+
+    fun loadLyrics(context: Context, songId: String): String? {
+        return try {
+            val f = getLyricsFile(context, songId)
+            if (f.exists() && f.length() > 0) f.readText() else null
+        } catch (e: Exception) {
+            Log.e("CacheManager", "Failed to load lyrics for $songId: ${e.message}")
+            null
+        }
+    }
+
     fun hasEnoughStorage(context: Context): Boolean {
         return try {
             val stat = StatFs(Environment.getDataDirectory().path)
@@ -85,7 +118,8 @@ object CacheManager {
     fun getCacheSizeBytes(context: Context): Long {
         val audio = getCacheDir(context).listFiles()?.sumOf { it.length() } ?: 0L
         val thumb = getThumbDir(context).listFiles()?.sumOf { it.length() } ?: 0L
-        return audio + thumb
+        val lyrics = getLyricsDir(context).listFiles()?.sumOf { it.length() } ?: 0L
+        return audio + thumb + lyrics
     }
 
     fun getCacheSizeString(context: Context): String {
@@ -100,7 +134,6 @@ object CacheManager {
         }
     }
 
-    // Cache thumbnail — small fast download
     suspend fun cacheThumbnail(context: Context, songId: String, url: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
@@ -126,14 +159,12 @@ object CacheManager {
             }
         }
 
-    // Main cache function — aggressive with 3 retries
     suspend fun cacheSong(context: Context, song: Song): CacheResult =
         withContext(Dispatchers.IO) {
             if (!hasEnoughStorage(context)) return@withContext CacheResult.StorageLow
 
             val cacheFile = getCacheFile(context, song.id)
 
-            // Already cached — just make sure thumb is done too
             if (cacheFile.exists() && cacheFile.length() > 0) {
                 if (!isThumbCached(context, song.id) && song.thumbnail.isNotBlank()) {
                     cacheThumbnail(context, song.id, song.thumbnail)
@@ -143,11 +174,9 @@ object CacheManager {
 
             val tempFile = File(getCacheDir(context), "${song.id}.tmp")
 
-            // Try up to 3 times
             var lastError = ""
             repeat(3) { attempt ->
                 try {
-                    // Get fresh stream URL each attempt
                     val streamUrl = Innertube.getStreamUrl(context, song.id)
                         ?: run {
                             lastError = "Could not get stream URL"
@@ -173,8 +202,7 @@ object CacheManager {
                         return@repeat
                     }
 
-                    // Stream directly to temp file with large buffer
-                    val buffer = ByteArray(64 * 1024) // 64KB buffer
+                    val buffer = ByteArray(64 * 1024)
                     var bytesWritten = 0L
 
                     body.byteStream().use { input ->
@@ -194,16 +222,13 @@ object CacheManager {
                         return@repeat
                     }
 
-                    // Atomic rename
                     if (tempFile.renameTo(cacheFile)) {
-                        // Also cache thumbnail in parallel
                         if (song.thumbnail.isNotBlank()) {
                             cacheThumbnail(context, song.id, song.thumbnail)
                         }
                         Log.d("CacheManager", "Cached ${song.title} — $bytesWritten bytes")
                         return@withContext CacheResult.Success
                     } else {
-                        // renameTo failed — try copy + delete
                         tempFile.copyTo(cacheFile, overwrite = true)
                         tempFile.delete()
                         if (cacheFile.exists() && cacheFile.length() > 0) {
@@ -218,12 +243,10 @@ object CacheManager {
                     lastError = e.message ?: "Unknown error"
                     Log.w("CacheManager", "Attempt ${attempt + 1} failed for ${song.id}: $lastError")
                     tempFile.delete()
-                    // Small delay before retry
                     kotlinx.coroutines.delay(1000L * (attempt + 1))
                 }
             }
 
-            // All 3 attempts failed
             tempFile.delete()
             Log.e("CacheManager", "All attempts failed for ${song.title}: $lastError")
             CacheResult.Failed(lastError)
@@ -232,6 +255,7 @@ object CacheManager {
     fun removeCachedSong(context: Context, songId: String) {
         getCacheFile(context, songId).let { if (it.exists()) it.delete() }
         getThumbFile(context, songId).let { if (it.exists()) it.delete() }
+        getLyricsFile(context, songId).let { if (it.exists()) it.delete() }
         File(getCacheDir(context), "$songId.tmp").let { if (it.exists()) it.delete() }
     }
 }
