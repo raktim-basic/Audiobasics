@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
@@ -85,7 +86,7 @@ fun SavedAlbumsScreen(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Scrollable header — big emoji
+            // Scrollable header — Material bookmark icon
             item {
                 Column(
                     modifier = Modifier
@@ -94,7 +95,12 @@ fun SavedAlbumsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Spacer(Modifier.height(32.dp))
-                    Text("🔖", fontSize = 100.sp)
+                    Icon(
+                        imageVector = Icons.Default.Bookmark,
+                        contentDescription = "Saved Albums",
+                        modifier = Modifier.size(100.dp),
+                        tint = textColor
+                    )
                     Spacer(Modifier.height(24.dp))
                 }
             }
