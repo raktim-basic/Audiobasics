@@ -26,8 +26,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.zIndex
 import com.yt.lite.ui.theme.NothingFont
 import kotlinx.coroutines.delay
 
@@ -57,6 +57,8 @@ fun QueueScreen(
     val currentSong by vm.currentSong.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
+    val currentPosition by vm.currentPosition.collectAsState()
+    val duration by vm.duration.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -64,22 +66,42 @@ fun QueueScreen(
 
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetY by remember { mutableStateOf(0f) }
-    var targetIndex by remember { mutableStateOf<Int?>(null) }
     var itemHeightPx by remember { mutableStateOf(80f) }
 
     // Sleep timer
     var sleepTimerEndsAt by remember { mutableStateOf<Long?>(null) }
     var sleepTimerRemaining by remember { mutableStateOf(0L) }
     var showSleepDialog by remember { mutableStateOf(false) }
+    var endOfSongMode by remember { mutableStateOf(false) }
 
-    // Countdown ticker
-    LaunchedEffect(sleepTimerEndsAt) {
+    // Pause timer when music pauses, resume when plays
+    var timerPausedAt by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(isPlaying, sleepTimerEndsAt) {
         val endAt = sleepTimerEndsAt ?: return@LaunchedEffect
+        if (!isPlaying) {
+            // Pause — record how much time was left
+            timerPausedAt = endAt - System.currentTimeMillis()
+            return@LaunchedEffect
+        }
+        // Resume — restore remaining if paused
+        val pausedRemaining = timerPausedAt
+        if (pausedRemaining != null) {
+            sleepTimerEndsAt = System.currentTimeMillis() + pausedRemaining
+            timerPausedAt = null
+        }
+    }
+
+    // Ticker — only runs when playing
+    LaunchedEffect(sleepTimerEndsAt, isPlaying) {
+        val endAt = sleepTimerEndsAt ?: return@LaunchedEffect
+        if (!isPlaying) return@LaunchedEffect
         while (true) {
             val remaining = endAt - System.currentTimeMillis()
             if (remaining <= 0) {
                 sleepTimerRemaining = 0L
                 sleepTimerEndsAt = null
+                endOfSongMode = false
                 if (isPlaying) vm.togglePlayPause()
                 break
             }
@@ -88,13 +110,49 @@ fun QueueScreen(
         }
     }
 
+    // End of song mode — cancel timer if song changes
+    val currentSongId = currentSong?.id
+    LaunchedEffect(currentSongId) {
+        if (endOfSongMode && sleepTimerEndsAt != null) {
+            // Song changed while in end-of-song mode → cancel
+            sleepTimerEndsAt = null
+            sleepTimerRemaining = 0L
+            endOfSongMode = false
+        }
+    }
+
     val totalMs = remember(queue) { queue.sumOf { it.duration } }
 
-    // Auto-scroll to playing song
+    // Scroll progress
     val listState = rememberLazyListState()
+    val scrollProgress by remember(
+        listState.firstVisibleItemIndex,
+        listState.firstVisibleItemScrollOffset
+    ) {
+        derivedStateOf {
+            if (queue.size <= 1) 0f
+            else (listState.firstVisibleItemIndex.toFloat() / (queue.size - 1).toFloat())
+                .coerceIn(0f, 1f)
+        }
+    }
+
+    // Auto-scroll to playing song on open
     LaunchedEffect(currentSong, queue) {
         val idx = queue.indexOfFirst { it.id == currentSong?.id }
         if (idx >= 0) listState.animateScrollToItem(idx)
+    }
+
+    // Computed visual queue — shifts items live while dragging
+    val visualQueue = remember(queue, draggingIndex, dragOffsetY, itemHeightPx) {
+        val dragging = draggingIndex ?: return@remember queue
+        val h = itemHeightPx.takeIf { it > 0 } ?: 80f
+        val targetIndex = (dragging + (dragOffsetY / h).toInt())
+            .coerceIn(0, queue.size - 1)
+        if (targetIndex == dragging) return@remember queue
+        val mutable = queue.toMutableList()
+        val item = mutable.removeAt(dragging)
+        mutable.add(targetIndex, item)
+        mutable
     }
 
     if (showSleepDialog) {
@@ -103,14 +161,15 @@ fun QueueScreen(
             onDismiss = { showSleepDialog = false },
             onEndOfSong = {
                 showSleepDialog = false
-                // Will stop after current song ends via STATE_ENDED observer in VM
-                // For now set a generous timer = remaining duration + buffer
-                val dur = currentSong?.duration?.takeIf { it > 0 } ?: 300_000L
-                sleepTimerEndsAt = System.currentTimeMillis() + dur + 2000L
+                // Use remaining duration from current position
+                val remaining = (duration - currentPosition).coerceAtLeast(1000L)
+                sleepTimerEndsAt = System.currentTimeMillis() + remaining
+                endOfSongMode = true
             },
             onCustom = { minutes ->
                 showSleepDialog = false
                 sleepTimerEndsAt = System.currentTimeMillis() + minutes * 60_000L
+                endOfSongMode = false
             }
         )
     }
@@ -142,7 +201,9 @@ fun QueueScreen(
                 color = textColor
             )
             Spacer(Modifier.weight(1f))
-            if (totalMs > 0) {
+            // Only show total time if all songs have duration info
+            val validTotal = queue.isNotEmpty() && totalMs > 0
+            if (validTotal) {
                 Text(
                     text = "(${formatTotalTime(totalMs)})  ${queue.size} songs",
                     fontFamily = NothingFont,
@@ -159,7 +220,12 @@ fun QueueScreen(
             }
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+        // Scroll-progress divider
+        DashedDivider(
+            modifier = Modifier.fillMaxWidth(),
+            isDarkMode = isDarkMode,
+            scrollProgress = scrollProgress
+        )
 
         if (queue.isEmpty()) {
             Box(
@@ -179,13 +245,12 @@ fun QueueScreen(
                 state = listState
             ) {
                 itemsIndexed(
-                    items = queue,
+                    items = visualQueue,
                     key = { _, song -> song.id }
                 ) { index, song ->
                     val isCurrentSong = song.id == currentSong?.id
                     val isLiked = likedSongs.any { it.id == song.id }
                     val isDragging = draggingIndex == index
-                    val isTarget = targetIndex == index
 
                     Box(
                         modifier = Modifier
@@ -205,7 +270,6 @@ fun QueueScreen(
                                     isDragging -> if (isDarkMode)
                                         Color.White.copy(alpha = 0.1f)
                                     else Color.Black.copy(alpha = 0.06f)
-                                    isTarget -> Color.Red.copy(alpha = 0.08f)
                                     isCurrentSong -> if (isDarkMode)
                                         Color.White.copy(alpha = 0.05f)
                                     else Color.Black.copy(alpha = 0.04f)
@@ -220,23 +284,22 @@ fun QueueScreen(
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
                                                 dragOffsetY += dragAmount.y
-                                                val h = itemHeightPx.takeIf { it > 0 } ?: 80f
-                                                targetIndex = (index + (dragOffsetY / h).toInt())
-                                                    .coerceIn(0, queue.size - 1)
                                             },
                                             onDragEnd = {
                                                 val from = draggingIndex
-                                                val to = targetIndex
+                                                val h = itemHeightPx.takeIf { it > 0 } ?: 80f
+                                                val to = from?.let {
+                                                    (it + (dragOffsetY / h).toInt())
+                                                        .coerceIn(0, queue.size - 1)
+                                                }
                                                 if (from != null && to != null && from != to)
                                                     vm.reorderQueue(from, to)
                                                 draggingIndex = null
                                                 dragOffsetY = 0f
-                                                targetIndex = null
                                             },
                                             onDragCancel = {
                                                 draggingIndex = null
                                                 dragOffsetY = 0f
-                                                targetIndex = null
                                             }
                                         )
                                     }
@@ -264,8 +327,14 @@ fun QueueScreen(
                             onShare = {},
                             onRemoveFromQueue = { vm.removeFromQueue(song) },
                             onReorder = {
-                                draggingIndex = index
-                                dragOffsetY = 0f
+                                // Toggle — if already dragging this, cancel
+                                if (draggingIndex == index) {
+                                    draggingIndex = null
+                                    dragOffsetY = 0f
+                                } else {
+                                    draggingIndex = index
+                                    dragOffsetY = 0f
+                                }
                             },
                             onRetryCache = { vm.retryCache(song) },
                             onRemoveLike = { vm.toggleLike(song) }
@@ -312,16 +381,16 @@ fun QueueScreen(
                 color = if (timerActive) Color.Red else textColor,
                 modifier = Modifier.clickable {
                     if (timerActive) {
-                        // Cancel timer
                         sleepTimerEndsAt = null
                         sleepTimerRemaining = 0L
+                        endOfSongMode = false
+                        timerPausedAt = null
                     } else {
                         showSleepDialog = true
                     }
                 }
             )
 
-            // Spacer to balance the row
             Spacer(Modifier.size(48.dp))
         }
     }
@@ -365,20 +434,11 @@ fun SleepTimerDialog(
                         onValueChange = { if (it.length <= 3) customMinutes = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = {
-                            Text(
-                                "Minutes...",
-                                fontFamily = NothingFont,
-                                color = Color.Gray
-                            )
+                            Text("Minutes...", fontFamily = NothingFont, color = Color.Gray)
                         },
-                        textStyle = TextStyle(
-                            fontFamily = NothingFont,
-                            color = textColor
-                        ),
+                        textStyle = TextStyle(fontFamily = NothingFont, color = textColor),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number
-                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color.Red,
                             unfocusedBorderColor = Color.Gray,
@@ -413,7 +473,6 @@ fun SleepTimerDialog(
                         }
                     }
                 } else {
-                    // Cancel option
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -432,7 +491,6 @@ fun SleepTimerDialog(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // End of this song
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -451,7 +509,6 @@ fun SleepTimerDialog(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // Custom timer
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
