@@ -3,8 +3,15 @@ package com.yt.lite.ui
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,7 +20,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,7 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
@@ -33,7 +43,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.yt.lite.ui.theme.NothingFont
 
-// Navigation destinations within settings
 sealed class SettingsPage {
     object Main : SettingsPage()
     object Appearance : SettingsPage()
@@ -50,32 +59,49 @@ fun SettingsScreen(
 ) {
     var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
 
-    // Handle back within settings pages
-    when (currentPage) {
-        is SettingsPage.Main -> SettingsMainPage(
-            vm = vm,
-            isDarkMode = isDarkMode,
-            onBack = onBack,
-            onNavigateUpdater = onNavigateUpdater,
-            onNavigateAppearance = { currentPage = SettingsPage.Appearance },
-            onNavigateCache = { currentPage = SettingsPage.Cache },
-            onNavigateLibrary = { currentPage = SettingsPage.Library }
-        )
-        is SettingsPage.Appearance -> AppearancePage(
-            vm = vm,
-            isDarkMode = isDarkMode,
-            onBack = { currentPage = SettingsPage.Main }
-        )
-        is SettingsPage.Cache -> CachePage(
-            vm = vm,
-            isDarkMode = isDarkMode,
-            onBack = { currentPage = SettingsPage.Main }
-        )
-        is SettingsPage.Library -> LibraryPage(
-            vm = vm,
-            isDarkMode = isDarkMode,
-            onBack = { currentPage = SettingsPage.Main }
-        )
+    // Intercept system back — go back within settings pages first
+    BackHandler(enabled = currentPage != SettingsPage.Main) {
+        currentPage = SettingsPage.Main
+    }
+
+    AnimatedContent(
+        targetState = currentPage,
+        transitionSpec = {
+            if (targetState != SettingsPage.Main)
+                (scaleIn(initialScale = 0.93f) + fadeIn()) togetherWith
+                        (scaleOut(targetScale = 0.97f) + fadeOut())
+            else
+                (scaleIn(initialScale = 1.03f) + fadeIn()) togetherWith
+                        (scaleOut(targetScale = 1.07f) + fadeOut())
+        },
+        label = "settings_transition"
+    ) { page ->
+        when (page) {
+            is SettingsPage.Main -> SettingsMainPage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = onBack,
+                onNavigateUpdater = onNavigateUpdater,
+                onNavigateAppearance = { currentPage = SettingsPage.Appearance },
+                onNavigateCache = { currentPage = SettingsPage.Cache },
+                onNavigateLibrary = { currentPage = SettingsPage.Library }
+            )
+            is SettingsPage.Appearance -> AppearancePage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = { currentPage = SettingsPage.Main }
+            )
+            is SettingsPage.Cache -> CachePage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = { currentPage = SettingsPage.Main }
+            )
+            is SettingsPage.Library -> LibraryPage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = { currentPage = SettingsPage.Main }
+            )
+        }
     }
 }
 
@@ -94,9 +120,7 @@ private fun SettingsMainPage(
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    Column(
-        modifier = Modifier.fillMaxSize().background(bgColor)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -118,52 +142,76 @@ private fun SettingsMainPage(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
-            // Appearance
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Appearance",
-                    subtitle = "Theme, font",
-                    icon = { Text("🎨", fontSize = 20.sp) },
+                    subtitle = "Theme",
+                    icon = {
+                        Icon(
+                            Icons.Default.Palette,
+                            contentDescription = null,
+                            tint = textColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    },
                     onClick = onNavigateAppearance
                 )
             }
 
             item { SettingsDivider(isDarkMode) }
 
-            // Cache
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Cache",
                     subtitle = "Offline songs",
-                    icon = { Text("💾", fontSize = 20.sp) },
+                    icon = {
+                        Icon(
+                            Icons.Default.Storage,
+                            contentDescription = null,
+                            tint = textColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    },
                     onClick = onNavigateCache
                 )
             }
 
             item { SettingsDivider(isDarkMode) }
 
-            // Library
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Library",
                     subtitle = "Export and import your data",
-                    icon = { Text("📚", fontSize = 20.sp) },
+                    icon = {
+                        Icon(
+                            Icons.Default.LibraryMusic,
+                            contentDescription = null,
+                            tint = textColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    },
                     onClick = onNavigateLibrary
                 )
             }
 
             item { SettingsDivider(isDarkMode) }
 
-            // Desk Connect (coming soon)
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Desk Connect",
                     subtitle = "Coming soon",
-                    icon = { Text("🖥️", fontSize = 20.sp) },
+                    icon = {
+                        Icon(
+                            Icons.Default.Computer,
+                            contentDescription = null,
+                            tint = textColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    },
                     onClick = {
                         Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                     }
@@ -172,7 +220,6 @@ private fun SettingsMainPage(
 
             item { SettingsDivider(isDarkMode) }
 
-            // VERSION AND UPDATE
             item {
                 Text(
                     text = "VERSION AND UPDATE",
@@ -213,7 +260,6 @@ private fun SettingsMainPage(
 
             item { SettingsDivider(isDarkMode) }
 
-            // GitHub link
             item {
                 Box(
                     modifier = Modifier
@@ -239,13 +285,11 @@ private fun SettingsMainPage(
             }
         }
 
-        // Thin divider
         Box(
             modifier = Modifier.fillMaxWidth().height(1.dp)
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -300,7 +344,7 @@ private fun AppearancePage(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val fontPreference by vm.fontPreference.collectAsState()
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Row(
@@ -320,61 +364,42 @@ private fun AppearancePage(
 
         DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = 8.dp)
+        // Dark mode row with toggle
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Dark / Light mode
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = if (isDarkMode) "Light Mode" else "Dark Mode",
-                    subtitle = if (isDarkMode) "Switch to light theme" else "Switch to dark theme",
-                    icon = { Text(if (isDarkMode) "☀️" else "🌙", fontSize = 20.sp) },
-                    onClick = { vm.toggleDarkMode() }
+            Icon(
+                Icons.Default.Palette,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Text(
+                text = "Dark mode",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = textColor,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = isDarkMode,
+                onCheckedChange = { vm.toggleDarkMode() },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color.Red,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.Gray
                 )
-            }
-
-            item { SettingsDivider(isDarkMode) }
-
-            // Font section header
-            item {
-                Text(
-                    text = "FONT",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    color = Color.Red,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                )
-            }
-
-            // Typewriter font option
-            item {
-                FontOptionRow(
-                    isDarkMode = isDarkMode,
-                    label = "Typewriter",
-                    preview = "Aa Bb Cc",
-                    fontFamily = NothingFont,
-                    selected = fontPreference == "typewriter",
-                    onClick = { vm.setFontPreference("typewriter") }
-                )
-            }
-
-            item { SettingsDivider(isDarkMode) }
-
-            // System font option
-            item {
-                FontOptionRow(
-                    isDarkMode = isDarkMode,
-                    label = "System",
-                    preview = "Aa Bb Cc",
-                    fontFamily = FontFamily.Default,
-                    selected = fontPreference == "system",
-                    onClick = { vm.setFontPreference("system") }
-                )
-            }
+            )
         }
+
+        Spacer(Modifier.weight(1f))
 
         Box(
             modifier = Modifier.fillMaxWidth().height(1.dp)
@@ -395,53 +420,6 @@ private fun AppearancePage(
                     modifier = Modifier.size(28.dp)
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun FontOptionRow(
-    isDarkMode: Boolean,
-    label: String,
-    preview: String,
-    fontFamily: FontFamily,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val textColor = if (isDarkMode) Color.White else Color.Black
-    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(bgColor)
-            .clickable { onClick() }
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = label,
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = textColor
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = preview,
-                fontFamily = fontFamily,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
-        }
-        if (selected) {
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .background(Color.Red, RoundedCornerShape(10.dp))
-            )
         }
     }
 }
@@ -579,7 +557,7 @@ private fun LibraryPage(
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
 
     var showImportWarning by remember { mutableStateOf(false) }
-    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
