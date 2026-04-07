@@ -11,7 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +42,6 @@ fun LyricsScreen(
     var lyricsResult by remember { mutableStateOf<com.yt.lite.lyrics.LyricsResult?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
-    var refreshKey by remember { mutableStateOf(0) }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -52,8 +50,8 @@ fun LyricsScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
-    // Load lyrics when song changes or refresh triggered
-    LaunchedEffect(currentSong?.id, refreshKey) {
+    // Load lyrics when song changes
+    LaunchedEffect(currentSong?.id) {
         val song = currentSong ?: return@LaunchedEffect
         isLoading = true
         hasError = false
@@ -120,7 +118,7 @@ fun LyricsScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
 
-                    // Top bar: Real-time | Static tabs + Refresh button
+                    // Top bar: Real-time | Static tabs (refresh button removed)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -144,18 +142,6 @@ fun LyricsScreen(
                             color = if (!isRealTime) Color.Red else Color.Gray,
                             modifier = Modifier.clickable { isRealTime = false }
                         )
-                        Spacer(Modifier.weight(1f))
-                        IconButton(
-                            onClick = { refreshKey++ },
-                            enabled = !isLoading
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh lyrics",
-                                tint = if (isLoading) Color.Gray else textColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
                     }
 
                     // Dashed divider
@@ -217,7 +203,6 @@ fun LyricsScreen(
                                         Text(
                                             text = line.text.ifBlank { " " },
                                             fontFamily = NothingFont,
-                                            // Same size for all — no scaling
                                             fontWeight = if (isCurrent) FontWeight.Bold
                                             else FontWeight.Normal,
                                             fontSize = 15.sp,
