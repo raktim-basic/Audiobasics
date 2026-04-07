@@ -177,9 +177,10 @@ fun SearchScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         query = suggestion
+                                        suggestions = emptyList()
                                         showSuggestions = false
-                                        vm.search(suggestion)
                                         focusManager.clearFocus()
+                                        vm.search(suggestion)
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
