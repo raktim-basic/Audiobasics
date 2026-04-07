@@ -64,10 +64,6 @@ fun AlbumScreen(
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
 
-    val isHeaderCollapsed by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 }
-    }
-
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
@@ -97,42 +93,24 @@ fun AlbumScreen(
         }
     }
 
+    // Scroll progress — item 0 is art, item 1 is sticky header
+    val totalItems = filteredSongs.size + 1
+    val scrollProgress by remember(
+        listState.firstVisibleItemIndex,
+        listState.firstVisibleItemScrollOffset
+    ) {
+        derivedStateOf {
+            if (totalItems <= 1) 0f
+            else (listState.firstVisibleItemIndex.toFloat() / (totalItems - 1).toFloat())
+                .coerceIn(0f, 1f)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Collapsed mini header
-        if (isHeaderCollapsed && !isSearching) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(bgColor)
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AsyncImage(
-                    model = album.thumbnail,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    text = album.title,
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = textColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-        }
-
         if (isLoading) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -145,15 +123,13 @@ fun AlbumScreen(
                 modifier = Modifier.weight(1f),
                 state = listState
             ) {
-                // Full header
+                // Scrollable part — art + artist name
                 item {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Spacer(Modifier.height(24.dp))
-
-                        // Large centered album art
                         AsyncImage(
                             model = album.thumbnail,
                             contentDescription = null,
@@ -163,10 +139,7 @@ fun AlbumScreen(
                                 .clip(RoundedCornerShape(8.dp)),
                             contentScale = ContentScale.Crop
                         )
-
                         Spacer(Modifier.height(12.dp))
-
-                        // Artist name below art
                         Text(
                             text = "(Album) ${album.artist}",
                             fontFamily = NothingFont,
@@ -177,14 +150,21 @@ fun AlbumScreen(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
-
                         Spacer(Modifier.height(16.dp))
+                    }
+                }
 
-                        // Album name + Share/Save/Play inline
+                // Sticky header — album name + icons
+                stickyHeader {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(bgColor)
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp),
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
@@ -199,7 +179,6 @@ fun AlbumScreen(
                             )
                             Spacer(Modifier.width(8.dp))
 
-                            // Share
                             IconButton(onClick = {
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
@@ -222,7 +201,6 @@ fun AlbumScreen(
                                 )
                             }
 
-                            // Save/unsave
                             IconButton(onClick = {
                                 if (isSaved) vm.unsaveAlbum(album)
                                 else vm.saveAlbum(album)
@@ -236,7 +214,6 @@ fun AlbumScreen(
                                 )
                             }
 
-                            // Play
                             IconButton(onClick = {
                                 if (albumSongs.isNotEmpty())
                                     vm.playWithQueue(albumSongs.first(), albumSongs)
@@ -252,7 +229,8 @@ fun AlbumScreen(
 
                         DashedDivider(
                             modifier = Modifier.fillMaxWidth(),
-                            isDarkMode = isDarkMode
+                            isDarkMode = isDarkMode,
+                            scrollProgress = scrollProgress
                         )
                     }
                 }
@@ -302,7 +280,7 @@ fun AlbumScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar — search replaces bar when active
+        // Bottom bar
         if (isSearching) {
             Row(
                 modifier = Modifier
@@ -432,7 +410,6 @@ fun AlbumSongRow(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Track number
         Text(
             text = trackNumber.toString(),
             fontFamily = NothingFont,
