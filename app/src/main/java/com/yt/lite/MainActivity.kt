@@ -57,7 +57,6 @@ import kotlinx.coroutines.launch
 
 private const val NOTIF_CHANNEL_ID = "audiobasics_updates"
 private const val NOTIF_ID = 1001
-private const val PREF_LAST_NOTIFIED = "last_notified_version"
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
@@ -106,6 +105,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Called every time activity comes to foreground
+    override fun onResume() {
+        super.onResume()
+        checkForUpdateAndNotify()
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -121,14 +126,10 @@ class MainActivity : ComponentActivity() {
     private fun checkForUpdateAndNotify() {
         CoroutineScope(Dispatchers.IO).launch {
             val latest = fetchLatestAppVersion() ?: return@launch
+            // Same version — nothing to do
             if (latest == APP_CURRENT_VERSION) return@launch
 
-            val prefs = getSharedPreferences("audiobasics", MODE_PRIVATE)
-            val lastNotified = prefs.getString(PREF_LAST_NOTIFIED, "") ?: ""
-            if (lastNotified == latest) return@launch
-
-            prefs.edit().putString(PREF_LAST_NOTIFIED, latest).apply()
-
+            // Build intent that opens updater screen
             val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
                 putExtra("OPEN_UPDATER", true)
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
