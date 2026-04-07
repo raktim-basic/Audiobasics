@@ -1,6 +1,7 @@
 package com.yt.lite.ui
 
 import android.content.Intent
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -41,6 +42,7 @@ import com.yt.lite.data.Album
 import com.yt.lite.data.Song
 import com.yt.lite.ui.theme.NothingFont
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AlbumScreen(
     vm: MusicViewModel,
