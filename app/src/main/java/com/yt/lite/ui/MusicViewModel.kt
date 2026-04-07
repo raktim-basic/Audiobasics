@@ -93,12 +93,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
 
-    // Font preference: "typewriter" = NothingFont, "system" = system font
-    private val _fontPreference = MutableStateFlow(
-        prefs.getString("font_preference", "typewriter") ?: "typewriter"
-    )
-    val fontPreference: StateFlow<String> = _fontPreference
-
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
             _isPlaying.value = playing
@@ -639,11 +633,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleDarkMode() {
         _isDarkMode.value = !_isDarkMode.value
         prefs.edit().putBoolean("dark_mode", _isDarkMode.value).apply()
-    }
-
-    fun setFontPreference(font: String) {
-        _fontPreference.value = font
-        prefs.edit().putString("font_preference", font).apply()
     }
 
     private fun saveLikedSongs() {
