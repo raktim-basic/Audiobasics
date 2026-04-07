@@ -11,7 +11,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
@@ -50,10 +49,6 @@ fun SavedAlbumsScreen(
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
 
-    val isHeaderCollapsed by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 }
-    }
-
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
@@ -67,38 +62,28 @@ fun SavedAlbumsScreen(
         }
     }
 
+    val totalItems = filteredAlbums.size + 1
+    val scrollProgress by remember(
+        listState.firstVisibleItemIndex,
+        listState.firstVisibleItemScrollOffset
+    ) {
+        derivedStateOf {
+            if (totalItems <= 1) 0f
+            else (listState.firstVisibleItemIndex.toFloat() / (totalItems - 1).toFloat())
+                .coerceIn(0f, 1f)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Collapsed mini header
-        if (isHeaderCollapsed && !isSearching) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(bgColor)
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("🔖", fontSize = 20.sp)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Saved Albums (${savedAlbums.size})",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = textColor
-                )
-            }
-            DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-        }
-
         LazyColumn(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Full header as first scroll item
+            // Scrollable header — big emoji
             item {
                 Column(
                     modifier = Modifier
@@ -107,15 +92,22 @@ fun SavedAlbumsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Spacer(Modifier.height(32.dp))
-
                     Text("🔖", fontSize = 100.sp)
-
                     Spacer(Modifier.height(24.dp))
+                }
+            }
 
+            // Sticky title row
+            stickyHeader {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(bgColor)
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -126,12 +118,10 @@ fun SavedAlbumsScreen(
                             color = textColor
                         )
                     }
-
-                    Spacer(Modifier.height(12.dp))
-
                     DashedDivider(
                         modifier = Modifier.fillMaxWidth(),
-                        isDarkMode = isDarkMode
+                        isDarkMode = isDarkMode,
+                        scrollProgress = scrollProgress
                     )
                 }
             }
@@ -173,7 +163,7 @@ fun SavedAlbumsScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar — search replaces bar when active
+        // Bottom bar
         if (isSearching) {
             Row(
                 modifier = Modifier
