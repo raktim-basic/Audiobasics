@@ -1,306 +1,120 @@
-package com.yt.lite.ui
+package com.yt.lite.lyrics
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.yt.lite.lyrics.LyricsRepository
-import com.yt.lite.lyrics.LyricsResult
-import com.yt.lite.ui.theme.NothingFont
-import kotlinx.coroutines.launch
+import android.content.Context
+import android.content.SharedPreferences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
-@Composable
-fun LyricsScreen(
-    vm: MusicViewModel,
-    isDarkMode: Boolean,
-    onBack: () -> Unit
-) {
-    val context = LocalContext.current
-    val currentSong by vm.currentSong.collectAsState()
-    val currentPosition by vm.currentPosition.collectAsState()
-    val duration by vm.duration.collectAsState()
-    val isPlaying by vm.isPlaying.collectAsState()
+object LyricsRepository {
 
-    var isRealTime by remember { mutableStateOf(true) }
-    var lyricsResult by remember { mutableStateOf<LyricsResult?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var hasError by remember { mutableStateOf(false) }
-    var refreshKey by remember { mutableStateOf(0) }
+    private const val PREFS_NAME = "ytlite_lyrics"
+    private const val CACHE_PREFIX = "lyrics_"
 
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
+    private var appContext: Context? = null
 
-    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF0F0F0)
-    val textColor = if (isDarkMode) Color.White else Color.Black
-    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
-
-    // Reload when song changes or refresh triggered
-    // Using song id + refreshKey as combined key
-    val songId = currentSong?.id
-    LaunchedEffect(songId, refreshKey) {
-        val song = currentSong ?: return@LaunchedEffect
-        isLoading = true
-        hasError = false
-        // Don't null out result immediately on song change to avoid flash
-        try {
-            val result = LyricsRepository.getLyrics(
-                context = context,
-                songId = song.id,
-                title = song.title,
-                artist = song.artist,
-                duration = duration,
-                forceRefresh = refreshKey > 0
-            )
-            lyricsResult = result
-            hasError = result == null
-        } catch (_: Exception) {
-            hasError = true
-            // Try loading from cache as fallback
-            if (lyricsResult == null) lyricsResult = null
-        } finally {
-            isLoading = false
-        }
+    fun init(context: Context) {
+        appContext = context.applicationContext
     }
 
-    // Current line index — safe null handling
-    val currentLineIndex = remember(currentPosition, lyricsResult) {
-        val lines = lyricsResult?.syncedLines ?: return@remember -1
-        if (lines.isEmpty()) return@remember -1
-        var idx = -1
-        for (i in lines.indices) {
-            if (lines[i].timeMs <= currentPosition) idx = i
-            else break
+    private fun getPrefs(): SharedPreferences? = appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    suspend fun getLyrics(
+        title: String,
+        artist: String,
+        duration: Long
+    ): LyricsResult? = withContext(Dispatchers.IO) {
+        val context = appContext ?: return@withContext null
+        val cacheKey = "${CACHE_PREFIX}${title.lowercase()}_${artist.lowercase()}".replace(" ", "_")
+
+        // 1. Try cache
+        getCachedLyrics(cacheKey)?.let { return@withContext it }
+
+        // 2. Fetch from LRCLIB
+        val fetched = fetchLyricsFromLrclib(title, artist, duration)
+        if (fetched != null) {
+            cacheLyrics(cacheKey, fetched)
         }
-        idx
+        return@withContext fetched
     }
 
-    // Auto scroll — only when real-time and valid index
-    LaunchedEffect(currentLineIndex) {
-        if (isRealTime && currentLineIndex >= 0) {
-            scope.launch {
-                try {
-                    listState.animateScrollToItem(
-                        (currentLineIndex - 2).coerceAtLeast(0)
+    private fun getCachedLyrics(key: String): LyricsResult? {
+        val prefs = getPrefs() ?: return null
+        val json = prefs.getString(key, null) ?: return null
+        return try {
+            val obj = JSONObject(json)
+            val syncedLines = obj.optJSONArray("synced")?.let { arr ->
+                (0 until arr.length()).map { i ->
+                    val line = arr.getJSONObject(i)
+                    LyricsLine(
+                        text = line.getString("text"),
+                        timeMs = line.getLong("timeMs")
                     )
-                } catch (_: Exception) {}
-            }
-        }
+                }
+            } ?: emptyList()
+            val plainText = obj.optString("plain", "")
+            LyricsResult(syncedLines, plainText)
+        } catch (_: Exception) { null }
     }
 
-    Dialog(
-        onDismissRequest = onBack,
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable { onBack() },
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .fillMaxHeight(0.75f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(bgColor)
-                    .clickable(enabled = false) {}
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-
-                    // Top bar: Real-time | Static + Refresh
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Real-time",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = if (isRealTime) Color.Red else Color.Gray,
-                            modifier = Modifier.clickable { isRealTime = true }
-                        )
-                        Spacer(Modifier.width(24.dp))
-                        Text(
-                            text = "Static",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = if (!isRealTime) Color.Red else Color.Gray,
-                            modifier = Modifier.clickable { isRealTime = false }
-                        )
-                        Spacer(Modifier.weight(1f))
-                        IconButton(
-                            onClick = {
-                                if (!isLoading) refreshKey++
-                            },
-                            enabled = !isLoading
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh lyrics",
-                                tint = if (isLoading) Color.Gray else textColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-
-                    // Dashed divider
-                    androidx.compose.foundation.Canvas(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                    ) {
-                        drawLine(
-                            color = Color.Gray,
-                            start = androidx.compose.ui.geometry.Offset(0f, size.height / 2),
-                            end = androidx.compose.ui.geometry.Offset(size.width, size.height / 2),
-                            strokeWidth = 2f,
-                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
-                                floatArrayOf(12f, 8f), 0f
-                            )
-                        )
-                    }
-
-                    // Lyrics content
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                    ) {
-                        when {
-                            isLoading -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(color = Color.Red)
-                                }
-                            }
-                            hasError || lyricsResult == null -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "Lyrics not found",
-                                        fontFamily = NothingFont,
-                                        fontSize = 16.sp,
-                                        color = Color.Gray,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
-                            isRealTime && (lyricsResult?.hasSynced == true) -> {
-                                val lines = lyricsResult?.syncedLines ?: emptyList()
-                                LazyColumn(
-                                    state = listState,
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    contentPadding = PaddingValues(vertical = 16.dp)
-                                ) {
-                                    itemsIndexed(lines) { index, line ->
-                                        val isCurrent = index == currentLineIndex
-                                        Text(
-                                            text = line.text.ifBlank { " " },
-                                            fontFamily = NothingFont,
-                                            fontWeight = if (isCurrent) FontWeight.Bold
-                                            else FontWeight.Normal,
-                                            fontSize = 15.sp,
-                                            color = if (isCurrent) Color.Red else Color.Gray,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                }
-                            }
-                            else -> {
-                                val lines = lyricsResult?.plainText?.lines() ?: emptyList()
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(vertical = 16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    itemsIndexed(lines) { _, line ->
-                                        Text(
-                                            text = line.ifBlank { " " },
-                                            fontFamily = NothingFont,
-                                            fontSize = 15.sp,
-                                            color = Color.Gray,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Bottom bar — Back | Powered by LRCLIB | Play/Pause
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor)
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                Icons.Default.ArrowBack,
-                                contentDescription = "Back",
-                                tint = textColor
-                            )
-                        }
-
-                        Text(
-                            text = "Powered by LRCLIB",
-                            fontFamily = NothingFont,
-                            fontSize = 12.sp,
-                            color = Color.Gray
-                        )
-
-                        IconButton(onClick = { vm.togglePlayPause() }) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause
-                                else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play",
-                                tint = textColor,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
+    private fun cacheLyrics(key: String, result: LyricsResult) {
+        val prefs = getPrefs() ?: return
+        val obj = JSONObject().apply {
+            put("plain", result.plainText)
+            put("synced", org.json.JSONArray().apply {
+                result.syncedLines.forEach { line ->
+                    put(JSONObject().apply {
+                        put("text", line.text)
+                        put("timeMs", line.timeMs)
+                    })
                 }
-            }
+            })
         }
+        prefs.edit().putString(key, obj.toString()).apply()
+    }
+
+    private suspend fun fetchLyricsFromLrclib(
+        title: String,
+        artist: String,
+        duration: Long
+    ): LyricsResult? = withContext(Dispatchers.IO) {
+        val queryTitle = title.lowercase().replace(" ", "%20")
+        val queryArtist = artist.lowercase().replace(" ", "%20")
+        val url = "https://lrclib.net/api/get?track_name=$queryTitle&artist_name=$queryArtist&duration=${duration / 1000}"
+        return@withContext try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            val responseCode = conn.responseCode
+            if (responseCode != 200) return@withContext null
+            val text = conn.inputStream.bufferedReader().readText()
+            val json = JSONObject(text)
+            val syncedLyrics = json.optString("syncedLyrics", "")
+            val plainLyrics = json.optString("plainLyrics", "")
+
+            val lines = if (syncedLyrics.isNotBlank()) {
+                parseLrc(syncedLyrics)
+            } else emptyList()
+
+            if (lines.isEmpty() && plainLyrics.isBlank()) return@withContext null
+            LyricsResult(lines, plainLyrics)
+        } catch (_: Exception) { null }
+    }
+
+    private fun parseLrc(lrc: String): List<LyricsLine> {
+        val regex = Regex("\\[(\\d{2}):(\\d{2})\\.(\\d{2})\\](.*)")
+        return lrc.lines().mapNotNull { line ->
+            regex.matchEntire(line)?.let { match ->
+                val minutes = match.groupValues[1].toInt()
+                val seconds = match.groupValues[2].toInt()
+                val millis = match.groupValues[3].toInt()
+                val timeMs = (minutes * 60 + seconds) * 1000L + millis * 10L
+                val text = match.groupValues[4].trim()
+                if (text.isNotBlank()) LyricsLine(text, timeMs) else null
+            }
+        }.sortedBy { it.timeMs }
     }
 }
