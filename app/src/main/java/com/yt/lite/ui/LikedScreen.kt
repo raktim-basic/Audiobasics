@@ -60,13 +60,14 @@ fun LikedScreen(
         }
     }
 
-    // Scroll progress for divider
-    val totalItems = filteredSongs.size + 1 // +1 for header item
-    val scrollProgress by remember(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+    // Improved scroll progress: reaches 1.0 when last visible item is last song
+    val totalItems = filteredSongs.size + 1 // +1 for heart header (item 0)
+    val scrollProgress = remember(listState, totalItems) {
         derivedStateOf {
-            if (totalItems <= 1) 0f
-            else (listState.firstVisibleItemIndex.toFloat() / (totalItems - 1).toFloat())
-                .coerceIn(0f, 1f)
+            if (totalItems <= 1) return@derivedStateOf 0f
+            val layoutInfo = listState.layoutInfo
+            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            (lastVisibleIndex.toFloat() / (totalItems - 1).toFloat()).coerceIn(0f, 1f)
         }
     }
 
@@ -79,7 +80,7 @@ fun LikedScreen(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Scrollable header — big heart + info
+            // Scrollable header — big heart
             item {
                 Column(
                     modifier = Modifier
@@ -93,7 +94,7 @@ fun LikedScreen(
                 }
             }
 
-            // Sticky title row — stays at top when scrolled
+            // Sticky title row
             stickyHeader {
                 Column(modifier = Modifier
                     .fillMaxWidth()
@@ -130,11 +131,10 @@ fun LikedScreen(
                             )
                         }
                     }
-                    // Scroll-progress divider
                     DashedDivider(
                         modifier = Modifier.fillMaxWidth(),
                         isDarkMode = isDarkMode,
-                        scrollProgress = scrollProgress
+                        scrollProgress = scrollProgress.value
                     )
                 }
             }
@@ -167,7 +167,7 @@ fun LikedScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar — search replaces when active
+        // Bottom bar
         if (isSearching) {
             Row(
                 modifier = Modifier
