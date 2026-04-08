@@ -21,7 +21,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -40,6 +42,8 @@ fun LikedScreen(
     val likedSongs by vm.likedSongs.collectAsState()
     val cacheSize by vm.cacheSize.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val haptic = LocalHapticFeedback.current
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
@@ -60,8 +64,7 @@ fun LikedScreen(
         }
     }
 
-    // Correct scroll progress: ignore sticky header (index 1)
-    val totalRegularItems = filteredSongs.size + 1 // heart (0) + songs (2..)
+    val totalRegularItems = filteredSongs.size + 1
     val scrollProgress = remember(listState, totalRegularItems) {
         derivedStateOf {
             if (totalRegularItems <= 1) return@derivedStateOf 0f
@@ -83,7 +86,6 @@ fun LikedScreen(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Heart header (index 0)
             item {
                 Column(
                     modifier = Modifier
@@ -97,7 +99,6 @@ fun LikedScreen(
                 }
             }
 
-            // Sticky header (index 1) – ignored in scroll progress
             stickyHeader {
                 Column(modifier = Modifier
                     .fillMaxWidth()
@@ -125,7 +126,10 @@ fun LikedScreen(
                             )
                         }
                         Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { vm.shuffleLiked() }) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.shuffleLiked()
+                        }) {
                             Icon(
                                 Icons.Default.Shuffle,
                                 contentDescription = "Shuffle",
@@ -151,6 +155,7 @@ fun LikedScreen(
                     isInQueue = false,
                     isPlaying = isPlaying,
                     showExplicit = false,
+                    hapticsEnabled = hapticsEnabled,
                     onClick = { vm.playWithQueue(song, filteredSongs) },
                     onAddToQueue = { vm.addToQueue(song) },
                     onPlayNext = { vm.playNext(song) },
@@ -169,7 +174,6 @@ fun LikedScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar
         if (isSearching) {
             Row(
                 modifier = Modifier
@@ -212,6 +216,7 @@ fun LikedScreen(
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
@@ -233,7 +238,10 @@ fun LikedScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onBack()
+                }) {
                     Icon(
                         Icons.Default.ArrowBack,
                         contentDescription = "Back",
@@ -243,7 +251,10 @@ fun LikedScreen(
                 }
                 Row(
                     modifier = Modifier
-                        .clickable { isSearching = true }
+                        .clickable {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isSearching = true
+                        }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -262,7 +273,10 @@ fun LikedScreen(
                         color = textColor
                     )
                 }
-                IconButton(onClick = onNavigateQueue) {
+                IconButton(onClick = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onNavigateQueue()
+                }) {
                     Icon(
                         Icons.Default.QueueMusic,
                         contentDescription = "Queue",
