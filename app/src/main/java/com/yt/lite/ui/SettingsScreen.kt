@@ -33,7 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -59,8 +61,11 @@ fun SettingsScreen(
     onNavigateUpdater: () -> Unit
 ) {
     var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val haptic = LocalHapticFeedback.current
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
+        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         currentPage = SettingsPage.Main
     }
 
@@ -116,6 +121,8 @@ private fun SettingsMainPage(
     onNavigateLibrary: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -155,7 +162,10 @@ private fun SettingsMainPage(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = onNavigateAppearance
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onNavigateAppearance()
+                    }
                 )
             }
 
@@ -174,7 +184,10 @@ private fun SettingsMainPage(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = onNavigateCache
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onNavigateCache()
+                    }
                 )
             }
 
@@ -193,7 +206,10 @@ private fun SettingsMainPage(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = onNavigateLibrary
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onNavigateLibrary()
+                    }
                 )
             }
 
@@ -213,6 +229,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -244,7 +261,10 @@ private fun SettingsMainPage(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = onNavigateUpdater
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onNavigateUpdater()
+                    }
                 )
             }
 
@@ -275,6 +295,7 @@ private fun SettingsMainPage(
                         color = Color(0xFF1565C0),
                         textDecoration = TextDecoration.Underline,
                         modifier = Modifier.clickable {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             context.startActivity(
                                 Intent(Intent.ACTION_VIEW,
                                     Uri.parse("https://github.com/raktim-basic/Audiobasics"))
@@ -298,7 +319,10 @@ private fun SettingsMainPage(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onBack()
+            }) {
                 Icon(
                     Icons.Default.ArrowBack,
                     contentDescription = "Back",
@@ -323,6 +347,7 @@ private fun SettingsMainPage(
             Text(
                 text = madeByText,
                 modifier = Modifier.clickable {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     context.startActivity(
                         Intent(Intent.ACTION_VIEW,
                             Uri.parse("https://github.com/raktim-basic"))
@@ -345,7 +370,7 @@ private fun AppearancePage(
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
-
+    val haptic = LocalHapticFeedback.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
@@ -391,7 +416,10 @@ private fun AppearancePage(
             )
             Switch(
                 checked = isDarkMode,
-                onCheckedChange = { vm.toggleDarkMode() },
+                onCheckedChange = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    vm.toggleDarkMode()
+                },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = Color.Red,
@@ -426,7 +454,10 @@ private fun AppearancePage(
             )
             Switch(
                 checked = hapticsEnabled,
-                onCheckedChange = { vm.toggleHaptics() },
+                onCheckedChange = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    vm.toggleHaptics()
+                },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = Color.Red,
@@ -449,7 +480,10 @@ private fun AppearancePage(
                 .background(barColor)
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onBack()
+            }) {
                 Icon(
                     Icons.Default.ArrowBack,
                     contentDescription = "Back",
@@ -473,6 +507,8 @@ private fun CachePage(
     val cacheSize by vm.cacheSize.collectAsState()
     val cacheProgress by vm.cacheProgress.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
+    val haptic = LocalHapticFeedback.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Row(
@@ -539,7 +575,12 @@ private fun CachePage(
                             )
                         }
                     },
-                    onClick = { if (!isCurrentlyCaching) vm.cacheAllLiked() }
+                    onClick = {
+                        if (!isCurrentlyCaching) {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.cacheAllLiked()
+                        }
+                    }
                 )
 
                 if (isCurrentlyCaching) {
@@ -568,7 +609,10 @@ private fun CachePage(
                 .background(barColor)
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onBack()
+            }) {
                 Icon(
                     Icons.Default.ArrowBack,
                     contentDescription = "Back",
@@ -587,6 +631,8 @@ private fun LibraryPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -610,7 +656,10 @@ private fun LibraryPage(
     }
 
     if (showImportWarning) {
-        Dialog(onDismissRequest = { showImportWarning = false }) {
+        Dialog(onDismissRequest = {
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            showImportWarning = false
+        }) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -638,7 +687,10 @@ private fun LibraryPage(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(onClick = { showImportWarning = false }) {
+                        TextButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showImportWarning = false
+                        }) {
                             Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
                         }
                         Spacer(Modifier.width(8.dp))
@@ -647,6 +699,7 @@ private fun LibraryPage(
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color.Red)
                                 .clickable {
+                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     showImportWarning = false
                                     pendingImportUri?.let { vm.importData(context, it) }
                                 }
@@ -700,7 +753,10 @@ private fun LibraryPage(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = { exportLauncher.launch("audiobasics_backup.json") }
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        exportLauncher.launch("audiobasics_backup.json")
+                    }
                 )
             }
 
@@ -719,7 +775,10 @@ private fun LibraryPage(
                             modifier = Modifier.size(24.dp)
                         )
                     },
-                    onClick = { importLauncher.launch(arrayOf("application/json")) }
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        importLauncher.launch(arrayOf("application/json"))
+                    }
                 )
             }
         }
@@ -735,7 +794,10 @@ private fun LibraryPage(
                 .background(barColor)
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onBack()
+            }) {
                 Icon(
                     Icons.Default.ArrowBack,
                     contentDescription = "Back",
