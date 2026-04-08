@@ -65,8 +65,7 @@ fun SavedAlbumsScreen(
         }
     }
 
-    // Improved scroll progress: reaches 1.0 when last visible item is last album
-    val totalItems = filteredAlbums.size + 1 // +1 for bookmark header (item 0)
+    val totalItems = filteredAlbums.size + 1 // item 0 = bookmark icon
     val scrollProgress = remember(listState, totalItems) {
         derivedStateOf {
             if (totalItems <= 1) return@derivedStateOf 0f
@@ -85,7 +84,7 @@ fun SavedAlbumsScreen(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Scrollable header — Material bookmark icon
+            // Bookmark header
             item {
                 Column(
                     modifier = Modifier
@@ -104,7 +103,7 @@ fun SavedAlbumsScreen(
                 }
             }
 
-            // Sticky title row
+            // Sticky header
             stickyHeader {
                 Column(
                     modifier = Modifier
@@ -162,7 +161,6 @@ fun SavedAlbumsScreen(
             }
         }
 
-        // Thin divider above bottom bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
