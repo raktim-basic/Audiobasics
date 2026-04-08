@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
@@ -144,7 +145,7 @@ private fun SettingsMainPage(
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Appearance and feel",   // <-- CHANGED
+                    title = "Appearance and feel",
                     subtitle = "Theme",
                     icon = {
                         Icon(
@@ -345,6 +346,8 @@ private fun AppearancePage(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Row(
             modifier = Modifier
@@ -363,6 +366,7 @@ private fun AppearancePage(
 
         DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
+        // Dark mode row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -388,6 +392,41 @@ private fun AppearancePage(
             Switch(
                 checked = isDarkMode,
                 onCheckedChange = { vm.toggleDarkMode() },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color.Red,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.Gray
+                )
+            )
+        }
+
+        // Haptic feedback row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.PhoneAndroid,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Text(
+                text = "Haptic feedback",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = textColor,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = hapticsEnabled,
+                onCheckedChange = { vm.toggleHaptics() },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = Color.Red,
