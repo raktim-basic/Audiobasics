@@ -96,15 +96,17 @@ fun AlbumScreen(
     }
 
     // Scroll progress: 0 at top, 1 when last song is visible
-    val totalItems = filteredSongs.size + 1 // item 0 = art
-    val scrollProgress = remember(listState, totalItems) {
-        derivedStateOf {
-            if (totalItems <= 1) return@derivedStateOf 0f
-            val layoutInfo = listState.layoutInfo
-            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            (lastVisibleIndex.toFloat() / (totalItems - 1).toFloat()).coerceIn(0f, 1f)
-        }
+    val totalRegularItems = filteredSongs.size + 1 // art (index 0) + songs
+val scrollProgress = remember(listState, totalRegularItems) {
+    derivedStateOf {
+        if (totalRegularItems <= 1) return@derivedStateOf 0f
+        val layoutInfo = listState.layoutInfo
+        // Only consider regular items (indices < totalRegularItems) — ignore sticky header
+        val visibleRegularIndices = layoutInfo.visibleItemsInfo.map { it.index }.filter { it < totalRegularItems }
+        val maxVisibleIndex = visibleRegularIndices.maxOrNull() ?: 0
+        (maxVisibleIndex.toFloat() / (totalRegularItems - 1).toFloat()).coerceIn(0f, 1f)
     }
+}
 
     Column(
         modifier = Modifier
