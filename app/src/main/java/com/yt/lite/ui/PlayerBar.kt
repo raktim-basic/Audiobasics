@@ -15,7 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -26,6 +28,7 @@ import com.yt.lite.ui.theme.NothingFont
 
 @Composable
 fun PlayerBar(
+    vm: MusicViewModel,
     song: Song,
     isPlaying: Boolean,
     isLoading: Boolean,
@@ -35,6 +38,9 @@ fun PlayerBar(
     onLike: () -> Unit,
     onTap: () -> Unit
 ) {
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val haptic = LocalHapticFeedback.current
+
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
@@ -43,7 +49,10 @@ fun PlayerBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
-            .clickable { onTap() }
+            .clickable {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onTap()
+            }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -79,7 +88,10 @@ fun PlayerBar(
             )
         }
 
-        IconButton(onClick = onLike) {
+        IconButton(onClick = {
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onLike()
+        }) {
             Icon(
                 imageVector = if (isLiked) Icons.Default.Favorite
                 else Icons.Default.FavoriteBorder,
@@ -88,7 +100,10 @@ fun PlayerBar(
             )
         }
 
-        IconButton(onClick = onToggle) {
+        IconButton(onClick = {
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onToggle()
+        }) {
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
