@@ -25,7 +25,7 @@ fun DashedDivider(
         val width = size.width
         val y = size.height / 2
 
-        // Full gray dashed line (static background)
+        // Draw full gray dashed line (static background)
         drawLine(
             color = grayColor,
             start = Offset(0f, y),
@@ -34,7 +34,7 @@ fun DashedDivider(
             pathEffect = dashPathEffect
         )
 
-        // Red fill – grows from left to right (solid line)
+        // Draw red dashed fill that grows from left to right
         val fillWidth = width * scrollProgress.coerceIn(0f, 1f)
         if (fillWidth > 0f) {
             drawLine(
@@ -42,7 +42,7 @@ fun DashedDivider(
                 start = Offset(0f, y),
                 end = Offset(fillWidth, y),
                 strokeWidth = strokeWidth,
-                pathEffect = null  // solid red fill
+                pathEffect = dashPathEffect  // now dashed as well
             )
         }
     }
