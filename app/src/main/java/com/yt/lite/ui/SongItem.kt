@@ -15,8 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -34,6 +36,7 @@ fun SongItem(
     isInQueue: Boolean = false,
     isPlaying: Boolean = false,
     showExplicit: Boolean = true,
+    hapticsEnabled: Boolean,           // new parameter
     onClick: () -> Unit,
     onAddToQueue: (() -> Unit)? = null,
     onPlayNext: (() -> Unit)? = null,
@@ -46,6 +49,7 @@ fun SongItem(
     showMenu: Boolean = !song.isAlbum || isInQueue
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var menuExpanded by remember { mutableStateOf(false) }
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
 
@@ -55,13 +59,13 @@ fun SongItem(
     val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
     val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
 
-    // Title is red when playing
     val titleColor = if (isPlaying) Color.Red else textColor
 
     if (showBrokenHeartDialog) {
         BrokenHeartDialog(
             song = song,
             isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
             onDismiss = { showBrokenHeartDialog = false },
             onPlayOnline = {
                 showBrokenHeartDialog = false
@@ -82,11 +86,13 @@ fun SongItem(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
-            .clickable { onClick() }
+            .clickable {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onClick()
+            }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Thumbnail
         AsyncImage(
             model = song.thumbnail,
             contentDescription = null,
@@ -98,7 +104,6 @@ fun SongItem(
 
         Spacer(Modifier.width(12.dp))
 
-        // Title + Artist
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
@@ -143,21 +148,25 @@ fun SongItem(
             }
         }
 
-        // 💔 emoji button — only when liked and cache failed
         if (isLiked && song.cacheFailed) {
             Text(
                 text = "💔",
                 fontSize = 20.sp,
                 modifier = Modifier
-                    .clickable { showBrokenHeartDialog = true }
+                    .clickable {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showBrokenHeartDialog = true
+                    }
                     .padding(8.dp)
             )
         }
 
-        // 3 dots menu
         if (showMenu) {
             Box {
-                IconButton(onClick = { menuExpanded = true }) {
+                IconButton(onClick = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    menuExpanded = true
+                }) {
                     Icon(
                         Icons.Default.MoreVert,
                         contentDescription = "Options",
@@ -173,6 +182,7 @@ fun SongItem(
                         DropdownMenuItem(
                             text = { Text("Share", fontFamily = NothingFont) },
                             onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 menuExpanded = false
                                 val i = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
@@ -199,11 +209,19 @@ fun SongItem(
                                     tint = if (isLiked) Color.Red else subTextColor
                                 )
                             },
-                            onClick = { menuExpanded = false; onLike() }
+                            onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                menuExpanded = false
+                                onLike()
+                            }
                         )
                         DropdownMenuItem(
                             text = { Text("Reorder", fontFamily = NothingFont) },
-                            onClick = { menuExpanded = false; onReorder?.invoke() }
+                            onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                menuExpanded = false
+                                onReorder?.invoke()
+                            }
                         )
                         DropdownMenuItem(
                             text = {
@@ -213,12 +231,17 @@ fun SongItem(
                                     color = Color.Red
                                 )
                             },
-                            onClick = { menuExpanded = false; onRemoveFromQueue?.invoke() }
+                            onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                menuExpanded = false
+                                onRemoveFromQueue?.invoke()
+                            }
                         )
                     } else {
                         DropdownMenuItem(
                             text = { Text("Share", fontFamily = NothingFont) },
                             onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 menuExpanded = false
                                 val i = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
@@ -245,18 +268,30 @@ fun SongItem(
                                     tint = if (isLiked) Color.Red else subTextColor
                                 )
                             },
-                            onClick = { menuExpanded = false; onLike() }
+                            onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                menuExpanded = false
+                                onLike()
+                            }
                         )
                         onPlayNext?.let {
                             DropdownMenuItem(
                                 text = { Text("Play next", fontFamily = NothingFont) },
-                                onClick = { menuExpanded = false; it() }
+                                onClick = {
+                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    menuExpanded = false
+                                    it()
+                                }
                             )
                         }
                         onAddToQueue?.let {
                             DropdownMenuItem(
                                 text = { Text("Add to queue", fontFamily = NothingFont) },
-                                onClick = { menuExpanded = false; it() }
+                                onClick = {
+                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    menuExpanded = false
+                                    it()
+                                }
                             )
                         }
                     }
@@ -270,15 +305,20 @@ fun SongItem(
 fun BrokenHeartDialog(
     song: Song,
     isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
     onDismiss: () -> Unit,
     onPlayOnline: () -> Unit,
     onRetryCache: () -> Unit,
     onRemoveLike: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = {
+        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        onDismiss()
+    }) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -317,7 +357,10 @@ fun BrokenHeartDialog(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.Red)
-                        .clickable { onPlayOnline() }
+                        .clickable {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onPlayOnline()
+                        }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -338,7 +381,10 @@ fun BrokenHeartDialog(
                         .background(
                             if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
                         )
-                        .clickable { onRetryCache() }
+                        .clickable {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onRetryCache()
+                        }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -359,7 +405,10 @@ fun BrokenHeartDialog(
                         .background(
                             if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
                         )
-                        .clickable { onRemoveLike() }
+                        .clickable {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onRemoveLike()
+                        }
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
