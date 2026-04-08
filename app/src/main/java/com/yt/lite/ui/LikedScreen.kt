@@ -60,8 +60,7 @@ fun LikedScreen(
         }
     }
 
-    // Improved scroll progress: reaches 1.0 when last visible item is last song
-    val totalItems = filteredSongs.size + 1 // +1 for heart header (item 0)
+    val totalItems = filteredSongs.size + 1 // item 0 = heart
     val scrollProgress = remember(listState, totalItems) {
         derivedStateOf {
             if (totalItems <= 1) return@derivedStateOf 0f
@@ -80,7 +79,7 @@ fun LikedScreen(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Scrollable header — big heart
+            // Heart header
             item {
                 Column(
                     modifier = Modifier
@@ -94,7 +93,7 @@ fun LikedScreen(
                 }
             }
 
-            // Sticky title row
+            // Sticky header
             stickyHeader {
                 Column(modifier = Modifier
                     .fillMaxWidth()
@@ -159,7 +158,6 @@ fun LikedScreen(
             }
         }
 
-        // Thin divider above bottom bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
