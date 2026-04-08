@@ -59,7 +59,6 @@ fun SettingsScreen(
 ) {
     var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
 
-    // Intercept system back — go back within settings pages first
     BackHandler(enabled = currentPage != SettingsPage.Main) {
         currentPage = SettingsPage.Main
     }
@@ -145,7 +144,7 @@ private fun SettingsMainPage(
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Appearance",
+                    title = "Appearance and feel",   // <-- CHANGED
                     subtitle = "Theme",
                     icon = {
                         Icon(
@@ -354,7 +353,7 @@ private fun AppearancePage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Appearance",
+                text = "Appearance and feel",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 24.sp,
@@ -364,7 +363,6 @@ private fun AppearancePage(
 
         DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
-        // Dark mode row with toggle
         Row(
             modifier = Modifier
                 .fillMaxWidth()
