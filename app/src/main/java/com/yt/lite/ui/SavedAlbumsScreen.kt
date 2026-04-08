@@ -65,17 +65,16 @@ fun SavedAlbumsScreen(
         }
     }
 
-    // Correct scroll progress: ignore sticky header (index 1)
-    val totalRegularItems = filteredAlbums.size + 1 // bookmark (0) + albums (2..)
+    // Scroll progress based on first visible regular item (skip sticky header index 1)
+    val totalRegularItems = filteredAlbums.size + 1 // bookmark (0) + albums (indices 2..)
     val scrollProgress = remember(listState, totalRegularItems) {
         derivedStateOf {
             if (totalRegularItems <= 1) return@derivedStateOf 0f
             val layoutInfo = listState.layoutInfo
-            val visibleRegularIndices = layoutInfo.visibleItemsInfo
+            val firstVisibleRegular = layoutInfo.visibleItemsInfo
                 .map { it.index }
-                .filter { it == 0 || (it >= 2 && it <= totalRegularItems) }
-            val maxVisibleIndex = visibleRegularIndices.maxOrNull() ?: 0
-            (maxVisibleIndex.toFloat() / totalRegularItems).coerceIn(0f, 1f)
+                .firstOrNull { it != 1 } ?: 0
+            (firstVisibleRegular.toFloat() / totalRegularItems).coerceIn(0f, 1f)
         }
     }
 
@@ -88,7 +87,6 @@ fun SavedAlbumsScreen(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Bookmark header (index 0)
             item {
                 Column(
                     modifier = Modifier
@@ -107,7 +105,6 @@ fun SavedAlbumsScreen(
                 }
             }
 
-            // Sticky header (index 1) – ignored in scroll progress
             stickyHeader {
                 Column(
                     modifier = Modifier
@@ -172,7 +169,7 @@ fun SavedAlbumsScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar
+        // Bottom bar (unchanged)
         if (isSearching) {
             Row(
                 modifier = Modifier
@@ -282,6 +279,7 @@ fun AlbumItem(
     isDarkMode: Boolean,
     onClick: () -> Unit
 ) {
+    // ... (same as before)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
