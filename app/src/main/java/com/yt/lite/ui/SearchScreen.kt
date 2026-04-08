@@ -17,7 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -63,7 +65,7 @@ private suspend fun fetchSuggestions(query: String): List<String> = withContext(
             )
             .addHeader("Content-Type", "application/json")
             .addHeader("User-Agent", "Mozilla/5.0")
-            .addHeader("Origin", "https://music.youtube.com")
+            .addHeader("Origin", "https://music.youtube")
             .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
         val resp = client.newCall(req).execute()
@@ -104,6 +106,8 @@ fun SearchScreen(
     val isSearching by vm.isSearching.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val haptic = LocalHapticFeedback.current
 
     var query by remember { mutableStateOf("") }
     var showLinkDialog by remember { mutableStateOf(false) }
@@ -117,7 +121,6 @@ fun SearchScreen(
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    // Clean state every time screen is entered
     LaunchedEffect(Unit) {
         query = ""
         suggestions = emptyList()
@@ -125,7 +128,6 @@ fun SearchScreen(
         vm.clearSearch()
     }
 
-    // Suggestions with 300ms debounce
     LaunchedEffect(query) {
         if (query.isBlank()) {
             suggestions = emptyList()
@@ -141,6 +143,7 @@ fun SearchScreen(
     if (showLinkDialog) {
         PlayByLinkDialog(
             isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
             onDismiss = { showLinkDialog = false },
             onPlay = { url ->
                 vm.playByUrl(url)
@@ -154,7 +157,6 @@ fun SearchScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Results area — reversed so results grow upward from bottom
         Box(modifier = Modifier.weight(1f)) {
             when {
                 isSearching -> {
@@ -176,6 +178,7 @@ fun SearchScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
+                                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         query = suggestion
                                         suggestions = emptyList()
                                         showSuggestions = false
@@ -214,6 +217,7 @@ fun SearchScreen(
                                 isInQueue = false,
                                 isPlaying = isPlaying,
                                 showMenu = !song.isAlbum,
+                                hapticsEnabled = hapticsEnabled,
                                 onClick = {
                                     if (song.isAlbum) {
                                         onAlbumClick(
@@ -242,7 +246,6 @@ fun SearchScreen(
             }
         }
 
-        // "Can't find the song?" — above the bottom bar
         Text(
             text = buildAnnotatedString {
                 withStyle(SpanStyle(
@@ -262,11 +265,13 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(bgColor)
-                .clickable { showLinkDialog = true }
+                .clickable {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    showLinkDialog = true
+                }
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         )
 
-        // Thin divider above bottom bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -276,7 +281,6 @@ fun SearchScreen(
                 )
         )
 
-        // Bottom bar — search integrated
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -284,7 +288,10 @@ fun SearchScreen(
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onBack()
+            }) {
                 Icon(
                     Icons.Default.ArrowBack,
                     contentDescription = "Back",
@@ -324,6 +331,7 @@ fun SearchScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (query.isNotBlank()) {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         showSuggestions = false
                         vm.search(query)
                         focusManager.clearFocus()
@@ -331,7 +339,10 @@ fun SearchScreen(
                 })
             )
 
-            IconButton(onClick = onNavigateQueue) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onNavigateQueue()
+            }) {
                 Icon(
                     Icons.Default.QueueMusic,
                     contentDescription = "Queue",
@@ -346,14 +357,19 @@ fun SearchScreen(
 @Composable
 fun PlayByLinkDialog(
     isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
     onDismiss: () -> Unit,
     onPlay: (String) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     var link by remember { mutableStateOf("") }
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = {
+        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        onDismiss()
+    }) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -396,7 +412,10 @@ fun PlayByLinkDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = onDismiss) {
+                    TextButton(onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDismiss()
+                    }) {
                         Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
                     }
                     Spacer(Modifier.width(8.dp))
@@ -404,7 +423,10 @@ fun PlayByLinkDialog(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.Red)
-                            .clickable { if (link.isNotBlank()) onPlay(link) }
+                            .clickable {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (link.isNotBlank()) onPlay(link)
+                            }
                             .padding(horizontal = 20.dp, vertical = 10.dp)
                     ) {
                         Text(
