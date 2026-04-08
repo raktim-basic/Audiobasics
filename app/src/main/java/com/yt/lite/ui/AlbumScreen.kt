@@ -95,8 +95,8 @@ fun AlbumScreen(
         }
     }
 
-    // Improved scroll progress: reaches 1.0 when last visible item is the last song
-    val totalItems = filteredSongs.size + 1 // +1 for the art header (item 0)
+    // Scroll progress: 0 at top, 1 when last song is visible
+    val totalItems = filteredSongs.size + 1 // item 0 = art
     val scrollProgress = remember(listState, totalItems) {
         derivedStateOf {
             if (totalItems <= 1) return@derivedStateOf 0f
@@ -123,7 +123,7 @@ fun AlbumScreen(
                 modifier = Modifier.weight(1f),
                 state = listState
             ) {
-                // Scrollable part — art + artist name
+                // Art + artist name
                 item {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -154,7 +154,7 @@ fun AlbumScreen(
                     }
                 }
 
-                // Sticky header — album name + icons
+                // Sticky header
                 stickyHeader {
                     Column(
                         modifier = Modifier
@@ -272,7 +272,7 @@ fun AlbumScreen(
             }
         }
 
-        // Thin divider above bottom bar
+        // Divider above bottom bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
