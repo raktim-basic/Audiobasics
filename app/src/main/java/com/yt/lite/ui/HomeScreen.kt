@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yt.lite.ui.theme.NothingFont
 
-// Calculates scroll progress 0f..1f from a LazyListState
 @Composable
 fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
     return remember(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
@@ -48,6 +47,7 @@ fun HomeScreen(
     val savedAlbums by vm.savedAlbums.collectAsState()
     val cacheSize by vm.cacheSize.collectAsState()
     val isDarkMode by vm.isDarkMode.collectAsState()
+    val updateAvailable by vm.updateAvailable.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -62,20 +62,37 @@ fun HomeScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 32.dp)
         ) {
-            Text(
-                text = "No recommendation bs",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                color = textColor
-            )
-            Text(
-                text = "Own your taste",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                color = textColor
-            )
+            if (updateAvailable) {
+                Text(
+                    text = "An update is available!",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    color = textColor
+                )
+                Text(
+                    text = "Check in settings",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    color = textColor
+                )
+            } else {
+                Text(
+                    text = "No recommendation bs",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    color = textColor
+                )
+                Text(
+                    text = "Own your taste",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    color = textColor
+                )
+            }
         }
 
         // Static divider on home
