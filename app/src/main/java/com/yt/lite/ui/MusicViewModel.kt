@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.Dispatchers
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -92,6 +93,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
+
+    // New: updater navigation
+    private val _navigateToUpdater = MutableStateFlow(false)
+    val navigateToUpdater: StateFlow<Boolean> = _navigateToUpdater
+
+    // New: update available flag for home screen
+    private val _updateAvailable = MutableStateFlow(false)
+    val updateAvailable: StateFlow<Boolean> = _updateAvailable
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
@@ -158,6 +167,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             { it.run() }
         )
         refreshCacheSize()
+        checkForUpdate() // initial check
     }
 
     fun syncState() { syncStateFromController() }
@@ -290,7 +300,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val newQueue = listOf(song) + similar
                 _queue.value = newQueue
                 val ctrl = controller ?: return
-                // Add each similar song to the controller queue
                 similar.forEach { s ->
                     ctrl.addMediaItem(buildMediaItem(s, resolveUri(s)))
                 }
@@ -633,6 +642,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleDarkMode() {
         _isDarkMode.value = !_isDarkMode.value
         prefs.edit().putBoolean("dark_mode", _isDarkMode.value).apply()
+    }
+
+    // New methods for updater and update detection
+    fun triggerUpdater() {
+        _navigateToUpdater.value = true
+    }
+
+    fun onUpdaterNavigated() {
+        _navigateToUpdater.value = false
+    }
+
+    fun checkForUpdate() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val latest = fetchLatestAppVersion()
+            _updateAvailable.value = latest != null && latest != APP_CURRENT_VERSION
+        }
     }
 
     private fun saveLikedSongs() {
