@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -37,6 +39,8 @@ fun LyricsScreen(
     val currentPosition by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val haptic = LocalHapticFeedback.current
 
     var isRealTime by remember { mutableStateOf(true) }
     var lyricsResult by remember { mutableStateOf<com.yt.lite.lyrics.LyricsResult?>(null) }
@@ -50,7 +54,6 @@ fun LyricsScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
-    // Load lyrics when song changes
     LaunchedEffect(currentSong?.id) {
         val song = currentSong ?: return@LaunchedEffect
         isLoading = true
@@ -71,7 +74,6 @@ fun LyricsScreen(
         }
     }
 
-    // Current line index for real-time mode
     val currentLineIndex = remember(currentPosition, lyricsResult) {
         val lines = lyricsResult?.syncedLines ?: return@remember -1
         var idx = -1
@@ -82,7 +84,6 @@ fun LyricsScreen(
         idx
     }
 
-    // Auto-scroll to current line
     LaunchedEffect(currentLineIndex) {
         if (isRealTime && currentLineIndex >= 0) {
             scope.launch {
@@ -94,7 +95,10 @@ fun LyricsScreen(
     }
 
     Dialog(
-        onDismissRequest = onBack,
+        onDismissRequest = {
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onBack()
+        },
         properties = DialogProperties(
             dismissOnBackPress = true,
             dismissOnClickOutside = true,
@@ -105,7 +109,10 @@ fun LyricsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
-                .clickable { onBack() },
+                .clickable {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onBack()
+                },
             contentAlignment = Alignment.Center
         ) {
             Box(
@@ -118,7 +125,6 @@ fun LyricsScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
 
-                    // Top bar: Real-time | Static tabs (refresh button removed)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -131,7 +137,10 @@ fun LyricsScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             color = if (isRealTime) Color.Red else Color.Gray,
-                            modifier = Modifier.clickable { isRealTime = true }
+                            modifier = Modifier.clickable {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                isRealTime = true
+                            }
                         )
                         Spacer(Modifier.width(24.dp))
                         Text(
@@ -140,11 +149,13 @@ fun LyricsScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             color = if (!isRealTime) Color.Red else Color.Gray,
-                            modifier = Modifier.clickable { isRealTime = false }
+                            modifier = Modifier.clickable {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                isRealTime = false
+                            }
                         )
                     }
 
-                    // Dashed divider
                     androidx.compose.foundation.Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -161,7 +172,6 @@ fun LyricsScreen(
                         )
                     }
 
-                    // Lyrics content
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -235,7 +245,6 @@ fun LyricsScreen(
                         }
                     }
 
-                    // Bottom bar — Back | Powered by LRCLIB | Play/Pause
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -244,7 +253,10 @@ fun LyricsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        IconButton(onClick = onBack) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onBack()
+                        }) {
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Back",
@@ -259,7 +271,10 @@ fun LyricsScreen(
                             color = Color.Gray
                         )
 
-                        IconButton(onClick = { vm.togglePlayPause() }) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.togglePlayPause()
+                        }) {
                             Icon(
                                 imageVector = if (isPlaying) Icons.Default.Pause
                                 else Icons.Default.PlayArrow,
