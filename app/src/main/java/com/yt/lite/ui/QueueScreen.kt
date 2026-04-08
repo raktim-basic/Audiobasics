@@ -29,10 +29,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.zIndex
 import com.yt.lite.ui.theme.NothingFont
 import kotlinx.coroutines.delay
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.graphics.graphicsLayer
 
 private fun formatTotalTime(totalMs: Long): String {
     val totalSec = totalMs / 1000
@@ -77,7 +76,6 @@ fun QueueScreen(
     var sleepTimerRemaining by remember { mutableStateOf(0L) }
     var showSleepDialog by remember { mutableStateOf(false) }
     var endOfSongMode by remember { mutableStateOf(false) }
-
     var timerPausedAt by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(isPlaying, sleepTimerEndsAt) {
@@ -122,14 +120,14 @@ fun QueueScreen(
     val totalMs = remember(queue) { queue.sumOf { it.duration } }
 
     val listState = rememberLazyListState()
-    val scrollProgress by remember(
-        listState.firstVisibleItemIndex,
-        listState.firstVisibleItemScrollOffset
-    ) {
+
+    // CORRECT SCROLL PROGRESS: based on last visible item index
+    val scrollProgress = remember(listState, queue.size) {
         derivedStateOf {
-            if (queue.size <= 1) 0f
-            else (listState.firstVisibleItemIndex.toFloat() / (queue.size - 1).toFloat())
-                .coerceIn(0f, 1f)
+            if (queue.size <= 1) return@derivedStateOf 0f
+            val layoutInfo = listState.layoutInfo
+            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            (lastVisibleIndex.toFloat() / (queue.size - 1).toFloat()).coerceIn(0f, 1f)
         }
     }
 
@@ -213,11 +211,11 @@ fun QueueScreen(
             }
         }
 
-        // Scroll-progress divider
+        // Scroll-progress divider (now works correctly)
         DashedDivider(
             modifier = Modifier.fillMaxWidth(),
             isDarkMode = isDarkMode,
-            scrollProgress = scrollProgress
+            scrollProgress = scrollProgress.value
         )
 
         if (queue.isEmpty()) {
