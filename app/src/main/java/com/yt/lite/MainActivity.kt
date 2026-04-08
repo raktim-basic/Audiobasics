@@ -25,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow   // <-- ADD THIS IMPORT
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -55,7 +56,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.snapshotFlow
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.snapshotFlow
 
 private const val NOTIF_CHANNEL_ID = "audiobasics_updates"
 private const val NOTIF_ID = 1001
@@ -86,7 +86,6 @@ class MainActivity : ComponentActivity() {
             val vm: MusicViewModel = viewModel()
             val isDarkMode by vm.isDarkMode.collectAsState()
 
-            // Trigger updater if intent says so
             val openUpdater = intent.getBooleanExtra("OPEN_UPDATER", false)
             if (openUpdater) vm.triggerUpdater()
 
