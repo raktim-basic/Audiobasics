@@ -65,16 +65,19 @@ fun SavedAlbumsScreen(
         }
     }
 
-    val totalRegularItems = filteredAlbums.size + 1 // bookmark (index 0) + albums
-val scrollProgress = remember(listState, totalRegularItems) {
-    derivedStateOf {
-        if (totalRegularItems <= 1) return@derivedStateOf 0f
-        val layoutInfo = listState.layoutInfo
-        val visibleRegularIndices = layoutInfo.visibleItemsInfo.map { it.index }.filter { it < totalRegularItems }
-        val maxVisibleIndex = visibleRegularIndices.maxOrNull() ?: 0
-        (maxVisibleIndex.toFloat() / (totalRegularItems - 1).toFloat()).coerceIn(0f, 1f)
+    // Correct scroll progress: ignore sticky header (index 1)
+    val totalRegularItems = filteredAlbums.size + 1 // bookmark (0) + albums (2..)
+    val scrollProgress = remember(listState, totalRegularItems) {
+        derivedStateOf {
+            if (totalRegularItems <= 1) return@derivedStateOf 0f
+            val layoutInfo = listState.layoutInfo
+            val visibleRegularIndices = layoutInfo.visibleItemsInfo
+                .map { it.index }
+                .filter { it == 0 || (it >= 2 && it <= totalRegularItems) }
+            val maxVisibleIndex = visibleRegularIndices.maxOrNull() ?: 0
+            (maxVisibleIndex.toFloat() / totalRegularItems).coerceIn(0f, 1f)
+        }
     }
-}
 
     Column(
         modifier = Modifier
@@ -85,7 +88,7 @@ val scrollProgress = remember(listState, totalRegularItems) {
             modifier = Modifier.weight(1f),
             state = listState
         ) {
-            // Bookmark header
+            // Bookmark header (index 0)
             item {
                 Column(
                     modifier = Modifier
@@ -104,7 +107,7 @@ val scrollProgress = remember(listState, totalRegularItems) {
                 }
             }
 
-            // Sticky header
+            // Sticky header (index 1) – ignored in scroll progress
             stickyHeader {
                 Column(
                     modifier = Modifier
