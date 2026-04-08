@@ -17,7 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -55,11 +57,14 @@ suspend fun fetchLatestAppVersion(): String? = withContext(Dispatchers.IO) {
 
 @Composable
 fun UpdaterScreen(
+    vm: MusicViewModel,
     isDarkMode: Boolean,
     onBack: () -> Unit,
     onEngineInfo: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val scope = rememberCoroutineScope()
 
     var isChecking by remember { mutableStateOf(false) }
@@ -79,13 +84,15 @@ fun UpdaterScreen(
             .background(bgColor),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Back button top left
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp, start = 4.dp)
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onBack()
+            }) {
                 Icon(
                     Icons.Default.ArrowBack,
                     contentDescription = "Back",
@@ -147,13 +154,13 @@ fun UpdaterScreen(
         Spacer(Modifier.weight(1f))
 
         Column(modifier = Modifier.padding(horizontal = 28.dp)) {
-            // Check for updates button
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Red)
                     .clickable(enabled = !isChecking) {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         scope.launch {
                             isChecking = true
                             latestVersion = fetchLatestAppVersion()
@@ -181,7 +188,6 @@ fun UpdaterScreen(
                 }
             }
 
-            // Download and update — only when update available
             if (updateAvailable) {
                 Spacer(Modifier.height(12.dp))
                 Box(
@@ -190,6 +196,7 @@ fun UpdaterScreen(
                         .clip(RoundedCornerShape(6.dp))
                         .background(Color.Red)
                         .clickable {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
                                 Uri.parse(APP_GITHUB_RELEASES_URL)
@@ -230,7 +237,10 @@ fun UpdaterScreen(
             fontSize = 14.sp,
             color = Color.Red,
             textDecoration = TextDecoration.Underline,
-            modifier = Modifier.clickable { onEngineInfo() }
+            modifier = Modifier.clickable {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onEngineInfo()
+            }
         )
 
         Spacer(Modifier.height(32.dp))
