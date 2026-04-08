@@ -95,17 +95,17 @@ fun AlbumScreen(
         }
     }
 
-    // Scroll progress based on first visible regular item (skip sticky header index 1)
-    val totalRegularItems = filteredSongs.size + 1 // art (0) + songs (indices 2..)
+    // Correct scroll progress: ignore sticky header (index 1)
+    val totalRegularItems = filteredSongs.size + 1 // art (0) + songs (2..)
     val scrollProgress = remember(listState, totalRegularItems) {
         derivedStateOf {
             if (totalRegularItems <= 1) return@derivedStateOf 0f
             val layoutInfo = listState.layoutInfo
-            // Find the first visible item index that is not the sticky header (index 1)
-            val firstVisibleRegular = layoutInfo.visibleItemsInfo
+            val visibleRegularIndices = layoutInfo.visibleItemsInfo
                 .map { it.index }
-                .firstOrNull { it != 1 } ?: 0
-            (firstVisibleRegular.toFloat() / totalRegularItems).coerceIn(0f, 1f)
+                .filter { it == 0 || (it >= 2 && it <= totalRegularItems) }
+            val maxVisibleIndex = visibleRegularIndices.maxOrNull() ?: 0
+            (maxVisibleIndex.toFloat() / totalRegularItems).coerceIn(0f, 1f)
         }
     }
 
@@ -126,6 +126,7 @@ fun AlbumScreen(
                 modifier = Modifier.weight(1f),
                 state = listState
             ) {
+                // Art + artist name (index 0)
                 item {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -156,6 +157,7 @@ fun AlbumScreen(
                     }
                 }
 
+                // Sticky header (index 1) – ignored in scroll progress
                 stickyHeader {
                     Column(
                         modifier = Modifier
@@ -273,6 +275,7 @@ fun AlbumScreen(
             }
         }
 
+        // Divider above bottom bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -280,7 +283,7 @@ fun AlbumScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar (unchanged)
+        // Bottom bar
         if (isSearching) {
             Row(
                 modifier = Modifier
@@ -396,7 +399,6 @@ fun AlbumSongRow(
     onPlayNext: () -> Unit,
     onLike: () -> Unit
 ) {
-    // ... (unchanged, same as before)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
