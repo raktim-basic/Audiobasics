@@ -20,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,6 +50,8 @@ fun HomeScreen(
     val cacheSize by vm.cacheSize.collectAsState()
     val isDarkMode by vm.isDarkMode.collectAsState()
     val updateAvailable by vm.updateAvailable.collectAsState()
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val haptic = LocalHapticFeedback.current
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -95,7 +99,6 @@ fun HomeScreen(
             }
         }
 
-        // Static divider on home
         DashedDivider(
             modifier = Modifier.fillMaxWidth(),
             isDarkMode = isDarkMode
@@ -110,7 +113,10 @@ fun HomeScreen(
                 .padding(horizontal = 20.dp, vertical = 6.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFFFF8A80))
-                .clickable { onNavigateAlbums() }
+                .clickable {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onNavigateAlbums()
+                }
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -146,7 +152,10 @@ fun HomeScreen(
                 .padding(horizontal = 20.dp, vertical = 6.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFFFF0000))
-                .clickable { onNavigateLiked() }
+                .clickable {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onNavigateLiked()
+                }
                 .padding(horizontal = 16.dp, vertical = 24.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -181,7 +190,6 @@ fun HomeScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Thin line above bottom bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -193,7 +201,9 @@ fun HomeScreen(
             isDarkMode = isDarkMode,
             onSettings = onNavigateSettings,
             onSearch = onNavigateSearch,
-            onQueue = onNavigateQueue
+            onQueue = onNavigateQueue,
+            hapticsEnabled = hapticsEnabled,
+            haptic = haptic
         )
     }
 }
@@ -203,7 +213,9 @@ fun HomeBottomBar(
     isDarkMode: Boolean,
     onSettings: () -> Unit,
     onSearch: () -> Unit,
-    onQueue: () -> Unit
+    onQueue: () -> Unit,
+    hapticsEnabled: Boolean,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
 ) {
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val iconColor = if (isDarkMode) Color.White else Color.Black
@@ -216,7 +228,10 @@ fun HomeBottomBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onSettings) {
+        IconButton(onClick = {
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSettings()
+        }) {
             Icon(
                 Icons.Default.Settings,
                 contentDescription = "Settings",
@@ -224,7 +239,10 @@ fun HomeBottomBar(
                 modifier = Modifier.size(28.dp)
             )
         }
-        IconButton(onClick = onSearch) {
+        IconButton(onClick = {
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSearch()
+        }) {
             Icon(
                 Icons.Default.Search,
                 contentDescription = "Search",
@@ -232,7 +250,10 @@ fun HomeBottomBar(
                 modifier = Modifier.size(28.dp)
             )
         }
-        IconButton(onClick = onQueue) {
+        IconButton(onClick = {
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onQueue()
+        }) {
             Icon(
                 Icons.Default.QueueMusic,
                 contentDescription = "Queue",
@@ -259,7 +280,6 @@ fun DashedDivider(
         val dashGap = 8f
 
         if (scrollProgress == null) {
-            // Static: red left half, white/black right half
             drawLine(
                 color = Color.Red,
                 start = Offset(0f, y),
@@ -275,7 +295,6 @@ fun DashedDivider(
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
             )
         } else {
-            // Scroll progress: red = scrolled portion, gray = remaining
             val redEnd = totalWidth * scrollProgress.coerceIn(0f, 1f)
             if (redEnd > 0f) {
                 drawLine(
