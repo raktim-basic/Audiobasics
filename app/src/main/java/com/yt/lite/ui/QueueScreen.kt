@@ -1,5 +1,6 @@
 package com.yt.lite.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -20,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -27,7 +29,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.zIndex
 import com.yt.lite.ui.theme.NothingFont
 import kotlinx.coroutines.delay
 
@@ -53,6 +54,7 @@ fun QueueScreen(
     isDarkMode: Boolean,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val queue by vm.queue.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
@@ -74,17 +76,14 @@ fun QueueScreen(
     var showSleepDialog by remember { mutableStateOf(false) }
     var endOfSongMode by remember { mutableStateOf(false) }
 
-    // Pause timer when music pauses, resume when plays
     var timerPausedAt by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(isPlaying, sleepTimerEndsAt) {
         val endAt = sleepTimerEndsAt ?: return@LaunchedEffect
         if (!isPlaying) {
-            // Pause — record how much time was left
             timerPausedAt = endAt - System.currentTimeMillis()
             return@LaunchedEffect
         }
-        // Resume — restore remaining if paused
         val pausedRemaining = timerPausedAt
         if (pausedRemaining != null) {
             sleepTimerEndsAt = System.currentTimeMillis() + pausedRemaining
@@ -92,7 +91,6 @@ fun QueueScreen(
         }
     }
 
-    // Ticker — only runs when playing
     LaunchedEffect(sleepTimerEndsAt, isPlaying) {
         val endAt = sleepTimerEndsAt ?: return@LaunchedEffect
         if (!isPlaying) return@LaunchedEffect
@@ -110,11 +108,9 @@ fun QueueScreen(
         }
     }
 
-    // End of song mode — cancel timer if song changes
     val currentSongId = currentSong?.id
     LaunchedEffect(currentSongId) {
         if (endOfSongMode && sleepTimerEndsAt != null) {
-            // Song changed while in end-of-song mode → cancel
             sleepTimerEndsAt = null
             sleepTimerRemaining = 0L
             endOfSongMode = false
@@ -123,7 +119,6 @@ fun QueueScreen(
 
     val totalMs = remember(queue) { queue.sumOf { it.duration } }
 
-    // Scroll progress
     val listState = rememberLazyListState()
     val scrollProgress by remember(
         listState.firstVisibleItemIndex,
@@ -136,13 +131,11 @@ fun QueueScreen(
         }
     }
 
-    // Auto-scroll to playing song on open
     LaunchedEffect(currentSong, queue) {
         val idx = queue.indexOfFirst { it.id == currentSong?.id }
         if (idx >= 0) listState.animateScrollToItem(idx)
     }
 
-    // Computed visual queue — shifts items live while dragging
     val visualQueue = remember(queue, draggingIndex, dragOffsetY, itemHeightPx) {
         val dragging = draggingIndex ?: return@remember queue
         val h = itemHeightPx.takeIf { it > 0 } ?: 80f
@@ -161,7 +154,6 @@ fun QueueScreen(
             onDismiss = { showSleepDialog = false },
             onEndOfSong = {
                 showSleepDialog = false
-                // Use remaining duration from current position
                 val remaining = (duration - currentPosition).coerceAtLeast(1000L)
                 sleepTimerEndsAt = System.currentTimeMillis() + remaining
                 endOfSongMode = true
@@ -201,7 +193,6 @@ fun QueueScreen(
                 color = textColor
             )
             Spacer(Modifier.weight(1f))
-            // Only show total time if all songs have duration info
             val validTotal = queue.isNotEmpty() && totalMs > 0
             if (validTotal) {
                 Text(
@@ -327,7 +318,6 @@ fun QueueScreen(
                             onShare = {},
                             onRemoveFromQueue = { vm.removeFromQueue(song) },
                             onReorder = {
-                                // Toggle — if already dragging this, cancel
                                 if (draggingIndex == index) {
                                     draggingIndex = null
                                     dragOffsetY = 0f
@@ -371,15 +361,18 @@ fun QueueScreen(
             }
 
             val timerActive = sleepTimerEndsAt != null
+            val queueNotEmpty = queue.isNotEmpty()
             Text(
-                text = if (timerActive)
-                    "Sleep timer (${formatCountdown(sleepTimerRemaining)})"
-                else "Sleep timer",
+                text = if (timerActive) "Sleep timer (${formatCountdown(sleepTimerRemaining)})" else "Sleep timer",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = if (timerActive) Color.Red else textColor,
                 modifier = Modifier.clickable {
+                    if (!queueNotEmpty) {
+                        Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
+                        return@clickable
+                    }
                     if (timerActive) {
                         sleepTimerEndsAt = null
                         sleepTimerRemaining = 0L
