@@ -19,9 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -56,6 +58,8 @@ fun QueueScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val queue by vm.queue.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
@@ -121,7 +125,6 @@ fun QueueScreen(
 
     val listState = rememberLazyListState()
 
-    // CORRECT SCROLL PROGRESS: based on last visible item index
     val scrollProgress = remember(listState, queue.size) {
         derivedStateOf {
             if (queue.size <= 1) return@derivedStateOf 0f
@@ -151,6 +154,7 @@ fun QueueScreen(
     if (showSleepDialog) {
         SleepTimerDialog(
             isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
             onDismiss = { showSleepDialog = false },
             onEndOfSong = {
                 showSleepDialog = false
@@ -211,7 +215,6 @@ fun QueueScreen(
             }
         }
 
-        // Scroll-progress divider (now works correctly)
         DashedDivider(
             modifier = Modifier.fillMaxWidth(),
             isDarkMode = isDarkMode,
@@ -271,7 +274,12 @@ fun QueueScreen(
                                 if (isDragging) {
                                     Modifier.pointerInput(index) {
                                         detectDragGesturesAfterLongPress(
-                                            onDragStart = { dragOffsetY = 0f },
+                                            onDragStart = {
+                                                if (hapticsEnabled) {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                }
+                                                dragOffsetY = 0f
+                                            },
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
                                                 dragOffsetY += dragAmount.y
@@ -313,6 +321,7 @@ fun QueueScreen(
                             isLiked = isLiked,
                             isInQueue = true,
                             isPlaying = isCurrentSong,
+                            hapticsEnabled = hapticsEnabled,
                             onClick = { vm.playWithQueue(song, queue) },
                             onLike = { vm.toggleLike(song) },
                             onShare = {},
@@ -334,7 +343,6 @@ fun QueueScreen(
             }
         }
 
-        // Thin divider above bottom bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -342,7 +350,6 @@ fun QueueScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar with sleep timer
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -351,7 +358,10 @@ fun QueueScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onBack()
+            }) {
                 Icon(
                     Icons.Default.ArrowBack,
                     contentDescription = "Back",
@@ -369,6 +379,7 @@ fun QueueScreen(
                 fontSize = 14.sp,
                 color = if (timerActive) Color.Red else textColor,
                 modifier = Modifier.clickable {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     if (!queueNotEmpty) {
                         Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
                         return@clickable
@@ -392,10 +403,12 @@ fun QueueScreen(
 @Composable
 fun SleepTimerDialog(
     isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
     onDismiss: () -> Unit,
     onEndOfSong: () -> Unit,
     onCustom: (Long) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
@@ -403,7 +416,10 @@ fun SleepTimerDialog(
     var showCustomInput by remember { mutableStateOf(false) }
     var customMinutes by remember { mutableStateOf("") }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = {
+        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        onDismiss()
+    }) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -444,7 +460,10 @@ fun SleepTimerDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
-                        TextButton(onClick = { showCustomInput = false }) {
+                        TextButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showCustomInput = false
+                        }) {
                             Text("Back", fontFamily = NothingFont, color = Color.Gray)
                         }
                         Spacer(Modifier.width(8.dp))
@@ -452,6 +471,7 @@ fun SleepTimerDialog(
                             modifier = Modifier
                                 .background(Color.Red, RoundedCornerShape(8.dp))
                                 .clickable {
+                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     val mins = customMinutes.toLongOrNull()
                                     if (mins != null && mins > 0) onCustom(mins)
                                 }
@@ -466,12 +486,14 @@ fun SleepTimerDialog(
                         }
                     }
                 } else {
-                    // 1. End of this song
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable { onEndOfSong() }
+                            .clickable {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onEndOfSong()
+                            }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -485,12 +507,14 @@ fun SleepTimerDialog(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // 2. Custom timer (opens input)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable { showCustomInput = true }
+                            .clickable {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                showCustomInput = true
+                            }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -504,12 +528,14 @@ fun SleepTimerDialog(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // 3. Cancel (red, bottom)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color.Red, RoundedCornerShape(8.dp))
-                            .clickable { onDismiss() }
+                            .clickable {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onDismiss()
+                            }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
                     ) {
