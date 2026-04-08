@@ -25,10 +25,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +47,8 @@ fun PlayerDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val song by vm.currentSong.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
@@ -71,7 +75,10 @@ fun PlayerDialog(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onDismiss()
+        },
         properties = DialogProperties(
             dismissOnBackPress = true,
             dismissOnClickOutside = true,
@@ -82,7 +89,10 @@ fun PlayerDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
-                .clickable { onDismiss() },
+                .clickable {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDismiss()
+                },
             contentAlignment = Alignment.Center
         ) {
             Box(
@@ -94,7 +104,7 @@ fun PlayerDialog(
             ) {
                 Column {
 
-                    // Top bar: Speaker | Info | Close — Windows-esque
+                    // Top bar: Speaker | Info | Close
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -102,8 +112,8 @@ fun PlayerDialog(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Speaker — Desk connect (coming soon)
                         IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             Toast.makeText(
                                 context, "Coming soon", Toast.LENGTH_SHORT
                             ).show()
@@ -116,8 +126,10 @@ fun PlayerDialog(
                             )
                         }
 
-                        // Info
-                        IconButton(onClick = { showInfo = !showInfo }) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showInfo = !showInfo
+                        }) {
                             Icon(
                                 Icons.Default.Info,
                                 contentDescription = "Song info",
@@ -126,8 +138,10 @@ fun PlayerDialog(
                             )
                         }
 
-                        // Close
-                        IconButton(onClick = onDismiss) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onDismiss()
+                        }) {
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Close",
@@ -137,7 +151,7 @@ fun PlayerDialog(
                         }
                     }
 
-                    // Info panel — shown when ⓘ tapped
+                    // Info panel
                     if (showInfo) {
                         Column(
                             modifier = Modifier
@@ -234,7 +248,9 @@ fun PlayerDialog(
                                 onSeek = { seekProgress ->
                                     if (duration > 0) vm.seekTo((seekProgress * duration).toLong())
                                 },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                hapticsEnabled = hapticsEnabled,
+                                haptic = haptic
                             )
                         }
                         Spacer(Modifier.width(8.dp))
@@ -257,7 +273,10 @@ fun PlayerDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = { vm.skipToPrevious() }) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.skipToPrevious()
+                        }) {
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Previous",
@@ -270,7 +289,10 @@ fun PlayerDialog(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(surfaceColor)
-                                .clickable { vm.togglePlayPause() }
+                                .clickable {
+                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    vm.togglePlayPause()
+                                }
                                 .padding(horizontal = 32.dp, vertical = 14.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -301,7 +323,10 @@ fun PlayerDialog(
                             }
                         }
 
-                        IconButton(onClick = { vm.skipToNext() }) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.skipToNext()
+                        }) {
                             Icon(
                                 Icons.Default.ArrowForward,
                                 contentDescription = "Next",
@@ -322,7 +347,10 @@ fun PlayerDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = { song?.let { vm.toggleLike(it) } }) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            song?.let { vm.toggleLike(it) }
+                        }) {
                             Icon(
                                 imageVector = if (isLiked) Icons.Default.Favorite
                                 else Icons.Default.FavoriteBorder,
@@ -338,10 +366,14 @@ fun PlayerDialog(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = textColor,
-                            modifier = Modifier.clickable { showLyrics = true }
+                            modifier = Modifier.clickable {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                showLyrics = true
+                            }
                         )
 
                         IconButton(onClick = {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             song?.let { s ->
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
@@ -404,7 +436,9 @@ private fun InfoRow(
 fun DashedProgressBar(
     progress: Float,
     onSeek: (Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    hapticsEnabled: Boolean,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
 ) {
     val totalDashes = 30
     var barWidthPx by remember { mutableStateOf(0f) }
@@ -420,8 +454,10 @@ fun DashedProgressBar(
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
-                        if (barWidthPx > 0)
+                        if (barWidthPx > 0) {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             dragProgress = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                        }
                     },
                     onDragEnd = {
                         dragProgress?.let { onSeek(it) }
@@ -453,6 +489,7 @@ fun DashedProgressBar(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onSeek((index + 1).toFloat() / totalDashes.toFloat())
                     }
             )
