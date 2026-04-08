@@ -25,7 +25,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
-import androidx.compose.runtime.snapshotFlow   // <-- ADD THIS IMPORT
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -54,7 +53,6 @@ import com.yt.lite.ui.theme.AppTheme
 import com.yt.lite.ui.theme.NothingFont
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.snapshotFlow
 import kotlinx.coroutines.launch
 
 private const val NOTIF_CHANNEL_ID = "audiobasics_updates"
@@ -110,17 +108,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         if (intent?.getBooleanExtra("OPEN_UPDATER", false) == true) {
-            // The ViewModel is not yet accessible here, but we can store a flag
-            // However, the composable will read the intent extra on next composition.
-            // Simpler: just restart activity? No, we'll rely on the LaunchedEffect in composable
-            // Actually we need to pass the info to ViewModel. We'll use a static flag or re-trigger.
-            // Since we can't get ViewModel here, we'll just set an intent extra and recompose.
-            // The setContent block will read intent again.
-            setContent {
-                val vm: MusicViewModel = viewModel()
-                vm.triggerUpdater()
-                // ... rest
-            }
+            finish()
+            startActivity(intent)
         }
     }
 
@@ -195,7 +184,6 @@ fun AudiobasicsApp(
     val currentScreen = screenStack.last()
     var showPlayerDialog by remember { mutableStateOf(false) }
 
-    // Observe navigation to updater
     LaunchedEffect(navigateToUpdater) {
         if (navigateToUpdater) {
             screenStack = listOf(Screen.Home, Screen.Settings, Screen.Updater)
