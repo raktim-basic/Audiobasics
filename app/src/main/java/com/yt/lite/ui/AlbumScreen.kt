@@ -27,9 +27,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -52,6 +54,8 @@ fun AlbumScreen(
     onNavigateQueue: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
     val isSaved by remember(vm.savedAlbums.collectAsState().value) {
@@ -95,8 +99,7 @@ fun AlbumScreen(
         }
     }
 
-    // Correct scroll progress: ignore sticky header (index 1)
-    val totalRegularItems = filteredSongs.size + 1 // art (0) + songs (2..)
+    val totalRegularItems = filteredSongs.size + 1
     val scrollProgress = remember(listState, totalRegularItems) {
         derivedStateOf {
             if (totalRegularItems <= 1) return@derivedStateOf 0f
@@ -126,7 +129,6 @@ fun AlbumScreen(
                 modifier = Modifier.weight(1f),
                 state = listState
             ) {
-                // Art + artist name (index 0)
                 item {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -157,7 +159,6 @@ fun AlbumScreen(
                     }
                 }
 
-                // Sticky header (index 1) – ignored in scroll progress
                 stickyHeader {
                     Column(
                         modifier = Modifier
@@ -183,6 +184,7 @@ fun AlbumScreen(
                             Spacer(Modifier.width(8.dp))
 
                             IconButton(onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(
@@ -205,6 +207,7 @@ fun AlbumScreen(
                             }
 
                             IconButton(onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (isSaved) vm.unsaveAlbum(album)
                                 else vm.saveAlbum(album)
                             }) {
@@ -218,6 +221,7 @@ fun AlbumScreen(
                             }
 
                             IconButton(onClick = {
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 if (albumSongs.isNotEmpty())
                                     vm.playWithQueue(albumSongs.first(), albumSongs)
                             }) {
@@ -265,6 +269,8 @@ fun AlbumScreen(
                             isDarkMode = isDarkMode,
                             isLiked = isLiked,
                             isPlaying = isPlaying,
+                            hapticsEnabled = hapticsEnabled,
+                            haptic = haptic,
                             onClick = { vm.playWithQueue(song, albumSongs) },
                             onAddToQueue = { vm.addToQueue(song) },
                             onPlayNext = { vm.playNext(song) },
@@ -275,7 +281,6 @@ fun AlbumScreen(
             }
         }
 
-        // Divider above bottom bar
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -283,7 +288,6 @@ fun AlbumScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar
         if (isSearching) {
             Row(
                 modifier = Modifier
@@ -324,6 +328,7 @@ fun AlbumScreen(
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
@@ -345,7 +350,10 @@ fun AlbumScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onBack()
+                }) {
                     Icon(
                         Icons.Default.ArrowBack,
                         contentDescription = "Back",
@@ -355,7 +363,10 @@ fun AlbumScreen(
                 }
                 Row(
                     modifier = Modifier
-                        .clickable { isSearching = true }
+                        .clickable {
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isSearching = true
+                        }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -374,7 +385,10 @@ fun AlbumScreen(
                         color = textColor
                     )
                 }
-                IconButton(onClick = onNavigateQueue) {
+                IconButton(onClick = {
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onNavigateQueue()
+                }) {
                     Icon(
                         Icons.Default.QueueMusic,
                         contentDescription = "Queue",
@@ -394,6 +408,8 @@ fun AlbumSongRow(
     isDarkMode: Boolean,
     isLiked: Boolean,
     isPlaying: Boolean,
+    hapticsEnabled: Boolean,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
     onClick: () -> Unit,
     onAddToQueue: () -> Unit,
     onPlayNext: () -> Unit,
@@ -409,7 +425,10 @@ fun AlbumSongRow(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
-            .clickable { onClick() }
+            .clickable {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onClick()
+            }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -447,7 +466,10 @@ fun AlbumSongRow(
         }
 
         Box {
-            IconButton(onClick = { menuExpanded = true }) {
+            IconButton(onClick = {
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                menuExpanded = true
+            }) {
                 Icon(
                     Icons.Default.MoreVert,
                     contentDescription = "Options",
@@ -460,15 +482,27 @@ fun AlbumSongRow(
             ) {
                 DropdownMenuItem(
                     text = { Text(if (isLiked) "Unlike" else "Like", fontFamily = NothingFont) },
-                    onClick = { menuExpanded = false; onLike() }
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        menuExpanded = false
+                        onLike()
+                    }
                 )
                 DropdownMenuItem(
                     text = { Text("Play next", fontFamily = NothingFont) },
-                    onClick = { menuExpanded = false; onPlayNext() }
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        menuExpanded = false
+                        onPlayNext()
+                    }
                 )
                 DropdownMenuItem(
                     text = { Text("Add to queue", fontFamily = NothingFont) },
-                    onClick = { menuExpanded = false; onAddToQueue() }
+                    onClick = {
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        menuExpanded = false
+                        onAddToQueue()
+                    }
                 )
             }
         }
