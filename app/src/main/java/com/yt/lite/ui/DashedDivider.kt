@@ -1,7 +1,6 @@
 package com.yt.lite.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -25,7 +24,7 @@ fun DashedDivider(
         val width = size.width
         val y = size.height / 2
 
-        // Draw full gray dashed line (static background)
+        // Full gray dashed line (static background)
         drawLine(
             color = grayColor,
             start = Offset(0f, y),
@@ -34,7 +33,7 @@ fun DashedDivider(
             pathEffect = dashPathEffect
         )
 
-        // Draw red dashed fill that grows from left to right
+        // Red dashed fill – grows with scrollProgress (0 to 1)
         val fillWidth = width * scrollProgress.coerceIn(0f, 1f)
         if (fillWidth > 0f) {
             drawLine(
@@ -42,7 +41,7 @@ fun DashedDivider(
                 start = Offset(0f, y),
                 end = Offset(fillWidth, y),
                 strokeWidth = strokeWidth,
-                pathEffect = dashPathEffect  // now dashed as well
+                pathEffect = dashPathEffect
             )
         }
     }
