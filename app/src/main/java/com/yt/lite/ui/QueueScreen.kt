@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.yt.lite.ui.theme.NothingFont
 import kotlinx.coroutines.delay
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
 
 private fun formatTotalTime(totalMs: Long): String {
     val totalSec = totalMs / 1000
