@@ -466,24 +466,7 @@ fun SleepTimerDialog(
                         }
                     }
                 } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable { onDismiss() }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Cancel",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
+                    // 1. End of this song
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -502,16 +485,36 @@ fun SleepTimerDialog(
 
                     Spacer(Modifier.height(10.dp))
 
+                    // 2. Custom timer (opens input)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color.Red, RoundedCornerShape(8.dp))
+                            .background(surfaceColor, RoundedCornerShape(8.dp))
                             .clickable { showCustomInput = true }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             "Custom timer",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // 3. Cancel (red, bottom)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Red, RoundedCornerShape(8.dp))
+                            .clickable { onDismiss() }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Cancel",
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
