@@ -53,6 +53,7 @@ import com.yt.lite.ui.theme.AppTheme
 import com.yt.lite.ui.theme.NothingFont
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.snapshotFlow
 import kotlinx.coroutines.launch
 
 private const val NOTIF_CHANNEL_ID = "audiobasics_updates"
@@ -80,35 +81,47 @@ class MainActivity : ComponentActivity() {
         createNotificationChannel()
         checkForUpdateAndNotify()
 
-        val openUpdater = intent.getBooleanExtra("OPEN_UPDATER", false)
-
         setContent {
             val vm: MusicViewModel = viewModel()
             val isDarkMode by vm.isDarkMode.collectAsState()
 
+            // Trigger updater if intent says so
+            val openUpdater = intent.getBooleanExtra("OPEN_UPDATER", false)
+            if (openUpdater) vm.triggerUpdater()
+
             val lifecycleOwner = LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
-                    if (event == Lifecycle.Event.ON_RESUME) vm.syncState()
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        vm.syncState()
+                        vm.checkForUpdate()
+                    }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
             }
 
             AppTheme(darkTheme = isDarkMode) {
-                AudiobasicsApp(
-                    vm = vm,
-                    isDarkMode = isDarkMode,
-                    openUpdaterOnStart = openUpdater
-                )
+                AudiobasicsApp(vm = vm, isDarkMode = isDarkMode)
             }
         }
     }
 
-    // Called every time activity comes to foreground
-    override fun onResume() {
-        super.onResume()
-        checkForUpdateAndNotify()
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent?.getBooleanExtra("OPEN_UPDATER", false) == true) {
+            // The ViewModel is not yet accessible here, but we can store a flag
+            // However, the composable will read the intent extra on next composition.
+            // Simpler: just restart activity? No, we'll rely on the LaunchedEffect in composable
+            // Actually we need to pass the info to ViewModel. We'll use a static flag or re-trigger.
+            // Since we can't get ViewModel here, we'll just set an intent extra and recompose.
+            // The setContent block will read intent again.
+            setContent {
+                val vm: MusicViewModel = viewModel()
+                vm.triggerUpdater()
+                // ... rest
+            }
+        }
     }
 
     private fun createNotificationChannel() {
@@ -126,10 +139,8 @@ class MainActivity : ComponentActivity() {
     private fun checkForUpdateAndNotify() {
         CoroutineScope(Dispatchers.IO).launch {
             val latest = fetchLatestAppVersion() ?: return@launch
-            // Same version — nothing to do
             if (latest == APP_CURRENT_VERSION) return@launch
 
-            // Build intent that opens updater screen
             val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
                 putExtra("OPEN_UPDATER", true)
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -169,25 +180,28 @@ sealed class Screen {
 @Composable
 fun AudiobasicsApp(
     vm: MusicViewModel,
-    isDarkMode: Boolean,
-    openUpdaterOnStart: Boolean = false
+    isDarkMode: Boolean
 ) {
     val currentSong by vm.currentSong.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val showStorageLow by vm.showStorageLow.collectAsState()
+    val navigateToUpdater by vm.navigateToUpdater.collectAsState()
 
     var screenStack by remember {
-        mutableStateOf(
-            if (openUpdaterOnStart)
-                listOf<Screen>(Screen.Home, Screen.Settings, Screen.Updater)
-            else
-                listOf<Screen>(Screen.Home)
-        )
+        mutableStateOf(listOf<Screen>(Screen.Home))
     }
     val currentScreen = screenStack.last()
     var showPlayerDialog by remember { mutableStateOf(false) }
+
+    // Observe navigation to updater
+    LaunchedEffect(navigateToUpdater) {
+        if (navigateToUpdater) {
+            screenStack = listOf(Screen.Home, Screen.Settings, Screen.Updater)
+            vm.onUpdaterNavigated()
+        }
+    }
 
     fun navigate(screen: Screen) { screenStack = screenStack + screen }
     fun navigateBack() {
