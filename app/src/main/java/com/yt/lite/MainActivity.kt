@@ -280,6 +280,7 @@ fun AudiobasicsApp(
                         onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) }
                     )
                     is Screen.Updater -> UpdaterScreen(
+                        vm = vm,
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
                         onEngineInfo = { navigate(Screen.EngineInfo) }
@@ -302,6 +303,7 @@ fun AudiobasicsApp(
         currentSong?.let { song ->
             val isLiked = likedSongs.any { it.id == song.id }
             PlayerBar(
+                vm = vm,
                 song = song,
                 isPlaying = isPlaying,
                 isLoading = isLoading,
