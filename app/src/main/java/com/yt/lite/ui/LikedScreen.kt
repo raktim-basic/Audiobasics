@@ -60,16 +60,17 @@ fun LikedScreen(
         }
     }
 
-    // Scroll progress based on first visible regular item (skip sticky header index 1)
-    val totalRegularItems = filteredSongs.size + 1 // heart (0) + songs (indices 2..)
+    // Correct scroll progress: ignore sticky header (index 1)
+    val totalRegularItems = filteredSongs.size + 1 // heart (0) + songs (2..)
     val scrollProgress = remember(listState, totalRegularItems) {
         derivedStateOf {
             if (totalRegularItems <= 1) return@derivedStateOf 0f
             val layoutInfo = listState.layoutInfo
-            val firstVisibleRegular = layoutInfo.visibleItemsInfo
+            val visibleRegularIndices = layoutInfo.visibleItemsInfo
                 .map { it.index }
-                .firstOrNull { it != 1 } ?: 0
-            (firstVisibleRegular.toFloat() / totalRegularItems).coerceIn(0f, 1f)
+                .filter { it == 0 || (it >= 2 && it <= totalRegularItems) }
+            val maxVisibleIndex = visibleRegularIndices.maxOrNull() ?: 0
+            (maxVisibleIndex.toFloat() / totalRegularItems).coerceIn(0f, 1f)
         }
     }
 
@@ -82,6 +83,7 @@ fun LikedScreen(
             modifier = Modifier.weight(1f),
             state = listState
         ) {
+            // Heart header (index 0)
             item {
                 Column(
                     modifier = Modifier
@@ -95,6 +97,7 @@ fun LikedScreen(
                 }
             }
 
+            // Sticky header (index 1) – ignored in scroll progress
             stickyHeader {
                 Column(modifier = Modifier
                     .fillMaxWidth()
@@ -166,7 +169,7 @@ fun LikedScreen(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
-        // Bottom bar (unchanged)
+        // Bottom bar
         if (isSearching) {
             Row(
                 modifier = Modifier
