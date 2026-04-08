@@ -94,11 +94,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
 
-    // New: updater navigation
+    // Haptics
+    private val _hapticsEnabled = MutableStateFlow(prefs.getBoolean("haptics_enabled", true))
+    val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled
+
+    // Updater navigation
     private val _navigateToUpdater = MutableStateFlow(false)
     val navigateToUpdater: StateFlow<Boolean> = _navigateToUpdater
 
-    // New: update available flag for home screen
+    // Update available flag
     private val _updateAvailable = MutableStateFlow(false)
     val updateAvailable: StateFlow<Boolean> = _updateAvailable
 
@@ -167,7 +171,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             { it.run() }
         )
         refreshCacheSize()
-        checkForUpdate() // initial check
+        checkForUpdate()
     }
 
     fun syncState() { syncStateFromController() }
@@ -644,7 +648,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("dark_mode", _isDarkMode.value).apply()
     }
 
-    // New methods for updater and update detection
+    fun toggleHaptics() {
+        _hapticsEnabled.value = !_hapticsEnabled.value
+        prefs.edit().putBoolean("haptics_enabled", _hapticsEnabled.value).apply()
+    }
+
     fun triggerUpdater() {
         _navigateToUpdater.value = true
     }
