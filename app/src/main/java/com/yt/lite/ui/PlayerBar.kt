@@ -50,7 +50,7 @@ fun PlayerBar(
             .fillMaxWidth()
             .background(bgColor)
             .clickable {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                 onTap()
             }
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -89,7 +89,7 @@ fun PlayerBar(
         }
 
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
             onLike()
         }) {
             Icon(
@@ -101,7 +101,7 @@ fun PlayerBar(
         }
 
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
             onToggle()
         }) {
             if (isLoading) {
