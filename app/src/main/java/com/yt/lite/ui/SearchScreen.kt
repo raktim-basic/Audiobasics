@@ -186,7 +186,7 @@ fun SearchScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                                         // Only fill the query, do not search
                                         query = suggestion
                                         suggestions = emptyList()
@@ -274,7 +274,7 @@ fun SearchScreen(
                 .fillMaxWidth()
                 .background(bgColor)
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     showLinkDialog = true
                 }
                 .padding(horizontal = 20.dp, vertical = 8.dp)
@@ -297,7 +297,7 @@ fun SearchScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onBack()
             }) {
                 Icon(
@@ -339,7 +339,7 @@ fun SearchScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (query.isNotBlank()) {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         showSuggestions = false
                         vm.search(query)
                         focusManager.clearFocus()
@@ -348,7 +348,7 @@ fun SearchScreen(
             )
 
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onNavigateQueue()
             }) {
                 Icon(
@@ -375,7 +375,7 @@ fun PlayByLinkDialog(
     val textColor = if (isDarkMode) Color.White else Color.Black
 
     Dialog(onDismissRequest = {
-        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
         onDismiss()
     }) {
         Box(
@@ -421,7 +421,7 @@ fun PlayByLinkDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         onDismiss()
                     }) {
                         Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
@@ -432,7 +432,7 @@ fun PlayByLinkDialog(
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.Red)
                             .clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                                 if (link.isNotBlank()) onPlay(link)
                             }
                             .padding(horizontal = 20.dp, vertical = 10.dp)
