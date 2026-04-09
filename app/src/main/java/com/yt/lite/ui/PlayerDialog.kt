@@ -59,6 +59,7 @@ fun PlayerDialog(
 
     var showLyrics by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
+    var dragPosition by remember { mutableStateOf<Long?>(null) }  // for scrubbing preview
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -76,7 +77,7 @@ fun PlayerDialog(
 
     Dialog(
         onDismissRequest = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
             onDismiss()
         },
         properties = DialogProperties(
@@ -90,7 +91,7 @@ fun PlayerDialog(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                     onDismiss()
                 },
             contentAlignment = Alignment.Center
@@ -103,8 +104,7 @@ fun PlayerDialog(
                     .clickable(enabled = false) {}
             ) {
                 Column {
-
-                    // Top bar: Speaker | Info | Close
+                    // Top bar
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -113,10 +113,8 @@ fun PlayerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            Toast.makeText(
-                                context, "Coming soon", Toast.LENGTH_SHORT
-                            ).show()
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                         }) {
                             Icon(
                                 Icons.Default.SpeakerGroup,
@@ -125,9 +123,8 @@ fun PlayerDialog(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                             showInfo = !showInfo
                         }) {
                             Icon(
@@ -137,9 +134,8 @@ fun PlayerDialog(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                             onDismiss()
                         }) {
                             Icon(
@@ -179,7 +175,7 @@ fun PlayerDialog(
                         Spacer(Modifier.height(8.dp))
                     }
 
-                    // Artwork + Song info
+                    // Artwork + info
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -220,8 +216,9 @@ fun PlayerDialog(
 
                     Spacer(Modifier.height(20.dp))
 
-                    // Progress bar
-                    val progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f
+                    // Progress bar with scrubbing preview
+                    val displayPosition = dragPosition ?: position
+                    val progress = if (duration > 0) displayPosition.toFloat() / duration.toFloat() else 0f
 
                     Row(
                         modifier = Modifier
@@ -230,7 +227,7 @@ fun PlayerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = formatTime(position),
+                            text = formatTime(displayPosition),
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
@@ -244,9 +241,14 @@ fun PlayerDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             DashedProgressBar(
-                                progress = progress,
+                                progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f,
                                 onSeek = { seekProgress ->
-                                    if (duration > 0) vm.seekTo((seekProgress * duration).toLong())
+                                    val newPos = (seekProgress * duration).toLong()
+                                    vm.seekTo(newPos)
+                                    dragPosition = null
+                                },
+                                onDragging = { dragProgress ->
+                                    dragPosition = (dragProgress * duration).toLong()
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 hapticsEnabled = hapticsEnabled,
@@ -265,7 +267,7 @@ fun PlayerDialog(
 
                     Spacer(Modifier.height(20.dp))
 
-                    // Controls: ← | Pause | →
+                    // Playback controls
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -274,7 +276,7 @@ fun PlayerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                             vm.skipToPrevious()
                         }) {
                             Icon(
@@ -284,13 +286,12 @@ fun PlayerDialog(
                                 modifier = Modifier.size(36.dp)
                             )
                         }
-
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(surfaceColor)
                                 .clickable {
-                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                                     vm.togglePlayPause()
                                 }
                                 .padding(horizontal = 32.dp, vertical = 14.dp),
@@ -322,9 +323,8 @@ fun PlayerDialog(
                                 }
                             }
                         }
-
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                             vm.skipToNext()
                         }) {
                             Icon(
@@ -338,7 +338,7 @@ fun PlayerDialog(
 
                     Spacer(Modifier.height(8.dp))
 
-                    // Bottom bar — Heart | LYRICS | Share
+                    // Bottom bar
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -348,7 +348,7 @@ fun PlayerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                             song?.let { vm.toggleLike(it) }
                         }) {
                             Icon(
@@ -359,7 +359,6 @@ fun PlayerDialog(
                                 modifier = Modifier.size(26.dp)
                             )
                         }
-
                         Text(
                             text = "LYRICS",
                             fontFamily = NothingFont,
@@ -367,24 +366,18 @@ fun PlayerDialog(
                             fontSize = 14.sp,
                             color = textColor,
                             modifier = Modifier.clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                                 showLyrics = true
                             }
                         )
-
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                             song?.let { s ->
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
-                                    putExtra(
-                                        Intent.EXTRA_TEXT,
-                                        "https://www.youtube.com/watch?v=${s.id}"
-                                    )
+                                    putExtra(Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${s.id}")
                                 }
-                                context.startActivity(
-                                    Intent.createChooser(shareIntent, "Share song")
-                                )
+                                context.startActivity(Intent.createChooser(shareIntent, "Share song"))
                             }
                         }) {
                             Icon(
@@ -409,17 +402,10 @@ private fun InfoRow(
     subTextColor: Color
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(
-            text = label,
-            fontFamily = NothingFont,
-            fontSize = 12.sp,
-            color = subTextColor
-        )
+        Text(text = label, fontFamily = NothingFont, fontSize = 12.sp, color = subTextColor)
         Text(
             text = value,
             fontFamily = NothingFont,
@@ -436,6 +422,7 @@ private fun InfoRow(
 fun DashedProgressBar(
     progress: Float,
     onSeek: (Float) -> Unit,
+    onDragging: (Float) -> Unit,
     modifier: Modifier = Modifier,
     hapticsEnabled: Boolean,
     haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -446,6 +433,15 @@ fun DashedProgressBar(
 
     val displayProgress = dragProgress ?: progress
     val displayFilled = (displayProgress * totalDashes).toInt()
+    var lastFilled by remember { mutableStateOf(displayFilled) }
+
+    // Trigger haptic only when filled dash count changes during drag
+    LaunchedEffect(displayFilled) {
+        if (dragProgress != null && displayFilled != lastFilled && hapticsEnabled) {
+            haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+            lastFilled = displayFilled
+        }
+    }
 
     Row(
         modifier = modifier
@@ -455,8 +451,10 @@ fun DashedProgressBar(
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
                         if (barWidthPx > 0) {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                             dragProgress = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                            lastFilled = (dragProgress!! * totalDashes).toInt()
+                            onDragging(dragProgress!!)
                         }
                     },
                     onDragEnd = {
@@ -468,6 +466,7 @@ fun DashedProgressBar(
                         if (barWidthPx > 0) {
                             val current = dragProgress ?: progress
                             dragProgress = (current + dragAmount / barWidthPx).coerceIn(0f, 1f)
+                            onDragging(dragProgress!!)
                         }
                     }
                 )
@@ -482,14 +481,13 @@ fun DashedProgressBar(
                     .height(3.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(
-                        if (index < displayFilled) Color(0xFFFF0000)
-                        else Color(0xFF333333)
+                        if (index < displayFilled) Color(0xFFFF0000) else Color(0xFF333333)
                     )
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                         onSeek((index + 1).toFloat() / totalDashes.toFloat())
                     }
             )
