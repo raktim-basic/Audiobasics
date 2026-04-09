@@ -225,7 +225,7 @@ fun SavedAlbumsScreen(
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
@@ -248,7 +248,7 @@ fun SavedAlbumsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     onBack()
                 }) {
                     Icon(
@@ -261,7 +261,7 @@ fun SavedAlbumsScreen(
                 Row(
                     modifier = Modifier
                         .clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             isSearching = true
                         }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -283,7 +283,7 @@ fun SavedAlbumsScreen(
                     )
                 }
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     onNavigateQueue()
                 }) {
                     Icon(
@@ -315,7 +315,7 @@ fun AlbumItem(
             .fillMaxWidth()
             .background(bgColor)
             .clickable {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onClick()
             }
             .padding(horizontal = 16.dp, vertical = 10.dp),
