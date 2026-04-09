@@ -194,7 +194,7 @@ fun AlbumScreen(
                             Spacer(Modifier.width(8.dp))
 
                             IconButton(onClick = {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(
@@ -217,7 +217,7 @@ fun AlbumScreen(
                             }
 
                             IconButton(onClick = {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                                 if (isSaved) vm.unsaveAlbum(album)
                                 else vm.saveAlbum(album)
                             }) {
@@ -231,7 +231,7 @@ fun AlbumScreen(
                             }
 
                             IconButton(onClick = {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                                 if (albumSongs.isNotEmpty())
                                     vm.playWithQueue(albumSongs.first(), albumSongs)
                             }) {
@@ -338,7 +338,7 @@ fun AlbumScreen(
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
@@ -361,7 +361,7 @@ fun AlbumScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     onBack()
                 }) {
                     Icon(
@@ -374,7 +374,7 @@ fun AlbumScreen(
                 Row(
                     modifier = Modifier
                         .clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             isSearching = true
                         }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -396,7 +396,7 @@ fun AlbumScreen(
                     )
                 }
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     onNavigateQueue()
                 }) {
                     Icon(
@@ -436,7 +436,7 @@ fun AlbumSongRow(
             .fillMaxWidth()
             .background(bgColor)
             .clickable {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onClick()
             }
             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -477,7 +477,7 @@ fun AlbumSongRow(
 
         Box {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 menuExpanded = true
             }) {
                 Icon(
@@ -493,7 +493,7 @@ fun AlbumSongRow(
                 DropdownMenuItem(
                     text = { Text(if (isLiked) "Unlike" else "Like", fontFamily = NothingFont) },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         menuExpanded = false
                         onLike()
                     }
@@ -501,7 +501,7 @@ fun AlbumSongRow(
                 DropdownMenuItem(
                     text = { Text("Play next", fontFamily = NothingFont) },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         menuExpanded = false
                         onPlayNext()
                     }
@@ -509,7 +509,7 @@ fun AlbumSongRow(
                 DropdownMenuItem(
                     text = { Text("Add to queue", fontFamily = NothingFont) },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         menuExpanded = false
                         onAddToQueue()
                     }
