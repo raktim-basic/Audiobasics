@@ -16,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
@@ -115,11 +117,17 @@ fun SearchScreen(
     var showSuggestions by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+
+    // Auto-focus the search field when screen appears
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 
     LaunchedEffect(Unit) {
         query = ""
@@ -178,12 +186,12 @@ fun SearchScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                                        // Only fill the query, do not search
                                         query = suggestion
                                         suggestions = emptyList()
                                         showSuggestions = false
                                         focusManager.clearFocus()
-                                        vm.search(suggestion)
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -266,7 +274,7 @@ fun SearchScreen(
                 .fillMaxWidth()
                 .background(bgColor)
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                     showLinkDialog = true
                 }
                 .padding(horizontal = 20.dp, vertical = 8.dp)
@@ -289,7 +297,7 @@ fun SearchScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                 onBack()
             }) {
                 Icon(
@@ -306,7 +314,7 @@ fun SearchScreen(
                     query = it
                     if (it.isNotBlank()) showSuggestions = true
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).focusRequester(focusRequester),
                 placeholder = {
                     Text(
                         "Search...",
@@ -331,7 +339,7 @@ fun SearchScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (query.isNotBlank()) {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                         showSuggestions = false
                         vm.search(query)
                         focusManager.clearFocus()
@@ -340,7 +348,7 @@ fun SearchScreen(
             )
 
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                 onNavigateQueue()
             }) {
                 Icon(
@@ -367,7 +375,7 @@ fun PlayByLinkDialog(
     val textColor = if (isDarkMode) Color.White else Color.Black
 
     Dialog(onDismissRequest = {
-        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
         onDismiss()
     }) {
         Box(
@@ -413,7 +421,7 @@ fun PlayByLinkDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                         onDismiss()
                     }) {
                         Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
@@ -424,7 +432,7 @@ fun PlayByLinkDialog(
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.Red)
                             .clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                                 if (link.isNotBlank()) onPlay(link)
                             }
                             .padding(horizontal = 20.dp, vertical = 10.dp)
