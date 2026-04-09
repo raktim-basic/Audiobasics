@@ -137,7 +137,7 @@ fun LikedScreen(
                         }
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             vm.shuffleLiked()
                         }) {
                             Icon(
@@ -224,7 +224,7 @@ fun LikedScreen(
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
@@ -247,7 +247,7 @@ fun LikedScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     onBack()
                 }) {
                     Icon(
@@ -260,7 +260,7 @@ fun LikedScreen(
                 Row(
                     modifier = Modifier
                         .clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             isSearching = true
                         }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -282,7 +282,7 @@ fun LikedScreen(
                     )
                 }
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     onNavigateQueue()
                 }) {
                     Icon(
