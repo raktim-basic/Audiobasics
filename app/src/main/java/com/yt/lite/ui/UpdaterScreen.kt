@@ -90,7 +90,7 @@ fun UpdaterScreen(
                 .padding(top = 8.dp, start = 4.dp)
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onBack()
             }) {
                 Icon(
@@ -160,7 +160,7 @@ fun UpdaterScreen(
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Red)
                     .clickable(enabled = !isChecking) {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         scope.launch {
                             isChecking = true
                             latestVersion = fetchLatestAppVersion()
@@ -196,7 +196,7 @@ fun UpdaterScreen(
                         .clip(RoundedCornerShape(6.dp))
                         .background(Color.Red)
                         .clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
                                 Uri.parse(APP_GITHUB_RELEASES_URL)
@@ -238,7 +238,7 @@ fun UpdaterScreen(
             color = Color.Red,
             textDecoration = TextDecoration.Underline,
             modifier = Modifier.clickable {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onEngineInfo()
             }
         )
