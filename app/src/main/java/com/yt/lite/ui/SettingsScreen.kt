@@ -65,7 +65,7 @@ fun SettingsScreen(
     val haptic = LocalHapticFeedback.current
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
-        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
         currentPage = SettingsPage.Main
     }
 
@@ -163,7 +163,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         onNavigateAppearance()
                     }
                 )
@@ -185,7 +185,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         onNavigateCache()
                     }
                 )
@@ -207,7 +207,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         onNavigateLibrary()
                     }
                 )
@@ -229,7 +229,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -262,7 +262,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         onNavigateUpdater()
                     }
                 )
@@ -295,7 +295,7 @@ private fun SettingsMainPage(
                         color = Color(0xFF1565C0),
                         textDecoration = TextDecoration.Underline,
                         modifier = Modifier.clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             context.startActivity(
                                 Intent(Intent.ACTION_VIEW,
                                     Uri.parse("https://github.com/raktim-basic/Audiobasics"))
@@ -320,7 +320,7 @@ private fun SettingsMainPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onBack()
             }) {
                 Icon(
@@ -347,7 +347,7 @@ private fun SettingsMainPage(
             Text(
                 text = madeByText,
                 modifier = Modifier.clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     context.startActivity(
                         Intent(Intent.ACTION_VIEW,
                             Uri.parse("https://github.com/raktim-basic"))
@@ -416,7 +416,7 @@ private fun AppearancePage(
             Switch(
                 checked = isDarkMode,
                 onCheckedChange = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     vm.toggleDarkMode()
                 },
                 colors = SwitchDefaults.colors(
@@ -453,7 +453,7 @@ private fun AppearancePage(
             Switch(
                 checked = hapticsEnabled,
                 onCheckedChange = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                     vm.toggleHaptics()
                 },
                 colors = SwitchDefaults.colors(
@@ -479,7 +479,7 @@ private fun AppearancePage(
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onBack()
             }) {
                 Icon(
@@ -575,7 +575,7 @@ private fun CachePage(
                     },
                     onClick = {
                         if (!isCurrentlyCaching) {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             vm.cacheAllLiked()
                         }
                     }
@@ -608,7 +608,7 @@ private fun CachePage(
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onBack()
             }) {
                 Icon(
@@ -655,7 +655,7 @@ private fun LibraryPage(
 
     if (showImportWarning) {
         Dialog(onDismissRequest = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
             showImportWarning = false
         }) {
             Box(
@@ -686,7 +686,7 @@ private fun LibraryPage(
                         horizontalArrangement = Arrangement.End
                     ) {
                         TextButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             showImportWarning = false
                         }) {
                             Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
@@ -697,7 +697,7 @@ private fun LibraryPage(
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color.Red)
                                 .clickable {
-                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                                     showImportWarning = false
                                     pendingImportUri?.let { vm.importData(context, it) }
                                 }
@@ -752,7 +752,7 @@ private fun LibraryPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         exportLauncher.launch("audiobasics_backup.json")
                     }
                 )
@@ -774,7 +774,7 @@ private fun LibraryPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                         importLauncher.launch(arrayOf("application/json"))
                     }
                 )
@@ -793,7 +793,7 @@ private fun LibraryPage(
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
+                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                 onBack()
             }) {
                 Icon(
