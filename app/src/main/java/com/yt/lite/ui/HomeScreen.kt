@@ -114,7 +114,7 @@ fun HomeScreen(
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFFFF8A80))
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                     onNavigateAlbums()
                 }
                 .padding(horizontal = 16.dp, vertical = 14.dp)
@@ -153,7 +153,7 @@ fun HomeScreen(
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFFFF0000))
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
                     onNavigateLiked()
                 }
                 .padding(horizontal = 16.dp, vertical = 24.dp)
@@ -229,7 +229,7 @@ fun HomeBottomBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
             onSettings()
         }) {
             Icon(
@@ -240,7 +240,7 @@ fun HomeBottomBar(
             )
         }
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
             onSearch()
         }) {
             Icon(
@@ -251,7 +251,7 @@ fun HomeBottomBar(
             )
         }
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyTap)
             onQueue()
         }) {
             Icon(
