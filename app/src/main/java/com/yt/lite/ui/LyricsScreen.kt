@@ -96,7 +96,7 @@ fun LyricsScreen(
 
     Dialog(
         onDismissRequest = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
             onBack()
         },
         properties = DialogProperties(
@@ -110,7 +110,7 @@ fun LyricsScreen(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
                     onBack()
                 },
             contentAlignment = Alignment.Center
@@ -138,7 +138,7 @@ fun LyricsScreen(
                             fontSize = 16.sp,
                             color = if (isRealTime) Color.Red else Color.Gray,
                             modifier = Modifier.clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
                                 isRealTime = true
                             }
                         )
@@ -150,7 +150,7 @@ fun LyricsScreen(
                             fontSize = 16.sp,
                             color = if (!isRealTime) Color.Red else Color.Gray,
                             modifier = Modifier.clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
                                 isRealTime = false
                             }
                         )
@@ -254,7 +254,7 @@ fun LyricsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
                             onBack()
                         }) {
                             Icon(
@@ -272,7 +272,7 @@ fun LyricsScreen(
                         )
 
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
+                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
                             vm.togglePlayPause()
                         }) {
                             Icon(
