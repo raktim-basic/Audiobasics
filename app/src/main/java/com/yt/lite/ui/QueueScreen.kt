@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -29,7 +28,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.zIndex
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
 import kotlinx.coroutines.delay
@@ -137,12 +135,16 @@ fun QueueScreen(
         if (idx >= 0) listState.animateScrollToItem(idx)
     }
 
+    // Visual queue that reorders during drag (live preview)
     val visualQueue = remember(queue, draggingIndex, dragOffsetY, itemHeights) {
         val dragging = draggingIndex ?: return@remember queue
         val h = itemHeights[dragging] ?: 80f
-        val targetIndex = (dragging + (dragOffsetY / h).toInt())
-            .coerceIn(0, queue.size - 1)
+        // How many items have we moved? (negative = up, positive = down)
+        val delta = (dragOffsetY / h).toInt()
+        var targetIndex = (dragging + delta).coerceIn(0, queue.size - 1)
         if (targetIndex == dragging) return@remember queue
+        // To avoid multiple swaps during one drag, we only move one step at a time? 
+        // Actually we want to move directly to the target index.
         val mutable = queue.toMutableList()
         val item = mutable.removeAt(dragging)
         mutable.add(targetIndex, item)
@@ -250,13 +252,6 @@ fun QueueScreen(
                             .onGloballyPositioned { coords ->
                                 itemHeights[index] = coords.size.height.toFloat()
                             }
-                            .zIndex(if (isDragging) 1f else 0f)
-                            .graphicsLayer {
-                                translationY = if (isDragging) dragOffsetY else 0f
-                                alpha = if (isDragging) 0.85f else 1f
-                                scaleX = if (isDragging) 1.02f else 1f
-                                scaleY = if (isDragging) 1.02f else 1f
-                            }
                             .background(
                                 when {
                                     isDragging -> if (isDarkMode)
@@ -273,9 +268,8 @@ fun QueueScreen(
                                     Modifier.pointerInput(index) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = {
-                                                if (hapticsEnabled) {
-                                                    HapticUtils.performSubtleHaptic(context)
-                                                }
+                                                // Long press haptic always happens regardless of toggle
+                                                HapticUtils.performSubtleHaptic(context)
                                                 dragOffsetY = 0f
                                             },
                                             onDrag = { change, dragAmount ->
@@ -284,13 +278,13 @@ fun QueueScreen(
                                             },
                                             onDragEnd = {
                                                 val from = draggingIndex
-                                                val h = itemHeights[from ?: index] ?: 80f
-                                                val to = from?.let {
-                                                    (it + (dragOffsetY / h).toInt())
-                                                        .coerceIn(0, queue.size - 1)
-                                                }
-                                                if (from != null && to != null && from != to) {
-                                                    vm.reorderQueue(from, to)
+                                                if (from != null) {
+                                                    val h = itemHeights[from] ?: 80f
+                                                    val delta = (dragOffsetY / h).toInt()
+                                                    val to = (from + delta).coerceIn(0, queue.size - 1)
+                                                    if (from != to) {
+                                                        vm.reorderQueue(from, to)
+                                                    }
                                                 }
                                                 draggingIndex = null
                                                 dragOffsetY = 0f
