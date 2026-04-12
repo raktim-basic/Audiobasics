@@ -69,6 +69,7 @@ fun QueueScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
+    // Reorder state
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetY by remember { mutableStateOf(0f) }
     var itemHeights by remember { mutableStateOf(mutableMapOf<Int, Float>()) }
@@ -136,7 +137,7 @@ fun QueueScreen(
         if (idx >= 0) listState.animateScrollToItem(idx)
     }
 
-    // Live reorder visual during drag
+    // Live reorder preview – reorders the list during drag
     val visualQueue = remember(queue, draggingIndex, dragOffsetY, itemHeights) {
         val dragging = draggingIndex ?: return@remember queue
         val h = itemHeights[dragging] ?: 80f
@@ -269,40 +270,38 @@ fun QueueScreen(
                                     else -> Color.Transparent
                                 }
                             )
-                            .then(
-                                if (isDragging) {
-                                    Modifier.pointerInput(index) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = {
-                                                // Unconditional haptic
-                                                HapticUtils.performSubtleHaptic(context)
-                                                dragOffsetY = 0f
-                                            },
-                                            onDrag = { change, dragAmount ->
-                                                change.consume()
-                                                dragOffsetY += dragAmount.y
-                                            },
-                                            onDragEnd = {
-                                                val from = draggingIndex
-                                                if (from != null) {
-                                                    val h = itemHeights[from] ?: 80f
-                                                    val delta = (dragOffsetY / h).toInt()
-                                                    val to = (from + delta).coerceIn(0, queue.size - 1)
-                                                    if (from != to) {
-                                                        vm.reorderQueue(from, to)
-                                                    }
+                            .pointerInput(draggingIndex, index) {
+                                // Only attach drag gestures if this is the currently dragged item
+                                if (draggingIndex == index) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            HapticUtils.performSubtleHaptic(context) // unconditional
+                                            dragOffsetY = 0f
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragOffsetY += dragAmount.y
+                                        },
+                                        onDragEnd = {
+                                            val from = draggingIndex
+                                            if (from != null) {
+                                                val h = itemHeights[from] ?: 80f
+                                                val delta = (dragOffsetY / h).toInt()
+                                                val to = (from + delta).coerceIn(0, queue.size - 1)
+                                                if (from != to) {
+                                                    vm.reorderQueue(from, to)
                                                 }
-                                                draggingIndex = null
-                                                dragOffsetY = 0f
-                                            },
-                                            onDragCancel = {
-                                                draggingIndex = null
-                                                dragOffsetY = 0f
                                             }
-                                        )
-                                    }
-                                } else Modifier
-                            )
+                                            draggingIndex = null
+                                            dragOffsetY = 0f
+                                        },
+                                        onDragCancel = {
+                                            draggingIndex = null
+                                            dragOffsetY = 0f
+                                        }
+                                    )
+                                }
+                            }
                     ) {
                         if (isCurrentSong) {
                             Box(
@@ -336,7 +335,8 @@ fun QueueScreen(
                                 }
                             },
                             onRetryCache = { vm.retryCache(song) },
-                            onRemoveLike = { vm.toggleLike(song) }
+                            onRemoveLike = { vm.toggleLike(song) },
+                            isDragging = isDragging
                         )
                     }
                 }
@@ -409,7 +409,7 @@ fun SleepTimerDialog(
     onEndOfSong: () -> Unit,
     onCustom: (Long) -> Unit
 ) {
-    // Same as before – no changes needed
+    // unchanged
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
