@@ -25,12 +25,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,6 +37,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 
 @Composable
 fun PlayerDialog(
@@ -47,7 +46,6 @@ fun PlayerDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val song by vm.currentSong.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
@@ -77,7 +75,7 @@ fun PlayerDialog(
 
     Dialog(
         onDismissRequest = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onDismiss()
         },
         properties = DialogProperties(
@@ -91,7 +89,7 @@ fun PlayerDialog(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onDismiss()
                 },
             contentAlignment = Alignment.Center
@@ -113,7 +111,7 @@ fun PlayerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                         }) {
                             Icon(
@@ -124,7 +122,7 @@ fun PlayerDialog(
                             )
                         }
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             showInfo = !showInfo
                         }) {
                             Icon(
@@ -135,7 +133,7 @@ fun PlayerDialog(
                             )
                         }
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             onDismiss()
                         }) {
                             Icon(
@@ -252,7 +250,7 @@ fun PlayerDialog(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 hapticsEnabled = hapticsEnabled,
-                                haptic = haptic
+                                context = context
                             )
                         }
                         Spacer(Modifier.width(8.dp))
@@ -276,7 +274,7 @@ fun PlayerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             vm.skipToPrevious()
                         }) {
                             Icon(
@@ -291,7 +289,7 @@ fun PlayerDialog(
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(surfaceColor)
                                 .clickable {
-                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                     vm.togglePlayPause()
                                 }
                                 .padding(horizontal = 32.dp, vertical = 14.dp),
@@ -324,7 +322,7 @@ fun PlayerDialog(
                             }
                         }
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             vm.skipToNext()
                         }) {
                             Icon(
@@ -348,7 +346,7 @@ fun PlayerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             song?.let { vm.toggleLike(it) }
                         }) {
                             Icon(
@@ -366,12 +364,12 @@ fun PlayerDialog(
                             fontSize = 14.sp,
                             color = textColor,
                             modifier = Modifier.clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 showLyrics = true
                             }
                         )
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             song?.let { s ->
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
@@ -425,7 +423,7 @@ fun DashedProgressBar(
     onDragging: (Float) -> Unit,
     modifier: Modifier = Modifier,
     hapticsEnabled: Boolean,
-    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
+    context: android.content.Context
 ) {
     val totalDashes = 30
     var barWidthPx by remember { mutableStateOf(0f) }
@@ -438,7 +436,7 @@ fun DashedProgressBar(
     // Trigger haptic only when filled dash count changes during drag
     LaunchedEffect(displayFilled) {
         if (dragProgress != null && displayFilled != lastFilled && hapticsEnabled) {
-            haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            HapticUtils.performSubtleHaptic(context)
             lastFilled = displayFilled
         }
     }
@@ -451,7 +449,7 @@ fun DashedProgressBar(
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
                         if (barWidthPx > 0) {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             dragProgress = (offset.x / barWidthPx).coerceIn(0f, 1f)
                             lastFilled = (dragProgress!! * totalDashes).toInt()
                             onDragging(dragProgress!!)
@@ -487,7 +485,7 @@ fun DashedProgressBar(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onSeek((index + 1).toFloat() / totalDashes.toFloat())
                     }
             )
