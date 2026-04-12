@@ -19,9 +19,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -36,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.yt.lite.data.Album
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -104,12 +104,12 @@ fun SearchScreen(
     onNavigateQueue: () -> Unit,
     onAlbumClick: (Album) -> Unit
 ) {
+    val context = LocalContext.current
     val results by vm.searchResults.collectAsState()
     val isSearching by vm.isSearching.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val haptic = LocalHapticFeedback.current
 
     var query by remember { mutableStateOf("") }
     var showLinkDialog by remember { mutableStateOf(false) }
@@ -152,6 +152,7 @@ fun SearchScreen(
         PlayByLinkDialog(
             isDarkMode = isDarkMode,
             hapticsEnabled = hapticsEnabled,
+            context = context,
             onDismiss = { showLinkDialog = false },
             onPlay = { url ->
                 vm.playByUrl(url)
@@ -186,7 +187,7 @@ fun SearchScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                         // Only fill the query, do not search
                                         query = suggestion
                                         suggestions = emptyList()
@@ -226,6 +227,7 @@ fun SearchScreen(
                                 isPlaying = isPlaying,
                                 showMenu = !song.isAlbum,
                                 hapticsEnabled = hapticsEnabled,
+                                context = context,
                                 onClick = {
                                     if (song.isAlbum) {
                                         onAlbumClick(
@@ -274,7 +276,7 @@ fun SearchScreen(
                 .fillMaxWidth()
                 .background(bgColor)
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     showLinkDialog = true
                 }
                 .padding(horizontal = 20.dp, vertical = 8.dp)
@@ -297,7 +299,7 @@ fun SearchScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onBack()
             }) {
                 Icon(
@@ -339,7 +341,7 @@ fun SearchScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (query.isNotBlank()) {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         showSuggestions = false
                         vm.search(query)
                         focusManager.clearFocus()
@@ -348,7 +350,7 @@ fun SearchScreen(
             )
 
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onNavigateQueue()
             }) {
                 Icon(
@@ -366,16 +368,16 @@ fun SearchScreen(
 fun PlayByLinkDialog(
     isDarkMode: Boolean,
     hapticsEnabled: Boolean,
+    context: android.content.Context,
     onDismiss: () -> Unit,
     onPlay: (String) -> Unit
 ) {
-    val haptic = LocalHapticFeedback.current
     var link by remember { mutableStateOf("") }
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
 
     Dialog(onDismissRequest = {
-        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
         onDismiss()
     }) {
         Box(
@@ -421,7 +423,7 @@ fun PlayByLinkDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onDismiss()
                     }) {
                         Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
@@ -432,7 +434,7 @@ fun PlayByLinkDialog(
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.Red)
                             .clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 if (link.isNotBlank()) onPlay(link)
                             }
                             .padding(horizontal = 20.dp, vertical = 10.dp)
