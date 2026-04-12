@@ -73,7 +73,7 @@ fun QueueScreen(
     var dragOffsetY by remember { mutableStateOf(0f) }
     var itemHeights by remember { mutableStateOf(mutableMapOf<Int, Float>()) }
 
-    // Sleep timer variables (unchanged)
+    // Sleep timer (unchanged)
     var sleepTimerEndsAt by remember { mutableStateOf<Long?>(null) }
     var sleepTimerRemaining by remember { mutableStateOf(0L) }
     var showSleepDialog by remember { mutableStateOf(false) }
@@ -120,7 +120,6 @@ fun QueueScreen(
     }
 
     val totalMs = remember(queue) { queue.sumOf { it.duration } }
-
     val listState = rememberLazyListState()
 
     val scrollProgress = remember(listState, queue.size) {
@@ -137,7 +136,7 @@ fun QueueScreen(
         if (idx >= 0) listState.animateScrollToItem(idx)
     }
 
-    // Visual queue that reorders live during drag
+    // Live reorder visual during drag
     val visualQueue = remember(queue, draggingIndex, dragOffsetY, itemHeights) {
         val dragging = draggingIndex ?: return@remember queue
         val h = itemHeights[dragging] ?: 80f
@@ -175,7 +174,7 @@ fun QueueScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Header
+        // Header (unchanged)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -275,7 +274,7 @@ fun QueueScreen(
                                     Modifier.pointerInput(index) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = {
-                                                // Unconditional long press haptic
+                                                // Unconditional haptic
                                                 HapticUtils.performSubtleHaptic(context)
                                                 dragOffsetY = 0f
                                             },
@@ -410,7 +409,7 @@ fun SleepTimerDialog(
     onEndOfSong: () -> Unit,
     onCustom: (Long) -> Unit
 ) {
-    // Same as before – unchanged
+    // Same as before – no changes needed
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
