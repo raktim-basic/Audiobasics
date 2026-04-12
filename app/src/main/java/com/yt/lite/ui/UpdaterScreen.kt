@@ -17,9 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -32,6 +30,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 
 const val APP_CURRENT_VERSION = "2.1"
 const val APP_GITHUB_RELEASES_API =
@@ -63,7 +62,6 @@ fun UpdaterScreen(
     onEngineInfo: () -> Unit
 ) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -90,7 +88,7 @@ fun UpdaterScreen(
                 .padding(top = 8.dp, start = 4.dp)
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onBack()
             }) {
                 Icon(
@@ -160,7 +158,7 @@ fun UpdaterScreen(
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Red)
                     .clickable(enabled = !isChecking) {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         scope.launch {
                             isChecking = true
                             latestVersion = fetchLatestAppVersion()
@@ -196,7 +194,7 @@ fun UpdaterScreen(
                         .clip(RoundedCornerShape(6.dp))
                         .background(Color.Red)
                         .clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
                                 Uri.parse(APP_GITHUB_RELEASES_URL)
@@ -238,7 +236,7 @@ fun UpdaterScreen(
             color = Color.Red,
             textDecoration = TextDecoration.Underline,
             modifier = Modifier.clickable {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onEngineInfo()
             }
         )
