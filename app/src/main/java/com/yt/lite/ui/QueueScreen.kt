@@ -137,7 +137,7 @@ fun QueueScreen(
         if (idx >= 0) listState.animateScrollToItem(idx)
     }
 
-    // Visual queue that reorders live during drag
+    // Live reorder visual during drag
     val visualQueue = remember(queue, draggingIndex, dragOffsetY, itemHeights) {
         val dragging = draggingIndex ?: return@remember queue
         val h = itemHeights[dragging] ?: 80f
@@ -273,11 +273,10 @@ fun QueueScreen(
                             .then(
                                 if (isDragging) {
                                     Modifier.pointerInput(draggingIndex, index) {
-                                        // Only attach drag gestures if this is the currently dragged item
                                         if (draggingIndex == index) {
                                             detectDragGesturesAfterLongPress(
                                                 onDragStart = {
-                                                    HapticUtils.performSubtleHaptic(context) // unconditional
+                                                    HapticUtils.performSubtleHaptic(context)
                                                     dragOffsetY = 0f
                                                 },
                                                 onDrag = { change, dragAmount ->
@@ -339,8 +338,7 @@ fun QueueScreen(
                                 }
                             },
                             onRetryCache = { vm.retryCache(song) },
-                            onRemoveLike = { vm.toggleLike(song) },
-                            isDragging = isDragging
+                            onRemoveLike = { vm.toggleLike(song) }
                         )
                     }
                 }
@@ -413,7 +411,6 @@ fun SleepTimerDialog(
     onEndOfSong: () -> Unit,
     onCustom: (Long) -> Unit
 ) {
-    // unchanged – this is fine
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
