@@ -23,15 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -41,11 +41,11 @@ fun LikedScreen(
     onBack: () -> Unit,
     onNavigateQueue: () -> Unit
 ) {
+    val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
     val cacheSize by vm.cacheSize.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val haptic = LocalHapticFeedback.current
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
@@ -137,7 +137,7 @@ fun LikedScreen(
                         }
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             vm.shuffleLiked()
                         }) {
                             Icon(
@@ -166,6 +166,7 @@ fun LikedScreen(
                     isPlaying = isPlaying,
                     showExplicit = false,
                     hapticsEnabled = hapticsEnabled,
+                    context = context,
                     onClick = { vm.playWithQueue(song, filteredSongs) },
                     onAddToQueue = { vm.addToQueue(song) },
                     onPlayNext = { vm.playNext(song) },
@@ -224,7 +225,7 @@ fun LikedScreen(
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
@@ -247,7 +248,7 @@ fun LikedScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onBack()
                 }) {
                     Icon(
@@ -260,7 +261,7 @@ fun LikedScreen(
                 Row(
                     modifier = Modifier
                         .clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             isSearching = true
                         }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -282,7 +283,7 @@ fun LikedScreen(
                     )
                 }
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onNavigateQueue()
                 }) {
                     Icon(
