@@ -136,6 +136,7 @@ fun SearchScreen(
         vm.clearSearch()
     }
 
+    // Suggestions with debounce – only if not already showing search results
     LaunchedEffect(query) {
         if (query.isBlank()) {
             suggestions = emptyList()
@@ -143,9 +144,16 @@ fun SearchScreen(
             return@LaunchedEffect
         }
         delay(300)
-        val fetched = fetchSuggestions(query)
-        suggestions = fetched
-        showSuggestions = fetched.isNotEmpty() && results.isEmpty()
+        // Only show suggestions if there are no search results yet
+        if (results.isEmpty()) {
+            val fetched = fetchSuggestions(query)
+            suggestions = fetched
+            showSuggestions = fetched.isNotEmpty()
+        } else {
+            // If results are already showing, don't show suggestions
+            suggestions = emptyList()
+            showSuggestions = false
+        }
     }
 
     if (showLinkDialog) {
@@ -188,11 +196,11 @@ fun SearchScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        // Only fill the query, do NOT search, and keep keyboard open
+                                        // Only fill the query, do NOT search, keep keyboard open
                                         query = suggestion
                                         suggestions = emptyList()
                                         showSuggestions = false
-                                        // Do NOT clear focus – keyboard stays open
+                                        // Do NOT clear focus
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -314,7 +322,13 @@ fun SearchScreen(
                 value = query,
                 onValueChange = {
                     query = it
-                    if (it.isNotBlank()) showSuggestions = true
+                    if (it.isNotBlank()) {
+                        // When user starts typing, if results are already showing, clear them?
+                        if (results.isNotEmpty()) {
+                            vm.clearSearch()
+                        }
+                        showSuggestions = true
+                    }
                 },
                 modifier = Modifier.weight(1f).focusRequester(focusRequester),
                 placeholder = {
@@ -342,9 +356,11 @@ fun SearchScreen(
                 keyboardActions = KeyboardActions(onSearch = {
                     if (query.isNotBlank()) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        // Hard search
+                        suggestions = emptyList()
                         showSuggestions = false
-                        vm.search(query)        // Hard search
-                        focusManager.clearFocus()  // Dismiss keyboard
+                        vm.search(query)
+                        focusManager.clearFocus()
                     }
                 })
             )
