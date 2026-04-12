@@ -151,7 +151,7 @@ private fun SettingsMainPage(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Appearance and feel",
-                    subtitle = "Theme",
+                    subtitle = "Theme, haptics",
                     icon = {
                         Icon(
                             Icons.Default.Palette,
