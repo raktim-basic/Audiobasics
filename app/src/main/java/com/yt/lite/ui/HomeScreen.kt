@@ -20,12 +20,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 
 @Composable
 fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
@@ -45,13 +45,13 @@ fun HomeScreen(
     onNavigateLiked: () -> Unit,
     onNavigateAlbums: () -> Unit
 ) {
+    val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
     val savedAlbums by vm.savedAlbums.collectAsState()
     val cacheSize by vm.cacheSize.collectAsState()
     val isDarkMode by vm.isDarkMode.collectAsState()
     val updateAvailable by vm.updateAvailable.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val haptic = LocalHapticFeedback.current
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -114,7 +114,7 @@ fun HomeScreen(
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFFFF8A80))
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onNavigateAlbums()
                 }
                 .padding(horizontal = 16.dp, vertical = 14.dp)
@@ -153,7 +153,7 @@ fun HomeScreen(
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFFFF0000))
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onNavigateLiked()
                 }
                 .padding(horizontal = 16.dp, vertical = 24.dp)
@@ -203,7 +203,7 @@ fun HomeScreen(
             onSearch = onNavigateSearch,
             onQueue = onNavigateQueue,
             hapticsEnabled = hapticsEnabled,
-            haptic = haptic
+            context = context
         )
     }
 }
@@ -215,7 +215,7 @@ fun HomeBottomBar(
     onSearch: () -> Unit,
     onQueue: () -> Unit,
     hapticsEnabled: Boolean,
-    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
+    context: android.content.Context
 ) {
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val iconColor = if (isDarkMode) Color.White else Color.Black
@@ -229,7 +229,7 @@ fun HomeBottomBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onSettings()
         }) {
             Icon(
@@ -240,7 +240,7 @@ fun HomeBottomBar(
             )
         }
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onSearch()
         }) {
             Icon(
@@ -251,7 +251,7 @@ fun HomeBottomBar(
             )
         }
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onQueue()
         }) {
             Icon(
