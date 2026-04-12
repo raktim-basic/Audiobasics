@@ -33,9 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 
 sealed class SettingsPage {
     object Main : SettingsPage()
@@ -60,12 +59,12 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateUpdater: () -> Unit
 ) {
+    val context = LocalContext.current
     var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val haptic = LocalHapticFeedback.current
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
-        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
         currentPage = SettingsPage.Main
     }
 
@@ -121,7 +120,6 @@ private fun SettingsMainPage(
     onNavigateLibrary: () -> Unit
 ) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
@@ -163,7 +161,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onNavigateAppearance()
                     }
                 )
@@ -185,7 +183,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onNavigateCache()
                     }
                 )
@@ -207,7 +205,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onNavigateLibrary()
                     }
                 )
@@ -229,7 +227,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                     }
                 )
@@ -262,7 +260,7 @@ private fun SettingsMainPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onNavigateUpdater()
                     }
                 )
@@ -295,7 +293,7 @@ private fun SettingsMainPage(
                         color = Color(0xFF1565C0),
                         textDecoration = TextDecoration.Underline,
                         modifier = Modifier.clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             context.startActivity(
                                 Intent(Intent.ACTION_VIEW,
                                     Uri.parse("https://github.com/raktim-basic/Audiobasics"))
@@ -320,7 +318,7 @@ private fun SettingsMainPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onBack()
             }) {
                 Icon(
@@ -347,7 +345,7 @@ private fun SettingsMainPage(
             Text(
                 text = madeByText,
                 modifier = Modifier.clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     context.startActivity(
                         Intent(Intent.ACTION_VIEW,
                             Uri.parse("https://github.com/raktim-basic"))
@@ -366,11 +364,11 @@ private fun AppearancePage(
     isDarkMode: Boolean,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
-    val haptic = LocalHapticFeedback.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
@@ -416,7 +414,7 @@ private fun AppearancePage(
             Switch(
                 checked = isDarkMode,
                 onCheckedChange = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     vm.toggleDarkMode()
                 },
                 colors = SwitchDefaults.colors(
@@ -453,7 +451,7 @@ private fun AppearancePage(
             Switch(
                 checked = hapticsEnabled,
                 onCheckedChange = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     vm.toggleHaptics()
                 },
                 colors = SwitchDefaults.colors(
@@ -479,7 +477,7 @@ private fun AppearancePage(
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onBack()
             }) {
                 Icon(
@@ -499,13 +497,13 @@ private fun CachePage(
     isDarkMode: Boolean,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val cacheSize by vm.cacheSize.collectAsState()
     val cacheProgress by vm.cacheProgress.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
-    val haptic = LocalHapticFeedback.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
@@ -575,7 +573,7 @@ private fun CachePage(
                     },
                     onClick = {
                         if (!isCurrentlyCaching) {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             vm.cacheAllLiked()
                         }
                     }
@@ -608,7 +606,7 @@ private fun CachePage(
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onBack()
             }) {
                 Icon(
@@ -629,7 +627,6 @@ private fun LibraryPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
@@ -655,7 +652,7 @@ private fun LibraryPage(
 
     if (showImportWarning) {
         Dialog(onDismissRequest = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             showImportWarning = false
         }) {
             Box(
@@ -686,7 +683,7 @@ private fun LibraryPage(
                         horizontalArrangement = Arrangement.End
                     ) {
                         TextButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             showImportWarning = false
                         }) {
                             Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
@@ -697,7 +694,7 @@ private fun LibraryPage(
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color.Red)
                                 .clickable {
-                                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                     showImportWarning = false
                                     pendingImportUri?.let { vm.importData(context, it) }
                                 }
@@ -752,7 +749,7 @@ private fun LibraryPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         exportLauncher.launch("audiobasics_backup.json")
                     }
                 )
@@ -774,7 +771,7 @@ private fun LibraryPage(
                         )
                     },
                     onClick = {
-                        if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         importLauncher.launch(arrayOf("application/json"))
                     }
                 )
@@ -793,7 +790,7 @@ private fun LibraryPage(
                 .padding(vertical = 12.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onBack()
             }) {
                 Icon(
