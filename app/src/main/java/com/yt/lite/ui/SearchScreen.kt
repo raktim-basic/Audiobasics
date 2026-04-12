@@ -188,11 +188,11 @@ fun SearchScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        // Only fill the query, do not search
+                                        // Only fill the query, do NOT search, and keep keyboard open
                                         query = suggestion
                                         suggestions = emptyList()
                                         showSuggestions = false
-                                        focusManager.clearFocus()
+                                        // Do NOT clear focus – keyboard stays open
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -343,8 +343,8 @@ fun SearchScreen(
                     if (query.isNotBlank()) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         showSuggestions = false
-                        vm.search(query)
-                        focusManager.clearFocus()
+                        vm.search(query)        // Hard search
+                        focusManager.clearFocus()  // Dismiss keyboard
                     }
                 })
             )
