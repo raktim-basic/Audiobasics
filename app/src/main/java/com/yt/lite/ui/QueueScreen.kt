@@ -69,13 +69,13 @@ fun QueueScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    // Reorder state (using old working approach)
+    // Reorder state
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetY by remember { mutableStateOf(0f) }
     var targetIndex by remember { mutableStateOf<Int?>(null) }
     var itemHeightPx by remember { mutableStateOf(80f) }
 
-    // Sleep timer (unchanged from current)
+    // Sleep timer
     var sleepTimerEndsAt by remember { mutableStateOf<Long?>(null) }
     var sleepTimerRemaining by remember { mutableStateOf(0L) }
     var showSleepDialog by remember { mutableStateOf(false) }
@@ -124,7 +124,6 @@ fun QueueScreen(
     val totalMs = remember(queue) { queue.sumOf { it.duration } }
     val listState = rememberLazyListState()
 
-    // Scroll progress (unchanged)
     val scrollProgress = remember(listState, queue.size) {
         derivedStateOf {
             if (queue.size <= 1) return@derivedStateOf 0f
@@ -228,7 +227,7 @@ fun QueueScreen(
                 state = listState
             ) {
                 itemsIndexed(
-                    items = queue, // Direct queue, no visualQueue
+                    items = queue,
                     key = { _, song -> song.id }
                 ) { index, song ->
                     val isCurrentSong = song.id == currentSong?.id
@@ -266,8 +265,8 @@ fun QueueScreen(
                                     Modifier.pointerInput(index) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = {
-                                                // Unconditional haptic on long press
-                                                HapticUtils.performSubtleHaptic(context)
+                                                // Strong haptic for drag start
+                                                HapticUtils.performStrongHaptic(context)
                                                 dragOffsetY = 0f
                                             },
                                             onDrag = { change, dragAmount ->
@@ -320,7 +319,7 @@ fun QueueScreen(
                             onShare = {},
                             onRemoveFromQueue = { vm.removeFromQueue(song) },
                             onReorder = {
-                                // Toggle reorder mode: if already dragging this item, cancel; else start dragging
+                                // Toggle reorder mode
                                 if (draggingIndex == index) {
                                     draggingIndex = null
                                     dragOffsetY = 0f
@@ -329,11 +328,11 @@ fun QueueScreen(
                                     draggingIndex = index
                                     dragOffsetY = 0f
                                 }
-                                // Haptic on menu click
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             },
                             onRetryCache = { vm.retryCache(song) },
-                            onRemoveLike = { vm.toggleLike(song) }
+                            onRemoveLike = { vm.toggleLike(song) },
+                            isDragging = isDragging   // pass the dragging state
                         )
                     }
                 }
@@ -406,7 +405,7 @@ fun SleepTimerDialog(
     onEndOfSong: () -> Unit,
     onCustom: (Long) -> Unit
 ) {
-    // Same as before – unchanged
+    // unchanged – same as before
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
