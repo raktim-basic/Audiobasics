@@ -54,6 +54,7 @@ fun LyricsScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
+    // Reload lyrics when song changes
     LaunchedEffect(currentSong?.id) {
         val song = currentSong ?: return@LaunchedEffect
         isLoading = true
@@ -125,6 +126,7 @@ fun LyricsScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
 
+                    // Tabs
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -156,6 +158,7 @@ fun LyricsScreen(
                         )
                     }
 
+                    // Dashed line
                     androidx.compose.foundation.Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -172,6 +175,7 @@ fun LyricsScreen(
                         )
                     }
 
+                    // Lyrics content
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -201,14 +205,15 @@ fun LyricsScreen(
                                     )
                                 }
                             }
-                            isRealTime && lyricsResult!!.hasSynced -> {
+                            isRealTime && (lyricsResult?.hasSynced == true) -> {
+                                val syncedLines = lyricsResult?.syncedLines ?: emptyList()
                                 LazyColumn(
                                     state = listState,
                                     modifier = Modifier.fillMaxSize(),
                                     verticalArrangement = Arrangement.spacedBy(12.dp),
                                     contentPadding = PaddingValues(vertical = 16.dp)
                                 ) {
-                                    itemsIndexed(lyricsResult!!.syncedLines) { index, line ->
+                                    itemsIndexed(syncedLines) { index, line ->
                                         val isCurrent = index == currentLineIndex
                                         Text(
                                             text = line.text.ifBlank { " " },
@@ -224,12 +229,13 @@ fun LyricsScreen(
                                 }
                             }
                             else -> {
+                                val plainText = lyricsResult?.plainText ?: ""
+                                val lines = plainText.lines()
                                 LazyColumn(
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(vertical = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    val lines = lyricsResult!!.plainText.lines()
                                     itemsIndexed(lines) { _, line ->
                                         Text(
                                             text = line.ifBlank { " " },
@@ -245,6 +251,7 @@ fun LyricsScreen(
                         }
                     }
 
+                    // Bottom bar
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
