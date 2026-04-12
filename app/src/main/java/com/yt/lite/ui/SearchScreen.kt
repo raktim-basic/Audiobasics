@@ -37,7 +37,6 @@ import com.yt.lite.data.Album
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -120,9 +119,6 @@ fun SearchScreen(
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
-    // To cancel pending suggestion fetch
-    var suggestionFetchJob by remember { mutableStateOf<Job?>(null) }
-
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
@@ -140,32 +136,26 @@ fun SearchScreen(
         vm.clearSearch()
     }
 
-    // Debounced suggestion fetch (cancellable)
-    LaunchedEffect(query, results) {
-        // Cancel previous job if any
-        suggestionFetchJob?.cancel()
+    // Debounced suggestion fetch – automatically cancelled when query changes
+    LaunchedEffect(query) {
         if (query.isBlank()) {
             suggestions = emptyList()
             showSuggestions = false
             return@LaunchedEffect
         }
+        delay(300)
         // Only fetch if no search results yet
         if (results.isNotEmpty()) {
             suggestions = emptyList()
             showSuggestions = false
             return@LaunchedEffect
         }
-        val job = kotlinx.coroutines.launch {
-            delay(300)
-            val fetched = fetchSuggestions(query)
-            // Only update if the query hasn't changed and results still empty
-            if (query.isNotBlank() && results.isEmpty()) {
-                suggestions = fetched
-                showSuggestions = fetched.isNotEmpty()
-            }
+        val fetched = fetchSuggestions(query)
+        // Check again after fetch (query might have changed)
+        if (query.isNotBlank() && results.isEmpty()) {
+            suggestions = fetched
+            showSuggestions = fetched.isNotEmpty()
         }
-        suggestionFetchJob = job
-        job.join()
     }
 
     if (showLinkDialog) {
@@ -212,8 +202,6 @@ fun SearchScreen(
                                         query = suggestion
                                         suggestions = emptyList()
                                         showSuggestions = false
-                                        // Cancel any pending fetch
-                                        suggestionFetchJob?.cancel()
                                         // Do NOT clear focus
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
@@ -372,8 +360,6 @@ fun SearchScreen(
                 keyboardActions = KeyboardActions(onSearch = {
                     if (query.isNotBlank()) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        // Cancel any pending suggestion fetch
-                        suggestionFetchJob?.cancel()
                         // Hard search
                         suggestions = emptyList()
                         showSuggestions = false
