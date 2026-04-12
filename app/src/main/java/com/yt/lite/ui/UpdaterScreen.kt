@@ -32,7 +32,7 @@ import org.json.JSONArray
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
 
-const val APP_CURRENT_VERSION = "2.1"
+const val APP_CURRENT_VERSION = "2.1.1"
 const val APP_GITHUB_RELEASES_API =
     "https://api.github.com/repos/raktim-basic/Audiobasics/releases?per_page=5"
 const val APP_GITHUB_RELEASES_URL =
