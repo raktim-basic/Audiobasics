@@ -75,7 +75,7 @@ fun PlayerDialog(
 
     Dialog(
         onDismissRequest = {
-            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+            // No haptic on outside tap or back button
             onDismiss()
         },
         properties = DialogProperties(
@@ -89,7 +89,7 @@ fun PlayerDialog(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    // No haptic on background tap
                     onDismiss()
                 },
             contentAlignment = Alignment.Center
@@ -433,7 +433,6 @@ fun DashedProgressBar(
     val displayFilled = (displayProgress * totalDashes).toInt()
     var lastFilled by remember { mutableStateOf(displayFilled) }
 
-    // Trigger haptic only when filled dash count changes during drag
     LaunchedEffect(displayFilled) {
         if (dragProgress != null && displayFilled != lastFilled && hapticsEnabled) {
             HapticUtils.performSubtleHaptic(context)
