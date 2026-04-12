@@ -24,10 +24,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -38,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.yt.lite.data.Album
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -48,9 +48,9 @@ fun SavedAlbumsScreen(
     onNavigateQueue: () -> Unit,
     onAlbumClick: (Album) -> Unit
 ) {
+    val context = LocalContext.current
     val savedAlbums by vm.savedAlbums.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val haptic = LocalHapticFeedback.current
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
@@ -171,7 +171,7 @@ fun SavedAlbumsScreen(
                         album = album,
                         isDarkMode = isDarkMode,
                         hapticsEnabled = hapticsEnabled,
-                        haptic = haptic,
+                        context = context,
                         onClick = { onAlbumClick(album) }
                     )
                 }
@@ -225,7 +225,7 @@ fun SavedAlbumsScreen(
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
@@ -248,7 +248,7 @@ fun SavedAlbumsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onBack()
                 }) {
                     Icon(
@@ -261,7 +261,7 @@ fun SavedAlbumsScreen(
                 Row(
                     modifier = Modifier
                         .clickable {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             isSearching = true
                         }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -283,7 +283,7 @@ fun SavedAlbumsScreen(
                     )
                 }
                 IconButton(onClick = {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onNavigateQueue()
                 }) {
                     Icon(
@@ -303,7 +303,7 @@ fun AlbumItem(
     album: Album,
     isDarkMode: Boolean,
     hapticsEnabled: Boolean,
-    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    context: android.content.Context,
     onClick: () -> Unit
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -315,7 +315,7 @@ fun AlbumItem(
             .fillMaxWidth()
             .background(bgColor)
             .clickable {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onClick()
             }
             .padding(horizontal = 16.dp, vertical = 10.dp),
