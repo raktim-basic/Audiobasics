@@ -1,421 +1,320 @@
 package com.yt.lite.ui
 
-import android.widget.Toast
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.zIndex
+import coil.compose.AsyncImage
+import com.yt.lite.data.Song
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
-import kotlinx.coroutines.delay
-
-private fun formatTotalTime(totalMs: Long): String {
-    val totalSec = totalMs / 1000
-    val h = totalSec / 3600
-    val m = (totalSec % 3600) / 60
-    val s = totalSec % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s)
-    else "%d:%02d".format(m, s)
-}
-
-private fun formatCountdown(remainingMs: Long): String {
-    val totalSec = (remainingMs / 1000).coerceAtLeast(0)
-    val m = totalSec / 60
-    val s = totalSec % 60
-    return "%d:%02d".format(m, s)
-}
 
 @Composable
-fun QueueScreen(
-    vm: MusicViewModel,
+fun SongItem(
+    song: Song,
     isDarkMode: Boolean,
-    onBack: () -> Unit
+    isLiked: Boolean,
+    isInQueue: Boolean = false,
+    isPlaying: Boolean = false,
+    showExplicit: Boolean = true,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
+    onClick: () -> Unit,
+    onAddToQueue: (() -> Unit)? = null,
+    onPlayNext: (() -> Unit)? = null,
+    onLike: () -> Unit,
+    onShare: () -> Unit,
+    onRemoveFromQueue: (() -> Unit)? = null,
+    onReorder: (() -> Unit)? = null,
+    onRetryCache: (() -> Unit)? = null,
+    onRemoveLike: (() -> Unit)? = null,
+    showMenu: Boolean = !song.isAlbum || isInQueue,
+    isDragging: Boolean = false   // <-- new parameter
 ) {
-    val context = LocalContext.current
-    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val queue by vm.queue.collectAsState()
-    val currentSong by vm.currentSong.collectAsState()
-    val likedSongs by vm.likedSongs.collectAsState()
-    val isPlaying by vm.isPlaying.collectAsState()
-    val currentPosition by vm.currentPosition.collectAsState()
-    val duration by vm.duration.collectAsState()
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showBrokenHeartDialog by remember { mutableStateOf(false) }
 
-    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
-    val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
+    val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
 
-    // Reorder state
-    var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffsetY by remember { mutableStateOf(0f) }
-    var itemHeights by remember { mutableStateOf(mutableMapOf<Int, Float>()) }
+    val titleColor = if (isPlaying) Color.Red else textColor
 
-    // Sleep timer (unchanged)
-    var sleepTimerEndsAt by remember { mutableStateOf<Long?>(null) }
-    var sleepTimerRemaining by remember { mutableStateOf(0L) }
-    var showSleepDialog by remember { mutableStateOf(false) }
-    var endOfSongMode by remember { mutableStateOf(false) }
-    var timerPausedAt by remember { mutableStateOf<Long?>(null) }
-
-    LaunchedEffect(isPlaying, sleepTimerEndsAt) {
-        val endAt = sleepTimerEndsAt ?: return@LaunchedEffect
-        if (!isPlaying) {
-            timerPausedAt = endAt - System.currentTimeMillis()
-            return@LaunchedEffect
-        }
-        val pausedRemaining = timerPausedAt
-        if (pausedRemaining != null) {
-            sleepTimerEndsAt = System.currentTimeMillis() + pausedRemaining
-            timerPausedAt = null
-        }
-    }
-
-    LaunchedEffect(sleepTimerEndsAt, isPlaying) {
-        val endAt = sleepTimerEndsAt ?: return@LaunchedEffect
-        if (!isPlaying) return@LaunchedEffect
-        while (true) {
-            val remaining = endAt - System.currentTimeMillis()
-            if (remaining <= 0) {
-                sleepTimerRemaining = 0L
-                sleepTimerEndsAt = null
-                endOfSongMode = false
-                if (isPlaying) vm.togglePlayPause()
-                break
-            }
-            sleepTimerRemaining = remaining
-            delay(1000)
-        }
-    }
-
-    val currentSongId = currentSong?.id
-    LaunchedEffect(currentSongId) {
-        if (endOfSongMode && sleepTimerEndsAt != null) {
-            sleepTimerEndsAt = null
-            sleepTimerRemaining = 0L
-            endOfSongMode = false
-        }
-    }
-
-    val totalMs = remember(queue) { queue.sumOf { it.duration } }
-    val listState = rememberLazyListState()
-
-    val scrollProgress = remember(listState, queue.size) {
-        derivedStateOf {
-            if (queue.size <= 1) return@derivedStateOf 0f
-            val layoutInfo = listState.layoutInfo
-            val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            (lastVisibleIndex.toFloat() / (queue.size - 1).toFloat()).coerceIn(0f, 1f)
-        }
-    }
-
-    LaunchedEffect(currentSong, queue) {
-        val idx = queue.indexOfFirst { it.id == currentSong?.id }
-        if (idx >= 0) listState.animateScrollToItem(idx)
-    }
-
-    // Live reorder preview – reorders the list during drag
-    val visualQueue = remember(queue, draggingIndex, dragOffsetY, itemHeights) {
-        val dragging = draggingIndex ?: return@remember queue
-        val h = itemHeights[dragging] ?: 80f
-        val delta = (dragOffsetY / h).toInt()
-        val targetIndex = (dragging + delta).coerceIn(0, queue.size - 1)
-        if (targetIndex == dragging) return@remember queue
-        val mutable = queue.toMutableList()
-        val item = mutable.removeAt(dragging)
-        mutable.add(targetIndex, item)
-        mutable
-    }
-
-    if (showSleepDialog) {
-        SleepTimerDialog(
+    if (showBrokenHeartDialog) {
+        BrokenHeartDialog(
+            song = song,
             isDarkMode = isDarkMode,
             hapticsEnabled = hapticsEnabled,
             context = context,
-            onDismiss = { showSleepDialog = false },
-            onEndOfSong = {
-                showSleepDialog = false
-                val remaining = (duration - currentPosition).coerceAtLeast(1000L)
-                sleepTimerEndsAt = System.currentTimeMillis() + remaining
-                endOfSongMode = true
+            onDismiss = { showBrokenHeartDialog = false },
+            onPlayOnline = {
+                showBrokenHeartDialog = false
+                onClick()
             },
-            onCustom = { minutes ->
-                showSleepDialog = false
-                sleepTimerEndsAt = System.currentTimeMillis() + minutes * 60_000L
-                endOfSongMode = false
+            onRetryCache = {
+                showBrokenHeartDialog = false
+                onRetryCache?.invoke()
+            },
+            onRemoveLike = {
+                showBrokenHeartDialog = false
+                onRemoveLike?.invoke()
             }
         )
     }
 
-    Column(
+    Row(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .background(bgColor)
-    ) {
-        // Header (unchanged)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.QueueMusic,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(28.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = "Queue",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                color = textColor
-            )
-            Spacer(Modifier.weight(1f))
-            val validTotal = queue.isNotEmpty() && totalMs > 0
-            if (validTotal) {
-                Text(
-                    text = "(${formatTotalTime(totalMs)})  ${queue.size} songs",
-                    fontFamily = NothingFont,
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
-            } else {
-                Text(
-                    text = "${queue.size} songs",
-                    fontFamily = NothingFont,
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
-            }
-        }
-
-        DashedDivider(
-            modifier = Modifier.fillMaxWidth(),
-            isDarkMode = isDarkMode,
-            scrollProgress = scrollProgress.value
-        )
-
-        if (queue.isEmpty()) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Queue is empty\nSearch for songs to play",
-                    fontFamily = NothingFont,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = listState
-            ) {
-                itemsIndexed(
-                    items = visualQueue,
-                    key = { _, song -> song.id }
-                ) { index, song ->
-                    val isCurrentSong = song.id == currentSong?.id
-                    val isLiked = likedSongs.any { it.id == song.id }
-                    val isDragging = draggingIndex == index
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onGloballyPositioned { coords ->
-                                itemHeights[index] = coords.size.height.toFloat()
-                            }
-                            .zIndex(if (isDragging) 1f else 0f)
-                            .graphicsLayer {
-                                translationY = if (isDragging) dragOffsetY else 0f
-                                alpha = if (isDragging) 0.85f else 1f
-                                scaleX = if (isDragging) 1.02f else 1f
-                                scaleY = if (isDragging) 1.02f else 1f
-                            }
-                            .background(
-                                when {
-                                    isDragging -> if (isDarkMode)
-                                        Color.White.copy(alpha = 0.1f)
-                                    else Color.Black.copy(alpha = 0.06f)
-                                    isCurrentSong -> if (isDarkMode)
-                                        Color.White.copy(alpha = 0.05f)
-                                    else Color.Black.copy(alpha = 0.04f)
-                                    else -> Color.Transparent
-                                }
-                            )
-                            .pointerInput(draggingIndex, index) {
-                                // Only attach drag gestures if this is the currently dragged item
-                                if (draggingIndex == index) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            HapticUtils.performSubtleHaptic(context) // unconditional
-                                            dragOffsetY = 0f
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            dragOffsetY += dragAmount.y
-                                        },
-                                        onDragEnd = {
-                                            val from = draggingIndex
-                                            if (from != null) {
-                                                val h = itemHeights[from] ?: 80f
-                                                val delta = (dragOffsetY / h).toInt()
-                                                val to = (from + delta).coerceIn(0, queue.size - 1)
-                                                if (from != to) {
-                                                    vm.reorderQueue(from, to)
-                                                }
-                                            }
-                                            draggingIndex = null
-                                            dragOffsetY = 0f
-                                        },
-                                        onDragCancel = {
-                                            draggingIndex = null
-                                            dragOffsetY = 0f
-                                        }
-                                    )
-                                }
-                            }
-                    ) {
-                        if (isCurrentSong) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.CenterStart)
-                                    .width(3.dp)
-                                    .height(52.dp)
-                                    .background(Color.Red)
-                            )
-                        }
-
-                        SongItem(
-                            song = song,
-                            isDarkMode = isDarkMode,
-                            isLiked = isLiked,
-                            isInQueue = true,
-                            isPlaying = isCurrentSong,
-                            hapticsEnabled = hapticsEnabled,
-                            context = context,
-                            onClick = { vm.playWithQueue(song, queue) },
-                            onLike = { vm.toggleLike(song) },
-                            onShare = {},
-                            onRemoveFromQueue = { vm.removeFromQueue(song) },
-                            onReorder = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = null
-                                    dragOffsetY = 0f
-                                } else {
-                                    draggingIndex = index
-                                    dragOffsetY = 0f
-                                }
-                            },
-                            onRetryCache = { vm.retryCache(song) },
-                            onRemoveLike = { vm.toggleLike(song) },
-                            isDragging = isDragging
-                        )
-                    }
-                }
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(barColor)
-                .padding(vertical = 4.dp, horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
+            .clickable {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(26.dp)
-                )
+                onClick()
             }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = song.thumbnail,
+            contentDescription = null,
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(6.dp)),
+            contentScale = ContentScale.Crop
+        )
 
-            val timerActive = sleepTimerEndsAt != null
-            val queueNotEmpty = queue.isNotEmpty()
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (timerActive) "Sleep timer (${formatCountdown(sleepTimerRemaining)})" else "Sleep timer",
+                text = song.title,
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = if (timerActive) Color.Red else textColor,
-                modifier = Modifier.clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    if (!queueNotEmpty) {
-                        Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
-                        return@clickable
-                    }
-                    if (timerActive) {
-                        sleepTimerEndsAt = null
-                        sleepTimerRemaining = 0L
-                        endOfSongMode = false
-                        timerPausedAt = null
-                    } else {
-                        showSleepDialog = true
-                    }
-                }
+                color = titleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(Modifier.size(48.dp))
+            Spacer(Modifier.height(3.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (showExplicit && song.isExplicit) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(explicitBgColor)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "E",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp,
+                            color = explicitTextColor
+                        )
+                    }
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(
+                    text = song.artist,
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 12.sp,
+                    color = subTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        if (isLiked && song.cacheFailed) {
+            Text(
+                text = "💔",
+                fontSize = 20.sp,
+                modifier = Modifier
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        showBrokenHeartDialog = true
+                    }
+                    .padding(8.dp)
+            )
+        }
+
+        if (showMenu) {
+            Box {
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    menuExpanded = true
+                }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = subTextColor
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    if (isInQueue) {
+                        DropdownMenuItem(
+                            text = { Text("Share", fontFamily = NothingFont) },
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                menuExpanded = false
+                                val i = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "https://www.youtube.com/watch?v=${song.id}"
+                                    )
+                                }
+                                context.startActivity(Intent.createChooser(i, "Share song"))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isLiked) "Unlike" else "Like",
+                                    fontFamily = NothingFont
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isLiked) Icons.Default.Favorite
+                                    else Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (isLiked) Color.Red else subTextColor
+                                )
+                            },
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                menuExpanded = false
+                                onLike()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isDragging) "Cancel reorder" else "Reorder", fontFamily = NothingFont) },
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                menuExpanded = false
+                                onReorder?.invoke()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "Remove from queue",
+                                    fontFamily = NothingFont,
+                                    color = Color.Red
+                                )
+                            },
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                menuExpanded = false
+                                onRemoveFromQueue?.invoke()
+                            }
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Share", fontFamily = NothingFont) },
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                menuExpanded = false
+                                val i = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "https://www.youtube.com/watch?v=${song.id}"
+                                    )
+                                }
+                                context.startActivity(Intent.createChooser(i, "Share song"))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isLiked) "Unlike" else "Like",
+                                    fontFamily = NothingFont
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isLiked) Icons.Default.Favorite
+                                    else Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (isLiked) Color.Red else subTextColor
+                                )
+                            },
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                menuExpanded = false
+                                onLike()
+                            }
+                        )
+                        onPlayNext?.let {
+                            DropdownMenuItem(
+                                text = { Text("Play next", fontFamily = NothingFont) },
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    menuExpanded = false
+                                    it()
+                                }
+                            )
+                        }
+                        onAddToQueue?.let {
+                            DropdownMenuItem(
+                                text = { Text("Add to queue", fontFamily = NothingFont) },
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    menuExpanded = false
+                                    it()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-fun SleepTimerDialog(
+fun BrokenHeartDialog(
+    song: Song,
     isDarkMode: Boolean,
     hapticsEnabled: Boolean,
     context: android.content.Context,
     onDismiss: () -> Unit,
-    onEndOfSong: () -> Unit,
-    onCustom: (Long) -> Unit
+    onPlayOnline: () -> Unit,
+    onRetryCache: () -> Unit,
+    onRemoveLike: () -> Unit
 ) {
     // unchanged
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
-    val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
-
-    var showCustomInput by remember { mutableStateOf(false) }
-    var customMinutes by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = {
         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -424,129 +323,101 @@ fun SleepTimerDialog(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(bgColor, RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(16.dp))
+                .background(bgColor)
                 .padding(20.dp)
         ) {
             Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("💔", fontSize = 22.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Cache failed",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = textColor
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
+
                 Text(
-                    text = "Sleep timer",
+                    text = song.title,
                     fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = textColor
+                    fontSize = 13.sp,
+                    color = textColor.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(16.dp))
 
-                if (showCustomInput) {
-                    OutlinedTextField(
-                        value = customMinutes,
-                        onValueChange = { if (it.length <= 3) customMinutes = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
-                            Text("Minutes...", fontFamily = NothingFont, color = Color.Gray)
-                        },
-                        textStyle = TextStyle(fontFamily = NothingFont, color = textColor),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color.Red,
-                            unfocusedBorderColor = Color.Gray,
-                            focusedContainerColor = surfaceColor,
-                            unfocusedContainerColor = surfaceColor
-                        )
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Red)
+                        .clickable {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showCustomInput = false
-                        }) {
-                            Text("Back", fontFamily = NothingFont, color = Color.Gray)
+                            onPlayOnline()
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(Color.Red, RoundedCornerShape(8.dp))
-                                .clickable {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    val mins = customMinutes.toLongOrNull()
-                                    if (mins != null && mins > 0) onCustom(mins)
-                                }
-                                .padding(horizontal = 20.dp, vertical = 10.dp)
-                        ) {
-                            Text(
-                                "Set",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Play online",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
+                        )
+                        .clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onRetryCache()
                         }
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onEndOfSong()
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "End of this song",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Retry cache",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        color = textColor
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
                         )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                showCustomInput = true
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Custom timer",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Red, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onDismiss()
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Cancel",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
+                        .clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onRemoveLike()
+                        }
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Remove from liked",
+                        fontFamily = NothingFont,
+                        color = Color.Red
+                    )
                 }
             }
         }
