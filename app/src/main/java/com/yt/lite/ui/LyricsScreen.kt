@@ -17,8 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -27,6 +26,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.yt.lite.lyrics.LyricsRepository
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 import kotlinx.coroutines.launch
 
 @Composable
@@ -35,12 +35,12 @@ fun LyricsScreen(
     isDarkMode: Boolean,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val currentSong by vm.currentSong.collectAsState()
     val currentPosition by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val haptic = LocalHapticFeedback.current
 
     var isRealTime by remember { mutableStateOf(true) }
     var lyricsResult by remember { mutableStateOf<com.yt.lite.lyrics.LyricsResult?>(null) }
@@ -96,7 +96,7 @@ fun LyricsScreen(
 
     Dialog(
         onDismissRequest = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onBack()
         },
         properties = DialogProperties(
@@ -110,7 +110,7 @@ fun LyricsScreen(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable {
-                    if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onBack()
                 },
             contentAlignment = Alignment.Center
@@ -138,7 +138,7 @@ fun LyricsScreen(
                             fontSize = 16.sp,
                             color = if (isRealTime) Color.Red else Color.Gray,
                             modifier = Modifier.clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 isRealTime = true
                             }
                         )
@@ -150,7 +150,7 @@ fun LyricsScreen(
                             fontSize = 16.sp,
                             color = if (!isRealTime) Color.Red else Color.Gray,
                             modifier = Modifier.clickable {
-                                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 isRealTime = false
                             }
                         )
@@ -254,7 +254,7 @@ fun LyricsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             onBack()
                         }) {
                             Icon(
@@ -272,7 +272,7 @@ fun LyricsScreen(
                         )
 
                         IconButton(onClick = {
-                            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             vm.togglePlayPause()
                         }) {
                             Icon(
