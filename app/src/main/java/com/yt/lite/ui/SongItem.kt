@@ -46,7 +46,8 @@ fun SongItem(
     onReorder: (() -> Unit)? = null,
     onRetryCache: (() -> Unit)? = null,
     onRemoveLike: (() -> Unit)? = null,
-    showMenu: Boolean = !song.isAlbum || isInQueue
+    showMenu: Boolean = !song.isAlbum || isInQueue,
+    isDragging: Boolean = false   // new parameter
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
@@ -215,7 +216,7 @@ fun SongItem(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Reorder", fontFamily = NothingFont) },
+                            text = { Text(if (isDragging) "Cancel reorder" else "Reorder", fontFamily = NothingFont) },
                             onClick = {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 menuExpanded = false
@@ -311,6 +312,7 @@ fun BrokenHeartDialog(
     onRetryCache: () -> Unit,
     onRemoveLike: () -> Unit
 ) {
+    // unchanged – same as before
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
 
