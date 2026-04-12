@@ -15,9 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.yt.lite.data.Song
 import com.yt.lite.ui.theme.NothingFont
+import com.yt.lite.utils.HapticUtils
 
 @Composable
 fun PlayerBar(
@@ -38,8 +38,8 @@ fun PlayerBar(
     onLike: () -> Unit,
     onTap: () -> Unit
 ) {
+    val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val haptic = LocalHapticFeedback.current
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -50,7 +50,7 @@ fun PlayerBar(
             .fillMaxWidth()
             .background(bgColor)
             .clickable {
-                if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onTap()
             }
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -89,7 +89,7 @@ fun PlayerBar(
         }
 
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onLike()
         }) {
             Icon(
@@ -101,7 +101,7 @@ fun PlayerBar(
         }
 
         IconButton(onClick = {
-            if (hapticsEnabled) haptic.performHapticFeedback(HapticFeedbackType.TextTap)
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onToggle()
         }) {
             if (isLoading) {
