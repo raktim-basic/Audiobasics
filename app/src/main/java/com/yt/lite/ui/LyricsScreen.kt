@@ -54,7 +54,6 @@ fun LyricsScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
-    // Reload lyrics when song changes
     LaunchedEffect(currentSong?.id) {
         val song = currentSong ?: return@LaunchedEffect
         isLoading = true
@@ -97,7 +96,7 @@ fun LyricsScreen(
 
     Dialog(
         onDismissRequest = {
-            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+            // No haptic on outside tap or back button
             onBack()
         },
         properties = DialogProperties(
@@ -111,7 +110,7 @@ fun LyricsScreen(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    // No haptic on background tap
                     onBack()
                 },
             contentAlignment = Alignment.Center
@@ -126,7 +125,6 @@ fun LyricsScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
 
-                    // Tabs
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -158,7 +156,6 @@ fun LyricsScreen(
                         )
                     }
 
-                    // Dashed line
                     androidx.compose.foundation.Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -175,7 +172,6 @@ fun LyricsScreen(
                         )
                     }
 
-                    // Lyrics content
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -251,7 +247,6 @@ fun LyricsScreen(
                         }
                     }
 
-                    // Bottom bar
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
