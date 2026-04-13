@@ -300,19 +300,18 @@ fun AudiobasicsApp(
             }
         }
 
-        currentSong?.let { song ->
-            val isLiked = likedSongs.any { it.id == song.id }
-            PlayerBar(
-                vm = vm,
-                song = song,
-                isPlaying = isPlaying,
-                isLoading = isLoading,
-                isLiked = isLiked,
-                isDarkMode = isDarkMode,
-                onToggle = vm::togglePlayPause,
-                onLike = { vm.toggleLike(song) },
-                onTap = { showPlayerDialog = true }
-            )
-        }
+        // Always show PlayerBar (handles null song internally)
+        val isLiked = currentSong?.let { likedSongs.any { liked -> liked.id == it.id } } ?: false
+        PlayerBar(
+            vm = vm,
+            song = currentSong,
+            isPlaying = isPlaying,
+            isLoading = isLoading,
+            isLiked = isLiked,
+            isDarkMode = isDarkMode,
+            onToggle = vm::togglePlayPause,
+            onLike = { currentSong?.let { vm.toggleLike(it) } },
+            onTap = { showPlayerDialog = true }
+        )
     }
 }
