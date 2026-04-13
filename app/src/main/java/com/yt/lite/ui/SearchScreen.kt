@@ -142,14 +142,12 @@ fun SearchScreen(
 
     // Debounced suggestion fetch with cancellation
     LaunchedEffect(query, results) {
-        // Cancel any pending suggestion job
         suggestionJob?.cancel()
         if (query.isBlank()) {
             suggestions = emptyList()
             showSuggestions = false
             return@LaunchedEffect
         }
-        // If search results already exist, don't show suggestions
         if (results.isNotEmpty()) {
             suggestions = emptyList()
             showSuggestions = false
@@ -157,10 +155,8 @@ fun SearchScreen(
         }
         suggestionJob = scope.launch {
             delay(300)
-            // Double-check that query hasn't changed and results are still empty
             if (query.isNotBlank() && results.isEmpty()) {
                 val fetched = fetchSuggestions(query)
-                // Check again after fetch to avoid race
                 if (query.isNotBlank() && results.isEmpty()) {
                     suggestions = fetched
                     showSuggestions = fetched.isNotEmpty()
@@ -209,12 +205,14 @@ fun SearchScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        // Only fill the query, do NOT search
-                                        suggestionJob?.cancel() // Cancel pending fetch
+                                        // Cancel any pending fetch
+                                        suggestionJob?.cancel()
+                                        // Immediately search this suggestion
                                         query = suggestion
                                         suggestions = emptyList()
                                         showSuggestions = false
-                                        // Keep keyboard open
+                                        vm.search(suggestion)
+                                        focusManager.clearFocus()
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -337,7 +335,6 @@ fun SearchScreen(
                 onValueChange = {
                     query = it
                     if (it.isNotBlank()) {
-                        // If results are already showing, clear them when user starts typing
                         if (results.isNotEmpty()) {
                             vm.clearSearch()
                         }
@@ -372,9 +369,7 @@ fun SearchScreen(
                 keyboardActions = KeyboardActions(onSearch = {
                     if (query.isNotBlank()) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        // Cancel any pending suggestion fetch
                         suggestionJob?.cancel()
-                        // Hard search
                         suggestions = emptyList()
                         showSuggestions = false
                         vm.search(query)
