@@ -29,7 +29,7 @@ import com.yt.lite.utils.HapticUtils
 @Composable
 fun PlayerBar(
     vm: MusicViewModel,
-    song: Song,
+    song: Song?,                     // now nullable
     isPlaying: Boolean,
     isLoading: Boolean,
     isLiked: Boolean,
@@ -45,6 +45,50 @@ fun PlayerBar(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
 
+    // Placeholder when no song is playing
+    if (song == null) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(bgColor)
+                .clickable(enabled = false) { }   // no action on tap
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Empty thumbnail placeholder
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Gray.copy(alpha = 0.3f))
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Nothing is playing",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = textColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = " ",
+                    fontFamily = NothingFont,
+                    fontSize = 12.sp,
+                    color = subTextColor,
+                    maxLines = 1
+                )
+            }
+            // Invisible placeholders to keep layout stable (same width as icons)
+            Spacer(modifier = Modifier.width(48.dp))
+            Spacer(modifier = Modifier.width(48.dp))
+        }
+        return
+    }
+
+    // Normal UI when a song is present
     Row(
         modifier = Modifier
             .fillMaxWidth()
