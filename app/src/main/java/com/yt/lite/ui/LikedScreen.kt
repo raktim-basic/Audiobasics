@@ -136,7 +136,7 @@ fun LikedScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, top = 10.dp, bottom = 4.dp),
+                            .padding(start = 20.dp, top = 10.dp, end = 20.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -173,7 +173,7 @@ fun LikedScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp, bottom = 8.dp),
+                                .padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
