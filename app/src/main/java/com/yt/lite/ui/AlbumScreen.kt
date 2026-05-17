@@ -1,37 +1,49 @@
 package com.yt.lite.ui
 
-import android.widget.Toast
+import android.content.Intent
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.yt.lite.api.Innertube
 import com.yt.lite.data.Album
 import com.yt.lite.data.Song
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
-import kotlinx.coroutines.launch
 
 private fun formatAlbumDuration(ms: Long): String {
     if (ms <= 0) return ""
@@ -39,48 +51,85 @@ private fun formatAlbumDuration(ms: Long): String {
     val m = totalSec / 60
     val s = totalSec % 60
     val h = m / 60
-    return if (h > 0) {
-        "%d hr %d min".format(h, m % 60)
-    } else {
-        "%d min %02d sec".format(m, s)
-    }
+    return if (h > 0) "%d hr %d min".format(h, m % 60)
+    else "%d min %02d sec".format(m, s)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AlbumScreen(
     vm: MusicViewModel,
     album: Album,
     isDarkMode: Boolean,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateQueue: () -> Unit
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
-    val savedAlbums by vm.savedAlbums.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
+    val isSaved by remember(vm.savedAlbums.collectAsState().value) {
+        derivedStateOf { vm.isAlbumSaved(album.id) }
+    }
 
-    var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var albumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var releaseYear by remember { mutableStateOf("") }
-    var totalDuration by remember { mutableStateOf(0L) }
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearching by remember { mutableStateOf(false) }
+
+    val listState = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+
+    val releaseYear = remember(album.artist) {
+        Regex("\\b(19|20)\\d{2}\\b").find(album.artist)?.value ?: ""
+    }
+
+    LaunchedEffect(isSearching) {
+        if (isSearching) {
+            focusRequester.requestFocus()
+        }
+    }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-
-    val isSaved = savedAlbums.any { it.id == album.id }
 
     LaunchedEffect(album.id) {
         isLoading = true
         try {
-            val fetchedSongs = Innertube.getAlbumSongs(album.id).second
-            songs = fetchedSongs
-            releaseYear = album.artist.substringAfterLast("•").trim().takeIf { it.matches(Regex("\\d{4}")) } ?: "2024"
-            totalDuration = album.duration
+            val (_, songs) = com.yt.lite.api.Innertube.getAlbumSongs(
+                browseId = album.id,
+                fallbackArtist = album.artist
+            )
+            albumSongs = songs
         } catch (e: Exception) {
-            Toast.makeText(context, "Failed to load album", Toast.LENGTH_SHORT).show()
+            android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
         } finally {
             isLoading = false
+        }
+    }
+
+    val filteredSongs = remember(albumSongs, searchQuery) {
+        if (searchQuery.isBlank()) albumSongs
+        else albumSongs.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+                    it.artist.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    val totalRegularItems = filteredSongs.size + 1
+    val scrollProgress = remember(listState, totalRegularItems) {
+        derivedStateOf {
+            if (totalRegularItems <= 1) return@derivedStateOf 0f
+            val layoutInfo = listState.layoutInfo
+            val visibleRegularIndices = layoutInfo.visibleItemsInfo
+                .map { it.index }
+                .filter { it == 0 || (it >= 2 && it <= totalRegularItems) }
+            val maxVisibleIndex = visibleRegularIndices.maxOrNull() ?: 0
+            (maxVisibleIndex.toFloat() / totalRegularItems).coerceIn(0f, 1f)
         }
     }
 
@@ -89,26 +138,6 @@ fun AlbumScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(barColor)
-                .padding(vertical = 8.dp, horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-        }
-
         if (isLoading) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -118,44 +147,37 @@ fun AlbumScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                state = listState
             ) {
                 item {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Spacer(Modifier.height(24.dp))
                         AsyncImage(
                             model = album.thumbnail,
                             contentDescription = null,
-                            contentScale = ContentScale.Crop,
                             modifier = Modifier
-                                .size(220.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .fillMaxWidth(0.75f)
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
                         )
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(12.dp))
                         Text(
-                            text = album.title,
+                            text = "(Album) ${album.artist}",
                             fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 24.sp,
-                            color = textColor,
+                            fontSize = 14.sp,
+                            color = subTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = album.artist.substringBeforeLast("•").trim(),
-                            fontFamily = NothingFont,
-                            fontSize = 16.sp,
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center
+                            modifier = Modifier.padding(horizontal = 20.dp)
                         )
                         
-                        val durationText = formatAlbumDuration(totalDuration)
+                        val durationText = formatAlbumDuration(album.duration)
                         val detailsText = buildString {
                             if (releaseYear.isNotBlank()) append(releaseYear)
                             if (releaseYear.isNotBlank() && durationText.isNotBlank()) append(" • ")
@@ -167,82 +189,361 @@ fun AlbumScreen(
                             Text(
                                 text = detailsText,
                                 fontFamily = NothingFont,
-                                fontSize = 14.sp,
-                                color = Color.Gray,
+                                fontSize = 13.sp,
+                                color = subTextColor,
                                 textAlign = TextAlign.Center
                             )
                         }
                         
-                        Spacer(Modifier.height(24.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(32.dp))
-                                    .background(Color.Red)
-                                    .clickable {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        if (songs.isNotEmpty()) {
-                                            vm.playWithQueue(songs.first(), songs)
-                                        }
-                                    }
-                                    .padding(horizontal = 32.dp, vertical = 12.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.PlayArrow,
-                                        contentDescription = "Play",
-                                        tint = Color.White
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = "Play",
-                                        fontFamily = NothingFont,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(16.dp))
-                            IconButton(onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                if (isSaved) vm.unsaveAlbum(album) else vm.saveAlbum(album)
-                            }) {
-                                Icon(
-                                    imageVector = if (isSaved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                    contentDescription = "Save Album",
-                                    tint = if (isSaved) Color.Red else textColor,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-                        }
+                        Spacer(Modifier.height(16.dp))
                     }
                 }
 
-                items(songs) { song ->
-                    val isLiked = likedSongs.any { it.id == song.id }
-                    val isPlayingSong = currentSong?.id == song.id
-                    SongItem(
-                        song = song,
-                        isDarkMode = isDarkMode,
-                        isLiked = isLiked,
-                        isInQueue = false,
-                        isPlaying = isPlayingSong,
-                        showMenu = true,
-                        hapticsEnabled = hapticsEnabled,
-                        context = context,
-                        onClick = { vm.playWithQueue(song, songs) },
-                        onAddToQueue = { vm.addToQueue(song) },
-                        onPlayNext = { vm.playNext(song) },
-                        onLike = { vm.toggleLike(song) },
-                        onShare = {},
-                        onRetryCache = { vm.retryCache(song) },
-                        onRemoveLike = { vm.toggleLike(song) }
+                stickyHeader {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(bgColor)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = album.title,
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                color = textColor,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(8.dp))
+
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        album.youtubeUrl.ifBlank {
+                                            "https://www.youtube.com/playlist?list=${album.id}"
+                                        }
+                                    )
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(shareIntent, "Share album")
+                                )
+                            }) {
+                                Icon(
+                                    Icons.Default.Share,
+                                    contentDescription = "Share",
+                                    tint = textColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                if (isSaved) vm.unsaveAlbum(album)
+                                else vm.saveAlbum(album)
+                            }) {
+                                Icon(
+                                    imageVector = if (isSaved) Icons.Default.Bookmark
+                                    else Icons.Default.BookmarkBorder,
+                                    contentDescription = "Save",
+                                    tint = textColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                if (albumSongs.isNotEmpty())
+                                    vm.playWithQueue(albumSongs.first(), albumSongs)
+                            }) {
+                                Icon(
+                                    Icons.Default.PlayArrow,
+                                    contentDescription = "Play",
+                                    tint = textColor,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+
+                        DashedDivider(
+                            modifier = Modifier.fillMaxWidth(),
+                            isDarkMode = isDarkMode,
+                            scrollProgress = scrollProgress.value
+                        )
+                    }
+                }
+
+                if (filteredSongs.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 80.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (searchQuery.isBlank()) "No songs found"
+                                else "No results",
+                                fontFamily = NothingFont,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    itemsIndexed(filteredSongs) { index, song ->
+                        val isLiked = likedSongs.any { it.id == song.id }
+                        val isPlaying = currentSong?.id == song.id
+                        AlbumSongRow(
+                            trackNumber = index + 1,
+                            song = song,
+                            isDarkMode = isDarkMode,
+                            isLiked = isLiked,
+                            isPlaying = isPlaying,
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            onClick = { vm.playWithQueue(song, albumSongs) },
+                            onAddToQueue = { vm.addToQueue(song) },
+                            onPlayNext = { vm.playNext(song) },
+                            onLike = { vm.toggleLike(song) }
+                        )
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
+        )
+
+        if (isSearching) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(barColor)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                    placeholder = {
+                        Text(
+                            "Search in album...",
+                            fontFamily = NothingFont,
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                    },
+                    textStyle = TextStyle(
+                        fontFamily = NothingFont,
+                        color = textColor,
+                        fontSize = 14.sp
+                    ),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Red,
+                        unfocusedBorderColor = Color.Red,
+                        focusedContainerColor = surfaceColor,
+                        unfocusedContainerColor = surfaceColor
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        focusManager.clearFocus()
+                    })
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    isSearching = false
+                    searchQuery = ""
+                    focusManager.clearFocus()
+                }) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Cancel",
+                        tint = textColor,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(barColor)
+                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onBack()
+                }) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = textColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            isSearching = true
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "(ALBUM)",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = textColor
+                    )
+                }
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onNavigateQueue()
+                }) {
+                    Icon(
+                        Icons.Default.QueueMusic,
+                        contentDescription = "Queue",
+                        tint = textColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AlbumSongRow(
+    trackNumber: Int,
+    song: Song,
+    isDarkMode: Boolean,
+    isLiked: Boolean,
+    isPlaying: Boolean,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
+    onClick: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onPlayNext: () -> Unit,
+    onLike: () -> Unit
+) {
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val titleColor = if (isPlaying) Color.Red else textColor
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bgColor)
+            .clickable {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onClick()
+            }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = trackNumber.toString(),
+            fontFamily = NothingFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 18.sp,
+            color = if (isPlaying) Color.Red else subTextColor,
+            modifier = Modifier.width(36.dp),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = song.title,
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = titleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = song.artist,
+                fontFamily = NothingFont,
+                fontSize = 12.sp,
+                color = subTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Box {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                menuExpanded = true
+            }) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Options",
+                    tint = subTextColor
+                )
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(if (isLiked) "Unlike" else "Like", fontFamily = NothingFont) },
+                    onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        menuExpanded = false
+                        onLike()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Play next", fontFamily = NothingFont) },
+                    onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        menuExpanded = false
+                        onPlayNext()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Add to queue", fontFamily = NothingFont) },
+                    onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        menuExpanded = false
+                        onAddToQueue()
+                    }
+                )
             }
         }
     }
