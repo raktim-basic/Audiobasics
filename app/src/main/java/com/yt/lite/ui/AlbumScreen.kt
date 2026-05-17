@@ -48,11 +48,11 @@ import com.yt.lite.utils.HapticUtils
 private fun formatAlbumDuration(ms: Long): String {
     if (ms <= 0) return ""
     val totalSec = ms / 1000
-    val m = totalSec / 60
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
     val s = totalSec % 60
-    val h = m / 60
-    return if (h > 0) "%d hr %d min".format(h, m % 60)
-    else "%d min %02d sec".format(m, s)
+    return if (h > 0) "%02d:%02d:%02d".format(h, m, s)
+    else "%02d:%02d".format(m, s)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -176,31 +176,31 @@ fun AlbumScreen(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
-                        
+
                         val releaseYear = remember(detailedAlbum.artist) {
                             val lastPart = detailedAlbum.artist.substringAfterLast("•").trim()
                             if (lastPart.matches(Regex("\\d{4}"))) lastPart
                             else Regex("\\b(19|20)\\d{2}\\b").find(detailedAlbum.artist)?.value ?: ""
                         }
                         val durationText = formatAlbumDuration(detailedAlbum.duration)
-                        
+
                         val detailsText = buildString {
-                            if (releaseYear.isNotBlank()) append(releaseYear)
-                            if (releaseYear.isNotBlank() && durationText.isNotBlank()) append(" • ")
                             if (durationText.isNotBlank()) append(durationText)
+                            if (durationText.isNotBlank() && releaseYear.isNotBlank()) append(" • ")
+                            if (releaseYear.isNotBlank()) append(releaseYear)
                         }
-                        
+
                         if (detailsText.isNotBlank()) {
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 text = detailsText,
                                 fontFamily = NothingFont,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                                 color = subTextColor,
                                 textAlign = TextAlign.Center
                             )
                         }
-                        
+
                         Spacer(Modifier.height(16.dp))
                     }
                 }
