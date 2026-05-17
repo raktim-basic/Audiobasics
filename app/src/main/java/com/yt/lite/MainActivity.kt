@@ -270,7 +270,8 @@ fun AudiobasicsApp(
                         vm = vm,
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
-                        onNavigateQueue = { navigate(Screen.Queue) }
+                        onNavigateQueue = { navigate(Screen.Queue) },
+                        onNavigateSettings = { navigate(Screen.Settings) }
                     )
                     is Screen.Albums -> SavedAlbumsScreen(
                         vm = vm,
