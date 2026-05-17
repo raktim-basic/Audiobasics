@@ -63,6 +63,7 @@ fun QueueScreen(
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetY by remember { mutableStateOf(0f) }
@@ -181,22 +182,6 @@ fun QueueScreen(
                 fontFamily = NothingFont,
                 fontSize = 13.sp,
                 color = Color.Gray
-            )
-            Spacer(Modifier.width(16.dp))
-            Icon(
-                imageVector = when (repeatMode) {
-                    1 -> Icons.Default.Repeat
-                    2 -> Icons.Default.RepeatOne
-                    else -> Icons.Default.FastForward
-                },
-                contentDescription = "Repeat Mode",
-                tint = if (repeatMode == 0) textColor else Color.Red,
-                modifier = Modifier
-                    .size(26.dp)
-                    .clickable {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        vm.toggleRepeatMode()
-                    }
             )
         }
 
@@ -386,7 +371,21 @@ fun QueueScreen(
                 }
             )
 
-            Spacer(Modifier.size(48.dp))
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                vm.toggleRepeatMode()
+            }) {
+                Icon(
+                    imageVector = when (repeatMode) {
+                        1 -> Icons.Default.Repeat
+                        2 -> Icons.Default.RepeatOne
+                        else -> Icons.Default.FastForward
+                    },
+                    contentDescription = "Repeat Mode",
+                    tint = if (repeatMode == 0) textColor else Color.Red,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
         }
     }
 }
