@@ -56,11 +56,14 @@ sealed class SettingsPage {
 fun SettingsScreen(
     vm: MusicViewModel,
     isDarkMode: Boolean,
+    openCache: Boolean = false,
     onBack: () -> Unit,
     onNavigateUpdater: () -> Unit
 ) {
     val context = LocalContext.current
-    var currentPage by remember { mutableStateOf<SettingsPage>(SettingsPage.Main) }
+    var currentPage by remember { 
+        mutableStateOf<SettingsPage>(if (openCache) SettingsPage.Cache else SettingsPage.Main) 
+    }
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
