@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yt.lite.ui.theme.NothingFont
@@ -42,7 +43,8 @@ fun LikedScreen(
     vm: MusicViewModel,
     isDarkMode: Boolean,
     onBack: () -> Unit,
-    onNavigateQueue: () -> Unit
+    onNavigateQueue: () -> Unit,
+    onNavigateSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
@@ -71,6 +73,10 @@ fun LikedScreen(
             it.title.contains(searchQuery, ignoreCase = true) ||
             it.artist.contains(searchQuery, ignoreCase = true)
         }
+    }
+
+    val uncachedCount = remember(likedSongs) {
+        likedSongs.count { !it.isCached }
     }
 
     LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
@@ -122,13 +128,15 @@ fun LikedScreen(
             }
 
             stickyHeader {
-                Column(modifier = Modifier
-                    .fillMaxWidth()
-                    .background(bgColor)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(bgColor)
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                            .padding(horizontal = 20.dp, top = 10.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -160,6 +168,37 @@ fun LikedScreen(
                             )
                         }
                     }
+
+                    if (uncachedCount > 0) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (uncachedCount == likedSongs.size) "All songs aren't cached. " 
+                                       else "$uncachedCount songs aren't cached. ",
+                                fontFamily = NothingFont,
+                                fontSize = 13.sp,
+                                color = Color.Gray
+                            )
+                            Text(
+                                text = "Cache them?",
+                                fontFamily = NothingFont,
+                                fontSize = 13.sp,
+                                color = Color(0xFF1565C0),
+                                textDecoration = TextDecoration.Underline,
+                                modifier = Modifier.clickable {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    onNavigateSettings()
+                                }
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier.height(6.dp))
+                    }
+
                     DashedDivider(
                         modifier = Modifier.fillMaxWidth(),
                         isDarkMode = isDarkMode,
