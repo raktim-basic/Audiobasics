@@ -96,7 +96,6 @@ fun LyricsScreen(
 
     Dialog(
         onDismissRequest = {
-            // No haptic on outside tap or back button
             onBack()
         },
         properties = DialogProperties(
@@ -110,7 +109,6 @@ fun LyricsScreen(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable {
-                    // No haptic on background tap
                     onBack()
                 },
             contentAlignment = Alignment.Center
@@ -216,7 +214,7 @@ fun LyricsScreen(
                                             fontFamily = NothingFont,
                                             fontWeight = if (isCurrent) FontWeight.Bold
                                             else FontWeight.Normal,
-                                            fontSize = 15.sp,
+                                            fontSize = 18.sp, 
                                             color = if (isCurrent) Color.Red else Color.Gray,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.fillMaxWidth()
@@ -236,7 +234,7 @@ fun LyricsScreen(
                                         Text(
                                             text = line.ifBlank { " " },
                                             fontFamily = NothingFont,
-                                            fontSize = 15.sp,
+                                            fontSize = 17.sp, 
                                             color = Color.Gray,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.fillMaxWidth()
