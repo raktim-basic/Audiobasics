@@ -157,7 +157,7 @@ sealed class Screen {
     object Home : Screen()
     object Search : Screen()
     object Queue : Screen()
-    object Settings : Screen()
+    data class Settings(val openCache: Boolean = false) : Screen() // Added flag here
     object Liked : Screen()
     object Albums : Screen()
     object Updater : Screen()
@@ -186,7 +186,7 @@ fun AudiobasicsApp(
 
     LaunchedEffect(navigateToUpdater) {
         if (navigateToUpdater) {
-            screenStack = listOf(Screen.Home, Screen.Settings, Screen.Updater)
+            screenStack = listOf(Screen.Home, Screen.Settings(), Screen.Updater)
             vm.onUpdaterNavigated()
         }
     }
@@ -244,7 +244,7 @@ fun AudiobasicsApp(
                         vm = vm,
                         onNavigateSearch = { navigate(Screen.Search) },
                         onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateSettings = { navigate(Screen.Settings) },
+                        onNavigateSettings = { navigate(Screen.Settings()) },
                         onNavigateLiked = { navigate(Screen.Liked) },
                         onNavigateAlbums = { navigate(Screen.Albums) }
                     )
@@ -263,6 +263,7 @@ fun AudiobasicsApp(
                     is Screen.Settings -> SettingsScreen(
                         vm = vm,
                         isDarkMode = isDarkMode,
+                        openCache = screen.openCache, // Passing the flag to SettingsScreen
                         onBack = { navigateBack() },
                         onNavigateUpdater = { navigate(Screen.Updater) }
                     )
@@ -271,7 +272,7 @@ fun AudiobasicsApp(
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
                         onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateSettings = { navigate(Screen.Settings) }
+                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) } // Navigates with flag
                     )
                     is Screen.Albums -> SavedAlbumsScreen(
                         vm = vm,
@@ -294,12 +295,13 @@ fun AudiobasicsApp(
                         vm = vm,
                         album = screen.album,
                         isDarkMode = isDarkMode,
-                        onBack = { navigateBack() }
+                        onBack = { navigateBack() },
+                        onNavigateQueue = { navigate(Screen.Queue) }
                     )
                 }
             }
         }
-        
+
         val isLiked = currentSong?.let { likedSongs.any { liked -> liked.id == it.id } } ?: false
         PlayerBar(
             vm = vm,
