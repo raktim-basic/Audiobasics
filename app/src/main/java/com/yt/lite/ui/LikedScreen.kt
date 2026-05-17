@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.sp
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
 
+private var savedLikedIndex = 0
+private var savedLikedOffset = 0
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LikedScreen(
@@ -50,16 +53,12 @@ fun LikedScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
 
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = savedLikedIndex,
+        initialFirstVisibleItemScrollOffset = savedLikedOffset
+    )
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
-
-    // Auto‑focus when entering search mode
-    LaunchedEffect(isSearching) {
-        if (isSearching) {
-            focusRequester.requestFocus()
-        }
-    }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -71,6 +70,19 @@ fun LikedScreen(
         else likedSongs.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
             it.artist.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+        if (filteredSongs.isNotEmpty()) {
+            savedLikedIndex = listState.firstVisibleItemIndex
+            savedLikedOffset = listState.firstVisibleItemScrollOffset
+        }
+    }
+
+    LaunchedEffect(isSearching) {
+        if (isSearching) {
+            focusRequester.requestFocus()
         }
     }
 
@@ -101,7 +113,7 @@ fun LikedScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Spacer(Modifier.height(32.dp))
                     Text("❤️", fontSize = 100.sp)
@@ -156,7 +168,10 @@ fun LikedScreen(
                 }
             }
 
-            items(filteredSongs) { song ->
+            items(
+                items = filteredSongs,
+                key = { it.id }
+            ) { song ->
                 val isPlaying = currentSong?.id == song.id
                 SongItem(
                     song = song,
