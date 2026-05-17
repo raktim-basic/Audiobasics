@@ -44,7 +44,7 @@ fun LikedScreen(
     isDarkMode: Boolean,
     onBack: () -> Unit,
     onNavigateQueue: () -> Unit,
-    onNavigateSettings: () -> Unit
+    onNavigateCacheSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
@@ -122,7 +122,7 @@ fun LikedScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Spacer(Modifier.height(32.dp))
-                    Text("❤️", fontSize = 100.sp)
+                    Text(if (uncachedCount > 0) "💔" else "❤️", fontSize = 100.sp)
                     Spacer(Modifier.height(24.dp))
                 }
             }
@@ -191,7 +191,7 @@ fun LikedScreen(
                                 textDecoration = TextDecoration.Underline,
                                 modifier = Modifier.clickable {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    onNavigateSettings()
+                                    onNavigateCacheSettings()
                                 }
                             )
                         }
