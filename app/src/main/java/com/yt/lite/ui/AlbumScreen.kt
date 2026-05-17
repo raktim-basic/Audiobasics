@@ -73,7 +73,7 @@ fun AlbumScreen(
     LaunchedEffect(album.id) {
         isLoading = true
         try {
-            val fetchedSongs = Innertube.getAlbumSongs(album.id)
+            val fetchedSongs = Innertube.getAlbumSongs(album.id).second
             songs = fetchedSongs
             releaseYear = album.artist.substringAfterLast("•").trim().takeIf { it.matches(Regex("\\d{4}")) } ?: "2024"
             totalDuration = album.duration
