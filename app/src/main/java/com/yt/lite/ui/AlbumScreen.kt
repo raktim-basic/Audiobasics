@@ -73,7 +73,6 @@ fun AlbumScreen(
     }
 
     var albumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var detailedAlbum by remember { mutableStateOf(album) }
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
@@ -97,12 +96,11 @@ fun AlbumScreen(
     LaunchedEffect(album.id) {
         isLoading = true
         try {
-            val fetched = com.yt.lite.api.Innertube.getAlbumSongs(
+            val (_, songs) = com.yt.lite.api.Innertube.getAlbumSongs(
                 browseId = album.id,
                 fallbackArtist = album.artist
             )
-            albumSongs = fetched.second
-            if (fetched.first != null) detailedAlbum = fetched.first!!
+            albumSongs = songs
         } catch (e: Exception) {
             android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
         } finally {
@@ -155,7 +153,7 @@ fun AlbumScreen(
                     ) {
                         Spacer(Modifier.height(24.dp))
                         AsyncImage(
-                            model = detailedAlbum.thumbnail,
+                            model = album.thumbnail,
                             contentDescription = null,
                             modifier = Modifier
                                 .fillMaxWidth(0.75f)
@@ -165,7 +163,7 @@ fun AlbumScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         
-                        val displayedArtist = detailedAlbum.artist.substringBeforeLast("•").trim()
+                        val displayedArtist = album.artist.substringBeforeLast("•").trim()
                         Text(
                             text = "(Album) $displayedArtist",
                             fontFamily = NothingFont,
@@ -177,12 +175,14 @@ fun AlbumScreen(
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
 
-                        val releaseYear = remember(detailedAlbum.artist) {
-                            val lastPart = detailedAlbum.artist.substringAfterLast("•").trim()
+                        val releaseYear = remember(album.artist) {
+                            val lastPart = album.artist.substringAfterLast("•").trim()
                             if (lastPart.matches(Regex("\\d{4}"))) lastPart
-                            else Regex("\\b(19|20)\\d{2}\\b").find(detailedAlbum.artist)?.value ?: ""
+                            else Regex("\\b(19|20)\\d{2}\\b").find(album.artist)?.value ?: ""
                         }
-                        val durationText = formatAlbumDuration(detailedAlbum.duration)
+                        
+                        val totalDuration = albumSongs.sumOf { it.duration }
+                        val durationText = formatAlbumDuration(totalDuration)
 
                         val detailsText = buildString {
                             if (durationText.isNotBlank()) append(durationText)
@@ -195,7 +195,7 @@ fun AlbumScreen(
                             Text(
                                 text = detailsText,
                                 fontFamily = NothingFont,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 color = subTextColor,
                                 textAlign = TextAlign.Center
                             )
@@ -218,7 +218,7 @@ fun AlbumScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = detailedAlbum.title,
+                                text = album.title,
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
@@ -235,8 +235,8 @@ fun AlbumScreen(
                                     type = "text/plain"
                                     putExtra(
                                         Intent.EXTRA_TEXT,
-                                        detailedAlbum.youtubeUrl.ifBlank {
-                                            "https://www.youtube.com/playlist?list=${detailedAlbum.id}"
+                                        album.youtubeUrl.ifBlank {
+                                            "https://www.youtube.com/playlist?list=${album.id}"
                                         }
                                     )
                                 }
@@ -254,8 +254,8 @@ fun AlbumScreen(
 
                             IconButton(onClick = {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                if (isSaved) vm.unsaveAlbum(detailedAlbum)
-                                else vm.saveAlbum(detailedAlbum)
+                                if (isSaved) vm.unsaveAlbum(album)
+                                else vm.saveAlbum(album)
                             }) {
                                 Icon(
                                     imageVector = if (isSaved) Icons.Default.Bookmark
