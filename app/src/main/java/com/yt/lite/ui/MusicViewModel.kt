@@ -70,7 +70,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue
     
-    private val _repeatMode = MutableStateFlow(0) // 0 = off, 1 = all, 2 = one
+    private val _repeatMode = MutableStateFlow(0)
     val repeatMode: StateFlow<Int> = _repeatMode
 
     private val _searchResults = MutableStateFlow<List<Song>>(emptyList())
@@ -97,15 +97,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
 
-    // Haptics
     private val _hapticsEnabled = MutableStateFlow(prefs.getBoolean("haptics_enabled", true))
     val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled
-
-    // Updater navigation
+    
     private val _navigateToUpdater = MutableStateFlow(false)
     val navigateToUpdater: StateFlow<Boolean> = _navigateToUpdater
 
-    // Update available flag
     private val _updateAvailable = MutableStateFlow(false)
     val updateAvailable: StateFlow<Boolean> = _updateAvailable
 
@@ -229,8 +226,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             ctrl.getMediaItemAt(i).toSong()
         }
         if (restoredQueue.isNotEmpty()) _queue.value = restoredQueue
-        
-        // Ensure default repeat mode is applied to controller on restore
+ 
         ctrl.repeatMode = Player.REPEAT_MODE_OFF
         _repeatMode.value = 0
         
