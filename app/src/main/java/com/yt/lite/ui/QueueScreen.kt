@@ -12,7 +12,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,15 +36,6 @@ import androidx.compose.ui.zIndex
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
 import kotlinx.coroutines.delay
-
-private fun formatTotalTime(totalMs: Long): String {
-    val totalSec = totalMs / 1000
-    val h = totalSec / 3600
-    val m = (totalSec % 3600) / 60
-    val s = totalSec % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s)
-    else "%d:%02d".format(m, s)
-}
 
 private fun formatCountdown(remainingMs: Long): String {
     val totalSec = (remainingMs / 1000).coerceAtLeast(0)
@@ -64,18 +58,17 @@ fun QueueScreen(
     val isPlaying by vm.isPlaying.collectAsState()
     val currentPosition by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
+    val repeatMode by vm.repeatMode.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    // Reorder state
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetY by remember { mutableStateOf(0f) }
     var targetIndex by remember { mutableStateOf<Int?>(null) }
     var itemHeightPx by remember { mutableStateOf(80f) }
 
-    // Sleep timer
     var sleepTimerEndsAt by remember { mutableStateOf<Long?>(null) }
     var sleepTimerRemaining by remember { mutableStateOf(0L) }
     var showSleepDialog by remember { mutableStateOf(false) }
@@ -121,7 +114,6 @@ fun QueueScreen(
         }
     }
 
-    val totalMs = remember(queue) { queue.sumOf { it.duration } }
     val listState = rememberLazyListState()
 
     val scrollProgress = remember(listState, queue.size) {
@@ -163,7 +155,6 @@ fun QueueScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -185,22 +176,28 @@ fun QueueScreen(
                 color = textColor
             )
             Spacer(Modifier.weight(1f))
-            val validTotal = queue.isNotEmpty() && totalMs > 0
-            if (validTotal) {
-                Text(
-                    text = "(${formatTotalTime(totalMs)})  ${queue.size} songs",
-                    fontFamily = NothingFont,
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
-            } else {
-                Text(
-                    text = "${queue.size} songs",
-                    fontFamily = NothingFont,
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
-            }
+            Text(
+                text = "${queue.size} songs",
+                fontFamily = NothingFont,
+                fontSize = 13.sp,
+                color = Color.Gray
+            )
+            Spacer(Modifier.width(16.dp))
+            Icon(
+                imageVector = when (repeatMode) {
+                    1 -> Icons.Default.Repeat
+                    2 -> Icons.Default.RepeatOne
+                    else -> Icons.Default.FastForward
+                },
+                contentDescription = "Repeat Mode",
+                tint = if (repeatMode == 0) textColor else Color.Red,
+                modifier = Modifier
+                    .size(26.dp)
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.toggleRepeatMode()
+                    }
+            )
         }
 
         DashedDivider(
@@ -265,7 +262,6 @@ fun QueueScreen(
                                     Modifier.pointerInput(index) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = {
-                                                // Strong haptic for drag start
                                                 HapticUtils.performStrongHaptic(context)
                                                 dragOffsetY = 0f
                                             },
@@ -319,7 +315,6 @@ fun QueueScreen(
                             onShare = {},
                             onRemoveFromQueue = { vm.removeFromQueue(song) },
                             onReorder = {
-                                // Toggle reorder mode
                                 if (draggingIndex == index) {
                                     draggingIndex = null
                                     dragOffsetY = 0f
@@ -332,7 +327,7 @@ fun QueueScreen(
                             },
                             onRetryCache = { vm.retryCache(song) },
                             onRemoveLike = { vm.toggleLike(song) },
-                            isDragging = isDragging   // pass the dragging state
+                            isDragging = isDragging
                         )
                     }
                 }
@@ -405,7 +400,6 @@ fun SleepTimerDialog(
     onEndOfSong: () -> Unit,
     onCustom: (Long) -> Unit
 ) {
-    // unchanged – same as before
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
