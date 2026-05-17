@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -113,10 +114,10 @@ fun SearchScreen(
     val currentSong by vm.currentSong.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
-    var query by remember { mutableStateOf("") }
-    var showLinkDialog by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var showLinkDialog by rememberSaveable { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
-    var showSuggestions by remember { mutableStateOf(false) }
+    var showSuggestions by rememberSaveable { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -128,19 +129,12 @@ fun SearchScreen(
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    // Auto-focus the search field when screen appears
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        if (query.isBlank()) {
+            focusRequester.requestFocus()
+        }
     }
 
-    LaunchedEffect(Unit) {
-        query = ""
-        suggestions = emptyList()
-        showSuggestions = false
-        vm.clearSearch()
-    }
-
-    // Debounced suggestion fetch with cancellation
     LaunchedEffect(query, results) {
         suggestionJob?.cancel()
         if (query.isBlank()) {
@@ -205,9 +199,7 @@ fun SearchScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        // Cancel any pending fetch
                                         suggestionJob?.cancel()
-                                        // Immediately search this suggestion
                                         query = suggestion
                                         suggestions = emptyList()
                                         showSuggestions = false
