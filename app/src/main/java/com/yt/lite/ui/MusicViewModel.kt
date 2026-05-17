@@ -69,6 +69,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue
+    
+    private val _repeatMode = MutableStateFlow(0) // 0 = off, 1 = all, 2 = one
+    val repeatMode: StateFlow<Int> = _repeatMode
 
     private val _searchResults = MutableStateFlow<List<Song>>(emptyList())
     val searchResults: StateFlow<List<Song>> = _searchResults
@@ -146,6 +149,17 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+        override fun onRepeatModeChanged(repeatMode: Int) {
+            val mapped = when(repeatMode) {
+                Player.REPEAT_MODE_ALL -> 1
+                Player.REPEAT_MODE_ONE -> 2
+                else -> 0
+            }
+            if (_repeatMode.value != mapped) {
+                _repeatMode.value = mapped
+            }
+        }
+
         override fun onEvents(player: Player, events: Player.Events) {
             syncStateFromController()
         }
@@ -197,6 +211,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         val dur = ctrl.duration.takeIf { it > 0 } ?: 0L
         if (_duration.value != dur) _duration.value = dur
         _currentPosition.value = ctrl.currentPosition.coerceAtLeast(0L)
+        
+        val mappedRepeat = when(ctrl.repeatMode) {
+            Player.REPEAT_MODE_ALL -> 1
+            Player.REPEAT_MODE_ONE -> 2
+            else -> 0
+        }
+        if (_repeatMode.value != mappedRepeat) _repeatMode.value = mappedRepeat
+        
         if (playing) startProgressTracking() else stopProgressTracking()
     }
 
@@ -207,6 +229,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             ctrl.getMediaItemAt(i).toSong()
         }
         if (restoredQueue.isNotEmpty()) _queue.value = restoredQueue
+        
+        // Ensure default repeat mode is applied to controller on restore
+        ctrl.repeatMode = Player.REPEAT_MODE_OFF
+        _repeatMode.value = 0
+        
         syncStateFromController()
     }
 
@@ -476,6 +503,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun togglePlayPause() {
         controller?.run { if (isPlaying) pause() else play() }
+    }
+    
+    fun toggleRepeatMode() {
+        val next = (_repeatMode.value + 1) % 3
+        _repeatMode.value = next
+        controller?.repeatMode = when (next) {
+            1 -> Player.REPEAT_MODE_ALL
+            2 -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
     }
 
     fun toggleLike(song: Song) {
