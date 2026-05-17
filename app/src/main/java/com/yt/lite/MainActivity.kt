@@ -294,14 +294,12 @@ fun AudiobasicsApp(
                         vm = vm,
                         album = screen.album,
                         isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onNavigateQueue = { navigate(Screen.Queue) }
+                        onBack = { navigateBack() }
                     )
                 }
             }
         }
-
-        // Always show PlayerBar (handles null song internally)
+        
         val isLiked = currentSong?.let { likedSongs.any { liked -> liked.id == it.id } } ?: false
         PlayerBar(
             vm = vm,
