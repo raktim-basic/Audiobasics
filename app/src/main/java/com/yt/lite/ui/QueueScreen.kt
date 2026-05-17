@@ -12,7 +12,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -375,16 +374,22 @@ fun QueueScreen(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 vm.toggleRepeatMode()
             }) {
-                Icon(
-                    imageVector = when (repeatMode) {
-                        1 -> Icons.Default.Repeat
-                        2 -> Icons.Default.RepeatOne
-                        else -> Icons.Default.FastForward
-                    },
-                    contentDescription = "Repeat Mode",
-                    tint = if (repeatMode == 0) textColor else Color.Red,
-                    modifier = Modifier.size(26.dp)
-                )
+                if (repeatMode == 0) {
+                    Text(
+                        text = ">]",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = textColor
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (repeatMode == 1) Icons.Default.Repeat else Icons.Default.RepeatOne,
+                        contentDescription = "Repeat Mode",
+                        tint = Color.Red,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
             }
         }
     }
