@@ -118,6 +118,7 @@ fun SearchScreen(
     var showLinkDialog by rememberSaveable { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showSuggestions by rememberSaveable { mutableStateOf(false) }
+    var hasFocused by rememberSaveable { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -130,8 +131,9 @@ fun SearchScreen(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
     LaunchedEffect(Unit) {
-        if (query.isBlank()) {
+        if (!hasFocused && query.isBlank()) {
             focusRequester.requestFocus()
+            hasFocused = true
         }
     }
 
