@@ -1,102 +1,175 @@
 package com.yt.lite.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QueueMusic
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.yt.lite.data.Album
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 
-private var savedLikedIndex = 0
-private var savedLikedOffset = 0
+private suspend fun fetchSuggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+    if (query.isBlank()) return@withContext emptyList()
+    try {
+        val client = OkHttpClient()
+        val body = JSONObject().apply {
+            put("context", JSONObject().apply {
+                put("client", JSONObject().apply {
+                    put("clientName", "WEB_REMIX")
+                    put("clientVersion", "1.20240101.01.00")
+                    put("hl", "en")
+                    put("gl", "US")
+                })
+            })
+            put("input", query)
+        }
+        val req = Request.Builder()
+            .url(
+                "https://music.youtube.com/youtubei/v1/music/get_search_suggestions" +
+                "?key=AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
+            )
+            .addHeader("Content-Type", "application/json")
+            .addHeader("User-Agent", "Mozilla/5.0")
+            .addHeader("Origin", "https://music.youtube")
+            .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
+            .build()
+        val resp = client.newCall(req).execute()
+        val text = resp.body?.string() ?: return@withContext emptyList()
+        val json = JSONObject(text)
+        val suggestions = mutableListOf<String>()
+        val contents = json.optJSONArray("contents") ?: return@withContext emptyList()
+        for (i in 0 until contents.length()) {
+            val section = contents.optJSONObject(i)
+                ?.optJSONObject("searchSuggestionsSectionRenderer")
+                ?.optJSONArray("contents") ?: continue
+            for (j in 0 until section.length()) {
+                val runs = section.optJSONObject(j)
+                    ?.optJSONObject("searchSuggestionRenderer")
+                    ?.optJSONObject("suggestion")
+                    ?.optJSONArray("runs") ?: continue
+                val suggestion = buildString {
+                    for (k in 0 until runs.length()) {
+                        append(runs.optJSONObject(k)?.optString("text", "") ?: "")
+                    }
+                }
+                if (suggestion.isNotBlank()) suggestions.add(suggestion)
+            }
+        }
+        suggestions
+    } catch (_: Exception) { emptyList() }
+}
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun LikedScreen(
+fun SearchScreen(
     vm: MusicViewModel,
     isDarkMode: Boolean,
     onBack: () -> Unit,
-    onNavigateQueue: () -> Unit
+    onNavigateQueue: () -> Unit,
+    onAlbumClick: (Album) -> Unit
 ) {
     val context = LocalContext.current
+    val results by vm.searchResults.collectAsState()
+    val isSearching by vm.isSearching.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
-    val cacheSize by vm.cacheSize.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearching by remember { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var showLinkDialog by rememberSaveable { mutableStateOf(false) }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showSuggestions by rememberSaveable { mutableStateOf(false) }
 
-    val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = savedLikedIndex,
-        initialFirstVisibleItemScrollOffset = savedLikedOffset
-    )
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    var suggestionJob by remember { mutableStateOf<Job?>(null) }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    val filteredSongs = remember(likedSongs, searchQuery) {
-        if (searchQuery.isBlank()) likedSongs
-        else likedSongs.filter {
-            it.title.contains(searchQuery, ignoreCase = true) ||
-            it.artist.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
-    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
-        if (filteredSongs.isNotEmpty()) {
-            savedLikedIndex = listState.firstVisibleItemIndex
-            savedLikedOffset = listState.firstVisibleItemScrollOffset
-        }
-    }
-
-    LaunchedEffect(isSearching) {
-        if (isSearching) {
+    LaunchedEffect(Unit) {
+        if (query.isBlank()) {
             focusRequester.requestFocus()
         }
     }
 
-    val totalRegularItems = filteredSongs.size + 1
-    val scrollProgress = remember(listState, totalRegularItems) {
-        derivedStateOf {
-            if (totalRegularItems <= 1) return@derivedStateOf 0f
-            val layoutInfo = listState.layoutInfo
-            val visibleRegularIndices = layoutInfo.visibleItemsInfo
-                .map { it.index }
-                .filter { it == 0 || (it >= 2 && it <= totalRegularItems) }
-            val maxVisibleIndex = visibleRegularIndices.maxOrNull() ?: 0
-            (maxVisibleIndex.toFloat() / totalRegularItems).coerceIn(0f, 1f)
+    LaunchedEffect(query, results) {
+        suggestionJob?.cancel()
+        if (query.isBlank()) {
+            suggestions = emptyList()
+            showSuggestions = false
+            return@LaunchedEffect
         }
+        if (results.isNotEmpty()) {
+            suggestions = emptyList()
+            showSuggestions = false
+            return@LaunchedEffect
+        }
+        suggestionJob = scope.launch {
+            delay(300)
+            if (query.isNotBlank() && results.isEmpty()) {
+                val fetched = fetchSuggestions(query)
+                if (query.isNotBlank() && results.isEmpty()) {
+                    suggestions = fetched
+                    showSuggestions = fetched.isNotEmpty()
+                }
+            }
+        }
+    }
+
+    if (showLinkDialog) {
+        PlayByLinkDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onDismiss = { showLinkDialog = false },
+            onPlay = { url ->
+                vm.playByUrl(url)
+                showLinkDialog = false
+            }
+        )
     }
 
     Column(
@@ -104,209 +177,296 @@ fun LikedScreen(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            state = listState
-        ) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Spacer(Modifier.height(32.dp))
-                    Text("❤️", fontSize = 100.sp)
-                    Spacer(Modifier.height(24.dp))
-                }
-            }
-
-            stickyHeader {
-                Column(modifier = Modifier
-                    .fillMaxWidth()
-                    .background(bgColor)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+        Box(modifier = Modifier.weight(1f)) {
+            when {
+                isSearching -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "Liked Songs (${likedSongs.size})",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = textColor
-                        )
-                        if (cacheSize.isNotBlank()) {
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = cacheSize,
-                                fontFamily = NothingFont,
-                                fontSize = 14.sp,
-                                color = Color.Gray
-                            )
+                        CircularProgressIndicator(color = Color.Red)
+                    }
+                }
+                showSuggestions && suggestions.isNotEmpty() -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        reverseLayout = true,
+                        contentPadding = PaddingValues(vertical = 4.dp)
+                    ) {
+                        items(suggestions) { suggestion ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        suggestionJob?.cancel()
+                                        query = suggestion
+                                        suggestions = emptyList()
+                                        showSuggestions = false
+                                        vm.search(suggestion)
+                                        focusManager.clearFocus()
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("🔍", fontSize = 14.sp)
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = suggestion,
+                                    fontFamily = NothingFont,
+                                    fontSize = 14.sp,
+                                    color = textColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.shuffleLiked()
-                        }) {
-                            Icon(
-                                Icons.Default.Shuffle,
-                                contentDescription = "Shuffle",
-                                tint = textColor,
-                                modifier = Modifier.size(24.dp)
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        reverseLayout = true
+                    ) {
+                        items(results) { song ->
+                            val isLiked = likedSongs.any { it.id == song.id }
+                            val isPlaying = currentSong?.id == song.id
+                            SongItem(
+                                song = song,
+                                isDarkMode = isDarkMode,
+                                isLiked = isLiked,
+                                isInQueue = false,
+                                isPlaying = isPlaying,
+                                showMenu = !song.isAlbum,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
+                                onClick = {
+                                    if (song.isAlbum) {
+                                        onAlbumClick(
+                                            Album(
+                                                id = song.id,
+                                                title = song.title,
+                                                artist = song.artist
+                                                    .removePrefix("(Album) "),
+                                                thumbnail = song.thumbnail
+                                            )
+                                        )
+                                    } else {
+                                        vm.play(song)
+                                    }
+                                },
+                                onAddToQueue = { vm.addToQueue(song) },
+                                onPlayNext = { vm.playNext(song) },
+                                onLike = { vm.toggleLike(song) },
+                                onShare = {},
+                                onRetryCache = { vm.retryCache(song) },
+                                onRemoveLike = { vm.toggleLike(song) }
                             )
                         }
                     }
-                    DashedDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        isDarkMode = isDarkMode,
-                        scrollProgress = scrollProgress.value
-                    )
                 }
             }
-
-            items(
-                items = filteredSongs,
-                key = { it.id }
-            ) { song ->
-                val isPlaying = currentSong?.id == song.id
-                SongItem(
-                    song = song,
-                    isDarkMode = isDarkMode,
-                    isLiked = true,
-                    isInQueue = false,
-                    isPlaying = isPlaying,
-                    showExplicit = false,
-                    hapticsEnabled = hapticsEnabled,
-                    context = context,
-                    onClick = { vm.playWithQueue(song, filteredSongs) },
-                    onAddToQueue = { vm.addToQueue(song) },
-                    onPlayNext = { vm.playNext(song) },
-                    onLike = { vm.toggleLike(song) },
-                    onShare = {},
-                    onRetryCache = { vm.retryCache(song) },
-                    onRemoveLike = { vm.toggleLike(song) }
-                )
-            }
         }
+
+        Text(
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(
+                    fontFamily = NothingFont,
+                    color = textColor,
+                    fontSize = 13.sp,
+                    fontStyle = FontStyle.Italic
+                )) { append("Can't find the song?  ") }
+                withStyle(SpanStyle(
+                    fontFamily = NothingFont,
+                    color = Color(0xFF1565C0),
+                    fontSize = 13.sp,
+                    fontStyle = FontStyle.Italic,
+                    textDecoration = TextDecoration.Underline
+                )) { append("Try with YouTube link here.") }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(bgColor)
+                .clickable {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    showLinkDialog = true
+                }
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        )
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
+                .background(
+                    if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD)
+                )
         )
 
-        if (isSearching) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(barColor)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(barColor)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onBack()
+            }) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = textColor,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+
+            OutlinedTextField(
+                value = query,
+                onValueChange = {
+                    query = it
+                    if (it.isNotBlank()) {
+                        if (results.isNotEmpty()) {
+                            vm.clearSearch()
+                        }
+                        showSuggestions = true
+                    } else {
+                        showSuggestions = false
+                    }
+                },
+                modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                placeholder = {
+                    Text(
+                        "Search...",
+                        fontFamily = NothingFont,
+                        color = Color.Gray,
+                        fontSize = 14.sp
+                    )
+                },
+                textStyle = TextStyle(
+                    fontFamily = NothingFont,
+                    color = textColor,
+                    fontSize = 14.sp
+                ),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Red,
+                    unfocusedBorderColor = Color.Red,
+                    focusedContainerColor = surfaceColor,
+                    unfocusedContainerColor = surfaceColor
+                ),
+                shape = RoundedCornerShape(8.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    if (query.isNotBlank()) {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        suggestionJob?.cancel()
+                        suggestions = emptyList()
+                        showSuggestions = false
+                        vm.search(query)
+                        focusManager.clearFocus()
+                    }
+                })
+            )
+
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onNavigateQueue()
+            }) {
+                Icon(
+                    Icons.Default.QueueMusic,
+                    contentDescription = "Queue",
+                    tint = textColor,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PlayByLinkDialog(
+    isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
+    onDismiss: () -> Unit,
+    onPlay: (String) -> Unit
+) {
+    var link by remember { mutableStateOf("") }
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+
+    Dialog(onDismissRequest = {
+        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+        onDismiss()
+    }) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(bgColor)
+                .padding(20.dp)
+        ) {
+            Column {
+                Text(
+                    text = "Play with YouTube Link",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = textColor
+                )
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                    value = link,
+                    onValueChange = { link = it },
+                    modifier = Modifier.fillMaxWidth(),
                     placeholder = {
                         Text(
-                            "Search liked...",
+                            "Paste YouTube link...",
                             fontFamily = NothingFont,
-                            color = Color.Gray,
-                            fontSize = 14.sp
+                            color = Color.Gray
                         )
                     },
                     textStyle = TextStyle(
                         fontFamily = NothingFont,
-                        color = textColor,
-                        fontSize = 14.sp
+                        color = textColor
                     ),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Red,
-                        unfocusedBorderColor = Color.Red,
-                        focusedContainerColor = surfaceColor,
-                        unfocusedContainerColor = surfaceColor
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
-                        focusManager.clearFocus()
-                    })
+                        unfocusedBorderColor = Color.Gray
+                    )
                 )
-                Spacer(Modifier.width(4.dp))
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    isSearching = false
-                    searchQuery = ""
-                    focusManager.clearFocus()
-                }) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Cancel search",
-                        tint = textColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(barColor)
-                    .padding(vertical = 4.dp, horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onBack()
-                }) {
-                    Icon(
-                        Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = textColor,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                Spacer(Modifier.height(16.dp))
                 Row(
-                    modifier = Modifier
-                        .clickable {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            isSearching = true
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = textColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        "(LIKED)",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = textColor
-                    )
-                }
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onNavigateQueue()
-                }) {
-                    Icon(
-                        Icons.Default.QueueMusic,
-                        contentDescription = "Queue",
-                        tint = textColor,
-                        modifier = Modifier.size(26.dp)
-                    )
+                    TextButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onDismiss()
+                    }) {
+                        Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Red)
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                if (link.isNotBlank()) onPlay(link)
+                            }
+                            .padding(horizontal = 20.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            "Play",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
                 }
             }
         }
