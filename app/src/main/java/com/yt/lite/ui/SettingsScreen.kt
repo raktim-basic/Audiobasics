@@ -176,7 +176,7 @@ private fun SettingsMainPage(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Cache",
-                    subtitle = "Offline songs",
+                    subtitle = "Offline songs management",
                     icon = {
                         Icon(
                             Icons.Default.Storage,
@@ -198,7 +198,7 @@ private fun SettingsMainPage(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Library",
-                    subtitle = "Export and import your data",
+                    subtitle = "Export and import your playlists",
                     icon = {
                         Icon(
                             Icons.Default.LibraryMusic,
@@ -220,7 +220,7 @@ private fun SettingsMainPage(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Desk Connect",
-                    subtitle = "Coming soon",
+                    subtitle = "Coming soon :D",
                     icon = {
                         Icon(
                             Icons.Default.Computer,
@@ -444,7 +444,7 @@ private fun AppearancePage(
             )
             Spacer(Modifier.width(16.dp))
             Text(
-                text = "Haptic feedback",
+                text = "Haptic feedback (vibration)",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
@@ -675,7 +675,7 @@ private fun LibraryPage(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "This will replace your current liked songs and saved albums. All existing data will be lost. Are you sure?",
+                        text = "This will replace your current liked songs and saved albums. All your previous collection will be gone :(  Are you sure?",
                         fontFamily = NothingFont,
                         fontSize = 14.sp,
                         color = subTextColor
