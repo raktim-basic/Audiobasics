@@ -22,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -194,7 +195,6 @@ fun AudiobasicsApp(
     }
 
     fun navigate(screen: Screen) { screenStack = screenStack + screen }
-    
     fun navigateBack() {
         if (screenStack.size > 1) {
             if (screenStack.last() is Screen.Search) {
@@ -239,6 +239,7 @@ fun AudiobasicsApp(
             .fillMaxSize()
             .background(rootBgColor)
             .systemBarsPadding()
+            .imePadding()
     ) {
         Box(modifier = Modifier.weight(1f)) {
             AnimatedContent(
@@ -317,19 +318,17 @@ fun AudiobasicsApp(
             }
         }
 
-        currentSong?.let { song ->
-            val isLiked = likedSongs.any { it.id == song.id }
-            PlayerBar(
-                vm = vm,
-                song = song,
-                isPlaying = isPlaying,
-                isLoading = isLoading,
-                isLiked = isLiked,
-                isDarkMode = isDarkMode,
-                onToggle = vm::togglePlayPause,
-                onLike = { vm.toggleLike(song) },
-                onTap = { showPlayerDialog = true }
-            )
-        }
+        val isLiked = currentSong?.let { song -> likedSongs.any { it.id == song.id } } ?: false
+        PlayerBar(
+            vm = vm,
+            song = currentSong,
+            isPlaying = isPlaying,
+            isLoading = isLoading,
+            isLiked = isLiked,
+            isDarkMode = isDarkMode,
+            onToggle = vm::togglePlayPause,
+            onLike = { currentSong?.let { vm.toggleLike(it) } },
+            onTap = { showPlayerDialog = true }
+        )
     }
 }
