@@ -192,8 +192,15 @@ fun AudiobasicsApp(
     }
 
     fun navigate(screen: Screen) { screenStack = screenStack + screen }
+    
     fun navigateBack() {
-        if (screenStack.size > 1) screenStack = screenStack.dropLast(1)
+        if (screenStack.size > 1) {
+            // Check if the screen we are exiting is the Search screen
+            if (screenStack.last() is Screen.Search) {
+                vm.clearSearch()
+            }
+            screenStack = screenStack.dropLast(1)
+        }
     }
 
     BackHandler(enabled = screenStack.size > 1) { navigateBack() }
@@ -302,17 +309,19 @@ fun AudiobasicsApp(
             }
         }
 
-        val isLiked = currentSong?.let { likedSongs.any { liked -> liked.id == it.id } } ?: false
-        PlayerBar(
-            vm = vm,
-            song = currentSong,
-            isPlaying = isPlaying,
-            isLoading = isLoading,
-            isLiked = isLiked,
-            isDarkMode = isDarkMode,
-            onToggle = vm::togglePlayPause,
-            onLike = { currentSong?.let { vm.toggleLike(it) } },
-            onTap = { showPlayerDialog = true }
-        )
+        currentSong?.let { song ->
+            val isLiked = likedSongs.any { it.id == song.id }
+            PlayerBar(
+                vm = vm,
+                song = song,
+                isPlaying = isPlaying,
+                isLoading = isLoading,
+                isLiked = isLiked,
+                isDarkMode = isDarkMode,
+                onToggle = vm::togglePlayPause,
+                onLike = { vm.toggleLike(song) },
+                onTap = { showPlayerDialog = true }
+            )
+        }
     }
 }
