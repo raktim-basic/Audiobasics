@@ -675,7 +675,7 @@ private fun LibraryPage(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "This will replace your current liked songs and saved albums. All your previous collection will be gone :(  Are you sure?",
+                        text = "This will replace your current liked songs and saved albums. All your previous collection will be gone      :(  Are you sure?",
                         fontFamily = NothingFont,
                         fontSize = 14.sp,
                         color = subTextColor
