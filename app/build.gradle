@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace 'com.yt.lite'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.yt.lite'
