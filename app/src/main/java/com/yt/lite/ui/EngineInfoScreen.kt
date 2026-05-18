@@ -26,7 +26,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import com.yt.lite.ui.theme.NothingFont
 
-private const val NEWPIPE_CURRENT = "v0.26.0"
+private const val NEWPIPE_CURRENT = "v0.26.1"
 private const val YTM_CURRENT = "1.20240101.01.00"
 
 private suspend fun fetchLatestNewPipeVersion(): String? = withContext(Dispatchers.IO) {
@@ -65,7 +65,6 @@ fun EngineInfoScreen(
             .background(bgColor),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Back button top left
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -94,7 +93,6 @@ fun EngineInfoScreen(
         Spacer(Modifier.height(40.dp))
 
         Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-            // NewPipe card
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -129,19 +127,10 @@ fun EngineInfoScreen(
                     fontSize = 13.sp,
                     color = subTextColor
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Current version status : Active",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = subTextColor
-                )
             }
 
             Spacer(Modifier.height(16.dp))
 
-            // YTM card
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -163,20 +152,21 @@ fun EngineInfoScreen(
                     fontSize = 13.sp,
                     color = subTextColor
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Current version status : Active",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = subTextColor
-                )
             }
+
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = "we also use innertube :)",
+                fontFamily = NothingFont,
+                fontSize = 12.sp,
+                color = subTextColor,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
         }
 
         Spacer(Modifier.weight(1f))
 
-        // Check latest version button
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -202,7 +192,7 @@ fun EngineInfoScreen(
                 )
             } else {
                 Text(
-                    text = "Check latest version",
+                    text = "check latest version",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
