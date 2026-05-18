@@ -194,6 +194,7 @@ fun AudiobasicsApp(
     }
 
     fun navigate(screen: Screen) { screenStack = screenStack + screen }
+    
     fun navigateBack() {
         if (screenStack.size > 1) {
             if (screenStack.last() is Screen.Search) {
