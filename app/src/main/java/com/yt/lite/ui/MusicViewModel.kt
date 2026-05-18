@@ -70,7 +70,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue
     
-    private val _repeatMode = MutableStateFlow(0)
+    // Initialize repeat mode from saved preferences (defaults to 0)
+    private val _repeatMode = MutableStateFlow(prefs.getInt("repeat_mode", 0))
     val repeatMode: StateFlow<Int> = _repeatMode
 
     private val _searchResults = MutableStateFlow<List<Song>>(emptyList())
@@ -97,12 +98,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
 
+    // Haptics
     private val _hapticsEnabled = MutableStateFlow(prefs.getBoolean("haptics_enabled", true))
     val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled
-    
+
+    // Updater navigation
     private val _navigateToUpdater = MutableStateFlow(false)
     val navigateToUpdater: StateFlow<Boolean> = _navigateToUpdater
 
+    // Update available flag
     private val _updateAvailable = MutableStateFlow(false)
     val updateAvailable: StateFlow<Boolean> = _updateAvailable
 
@@ -154,6 +158,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (_repeatMode.value != mapped) {
                 _repeatMode.value = mapped
+                prefs.edit().putInt("repeat_mode", mapped).apply()
             }
         }
 
@@ -214,21 +219,31 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             Player.REPEAT_MODE_ONE -> 2
             else -> 0
         }
-        if (_repeatMode.value != mappedRepeat) _repeatMode.value = mappedRepeat
+        if (_repeatMode.value != mappedRepeat) {
+            _repeatMode.value = mappedRepeat
+            prefs.edit().putInt("repeat_mode", mappedRepeat).apply()
+        }
         
         if (playing) startProgressTracking() else stopProgressTracking()
     }
 
     private fun restoreStateFromController() {
         val ctrl = controller ?: return
+        
+        // Restore and apply user's saved repeat mode
+        val savedRepeat = prefs.getInt("repeat_mode", 0)
+        ctrl.repeatMode = when (savedRepeat) {
+            1 -> Player.REPEAT_MODE_ALL
+            2 -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+        _repeatMode.value = savedRepeat
+
         if (ctrl.mediaItemCount == 0) return
         val restoredQueue = (0 until ctrl.mediaItemCount).mapNotNull { i ->
             ctrl.getMediaItemAt(i).toSong()
         }
         if (restoredQueue.isNotEmpty()) _queue.value = restoredQueue
- 
-        ctrl.repeatMode = Player.REPEAT_MODE_OFF
-        _repeatMode.value = 0
         
         syncStateFromController()
     }
@@ -504,6 +519,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleRepeatMode() {
         val next = (_repeatMode.value + 1) % 3
         _repeatMode.value = next
+        prefs.edit().putInt("repeat_mode", next).apply() // Save preference
         controller?.repeatMode = when (next) {
             1 -> Player.REPEAT_MODE_ALL
             2 -> Player.REPEAT_MODE_ONE
