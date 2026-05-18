@@ -175,22 +175,14 @@ fun AlbumScreen(
                             modifier = Modifier.padding(horizontal = 20.dp)
                         )
 
-                        val releaseYear = remember(album.artist) {
-                            val lastPart = album.artist.substringAfterLast("•").trim()
-                            if (lastPart.matches(Regex("\\d{4}"))) lastPart
-                            else Regex("\\b(19|20)\\d{2}\\b").find(album.artist)?.value ?: ""
-                        }
-                        
-                        val totalDuration = albumSongs.sumOf { it.duration }
-                        val durationText = formatAlbumDuration(totalDuration)
-
-                        val detailsText = buildString {
-                            if (durationText.isNotBlank()) append(durationText)
-                            if (durationText.isNotBlank() && releaseYear.isNotBlank()) append(" • ")
-                            if (releaseYear.isNotBlank()) append(releaseYear)
-                        }
-
-                        if (detailsText.isNotBlank()) {
+                        if (albumSongs.isNotEmpty()) {
+                            val totalDuration = albumSongs.sumOf { it.duration }
+                            val durationText = formatAlbumDuration(totalDuration)
+                            val detailsText = if (durationText.isNotBlank()) {
+                                "$durationText • ${albumSongs.size} tracks"
+                            } else {
+                                "${albumSongs.size} tracks"
+                            }
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 text = detailsText,
