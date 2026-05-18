@@ -18,9 +18,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -157,7 +159,7 @@ sealed class Screen {
     object Home : Screen()
     object Search : Screen()
     object Queue : Screen()
-    data class Settings(val openCache: Boolean = false) : Screen() // Added flag here
+    data class Settings(val openCache: Boolean = false) : Screen()
     object Liked : Screen()
     object Albums : Screen()
     object Updater : Screen()
@@ -192,10 +194,8 @@ fun AudiobasicsApp(
     }
 
     fun navigate(screen: Screen) { screenStack = screenStack + screen }
-    
     fun navigateBack() {
         if (screenStack.size > 1) {
-            // Check if the screen we are exiting is the Search screen
             if (screenStack.last() is Screen.Search) {
                 vm.clearSearch()
             }
@@ -231,7 +231,14 @@ fun AudiobasicsApp(
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    val rootBgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(rootBgColor)
+            .systemBarsPadding()
+    ) {
         Box(modifier = Modifier.weight(1f)) {
             AnimatedContent(
                 targetState = currentScreen,
@@ -270,7 +277,7 @@ fun AudiobasicsApp(
                     is Screen.Settings -> SettingsScreen(
                         vm = vm,
                         isDarkMode = isDarkMode,
-                        openCache = screen.openCache, // Passing the flag to SettingsScreen
+                        openCache = screen.openCache,
                         onBack = { navigateBack() },
                         onNavigateUpdater = { navigate(Screen.Updater) }
                     )
@@ -279,7 +286,7 @@ fun AudiobasicsApp(
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
                         onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) } // Navigates with flag
+                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) }
                     )
                     is Screen.Albums -> SavedAlbumsScreen(
                         vm = vm,
