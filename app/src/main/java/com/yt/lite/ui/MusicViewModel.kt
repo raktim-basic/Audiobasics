@@ -13,6 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -69,8 +70,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue
-    
-    // Initialize repeat mode from saved preferences (defaults to 0)
+
     private val _repeatMode = MutableStateFlow(prefs.getInt("repeat_mode", 0))
     val repeatMode: StateFlow<Int> = _repeatMode
 
@@ -98,17 +98,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
 
-    // Haptics
     private val _hapticsEnabled = MutableStateFlow(prefs.getBoolean("haptics_enabled", true))
     val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled
 
-    // Updater navigation
     private val _navigateToUpdater = MutableStateFlow(false)
     val navigateToUpdater: StateFlow<Boolean> = _navigateToUpdater
 
-    // Update available flag
     private val _updateAvailable = MutableStateFlow(false)
     val updateAvailable: StateFlow<Boolean> = _updateAvailable
+
+    private var fallbackRetryCount = 0
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
@@ -122,6 +121,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            fallbackRetryCount = 0
             _isLoading.value = true
             _currentPosition.value = 0L
             _duration.value = 0L
@@ -135,6 +135,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         override fun onPlaybackStateChanged(state: Int) {
             when (state) {
                 Player.STATE_READY -> {
+                    fallbackRetryCount = 0
                     _isLoading.value = false
                     _duration.value = controller?.duration?.takeIf { it > 0 } ?: 0L
                     _currentPosition.value =
@@ -147,6 +148,25 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 Player.STATE_BUFFERING -> _isLoading.value = true
                 else -> {}
+            }
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            Log.e("YTLite", "Player error caught: ${error.message}", error)
+            if (fallbackRetryCount < 3) {
+                fallbackRetryCount++
+                Log.d("YTLite", "Initiating automatic fallback retry $fallbackRetryCount")
+                _isLoading.value = true
+                controller?.run {
+                    prepare()
+                    play()
+                }
+            } else {
+                Log.e("YTLite", "Fallback exhausted after 3 attempts.")
+                _isLoading.value = false
+                _isPlaying.value = false
+                _error.value = "Stream failed. Please try another song."
+                Toast.makeText(getApplication(), "Stream unavailable right now", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -230,7 +250,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private fun restoreStateFromController() {
         val ctrl = controller ?: return
         
-        // Restore and apply user's saved repeat mode
         val savedRepeat = prefs.getInt("repeat_mode", 0)
         ctrl.repeatMode = when (savedRepeat) {
             1 -> Player.REPEAT_MODE_ALL
@@ -314,6 +333,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun play(song: Song) {
         viewModelScope.launch {
+            fallbackRetryCount = 0
             _currentSong.value = song
             _isLoading.value = true
             _error.value = null
@@ -354,6 +374,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun playWithQueue(song: Song, queue: List<Song>) {
         viewModelScope.launch {
+            fallbackRetryCount = 0
             _currentSong.value = song
             _isLoading.value = true
             _error.value = null
@@ -378,6 +399,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun playByUrl(url: String) {
         viewModelScope.launch {
+            fallbackRetryCount = 0
             val videoId = extractVideoId(url)
             if (videoId == null) {
                 Toast.makeText(getApplication(), "Invalid YouTube URL", Toast.LENGTH_SHORT).show()
@@ -519,7 +541,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleRepeatMode() {
         val next = (_repeatMode.value + 1) % 3
         _repeatMode.value = next
-        prefs.edit().putInt("repeat_mode", next).apply() // Save preference
+        prefs.edit().putInt("repeat_mode", next).apply()
         controller?.repeatMode = when (next) {
             1 -> Player.REPEAT_MODE_ALL
             2 -> Player.REPEAT_MODE_ONE
@@ -655,7 +677,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             .setContentText("$done / $total ($percent%)")
             .setProgress(total, done, false)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         mgr.notify(1001, n)
     }
@@ -818,10 +840,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 context.contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(root.toString(2).toByteArray())
                 }
-                Toast.makeText(context, "Exported!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Exported! :)", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(
-                    context, "Export failed: ${e.message}", Toast.LENGTH_LONG
+                    context, "Export failed :( ${e.message}", Toast.LENGTH_LONG
                 ).show()
             }
         }
@@ -862,12 +884,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 saveSavedAlbums()
                 Toast.makeText(
                     context,
-                    "Imported ${songs.size} songs, ${albums.size} albums",
+                    "Imported :)  ${songs.size} songs, ${albums.size} albums",
                     Toast.LENGTH_LONG
                 ).show()
             } catch (e: Exception) {
                 Toast.makeText(
-                    context, "Import failed: ${e.message}", Toast.LENGTH_LONG
+                    context, "Import failed :( ${e.message}", Toast.LENGTH_LONG
                 ).show()
             }
         }
