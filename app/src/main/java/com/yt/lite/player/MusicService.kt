@@ -27,11 +27,11 @@ class MusicService : MediaSessionService() {
         super.onCreate()
 
         val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0")
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+            .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15000)
             .setReadTimeoutMs(15000)
 
-        // Factory that picks file or http based on URI scheme
         val uriAwareFactory = DataSource.Factory {
             httpFactory.createDataSource()
         }
@@ -40,7 +40,6 @@ class MusicService : MediaSessionService() {
             val uriString = dataSpec.uri.toString()
             when {
                 uriString.startsWith("file://") -> {
-                    // Already a local file — no resolution needed
                     dataSpec
                 }
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
@@ -57,7 +56,6 @@ class MusicService : MediaSessionService() {
             }
         }
 
-        // Wrap with a factory that routes file:// to FileDataSource
         val finalFactory = DataSource.Factory {
             object : androidx.media3.datasource.DataSource {
                 private var delegate: androidx.media3.datasource.DataSource =
