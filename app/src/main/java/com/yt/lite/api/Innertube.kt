@@ -35,7 +35,7 @@ object Innertube {
         append("YFDNX30")
     }
     private const val YTM_CLIENT_NAME = "WEB_REMIX"
-    private const val YTM_CLIENT_VERSION = "1.20240515.01.00"
+    private const val YTM_CLIENT_VERSION = "1.20260520.01.00"
 
     private fun ytmContext(): JSONObject = JSONObject().put(
         "client", JSONObject()
@@ -51,7 +51,7 @@ object Innertube {
             val request = Request.Builder()
                 .url("$YTM_BASE/$endpoint?key=$YTM_KEY")
                 .addHeader("Content-Type", "application/json")
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/")
                 .addHeader("X-YouTube-Client-Name", "67")
@@ -569,7 +569,7 @@ object NewPipeDownloader : Downloader() {
             .url(request.url())
             .addHeader(
                 "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
             )
             .addHeader("Accept-Language", "en-US,en;q=0.9")
             .addHeader(
