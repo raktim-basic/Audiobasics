@@ -374,22 +374,12 @@ fun QueueScreen(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 vm.toggleRepeatMode()
             }) {
-                if (repeatMode == 0) {
-                    Text(
-                        text = ">]",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = textColor
-                    )
-                } else {
-                    Icon(
-                        imageVector = if (repeatMode == 1) Icons.Default.Repeat else Icons.Default.RepeatOne,
-                        contentDescription = "Repeat Mode",
-                        tint = Color.Red,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                Icon(
+                    imageVector = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                    contentDescription = "Repeat Mode",
+                    tint = if (repeatMode == 0) textColor else Color.Red,
+                    modifier = Modifier.size(26.dp)
+                )
             }
         }
     }
