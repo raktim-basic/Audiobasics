@@ -37,6 +37,8 @@ object Innertube {
     private const val YTM_CLIENT_NAME = "WEB_REMIX"
     private const val YTM_CLIENT_VERSION = "1.20260520.01.00"
 
+    private const val CHROME_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+
     private fun ytmContext(): JSONObject = JSONObject().put(
         "client", JSONObject()
             .put("clientName", YTM_CLIENT_NAME)
@@ -51,7 +53,7 @@ object Innertube {
             val request = Request.Builder()
                 .url("$YTM_BASE/$endpoint?key=$YTM_KEY")
                 .addHeader("Content-Type", "application/json")
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+                .addHeader("User-Agent", CHROME_USER_AGENT)
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/")
                 .addHeader("X-YouTube-Client-Name", "67")
@@ -490,6 +492,7 @@ object Innertube {
             null
         }
     }
+
     private fun getInnerTubeStreamFast(videoId: String): String? {
         return try {
             val body = JSONObject().put("videoId", videoId).put(
@@ -504,6 +507,7 @@ object Innertube {
             val request = Request.Builder()
                 .url("$YTM_BASE/player?key=$YTM_KEY")
                 .addHeader("Content-Type", "application/json")
+                .addHeader("User-Agent", CHROME_USER_AGENT)
                 .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
                 .build()
 
@@ -609,14 +613,20 @@ object NewPipeDownloader : Downloader() {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private const val CHROME_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+
     override fun execute(
         request: org.schabi.newpipe.extractor.downloader.Request
     ): Response {
         val rb = Request.Builder().url(request.url())
 
+        rb.header("User-Agent", CHROME_USER_AGENT)
+
         val requestedHeaders = request.headers() ?: emptyMap()
         requestedHeaders.forEach { (k, v) -> 
-            v.forEach { rb.addHeader(k, it) } 
+            if (!k.equals("User-Agent", ignoreCase = true)) {
+                v.forEach { rb.addHeader(k, it) } 
+            }
         }
 
         if (!requestedHeaders.containsKey("Accept-Language")) {
