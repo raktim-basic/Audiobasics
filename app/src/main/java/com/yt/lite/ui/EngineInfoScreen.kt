@@ -139,7 +139,7 @@ fun EngineInfoScreen(
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "YTM web remix",
+                    text = "Innertube version",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
@@ -157,7 +157,7 @@ fun EngineInfoScreen(
             Spacer(Modifier.height(10.dp))
 
             Text(
-                text = "we also use innertube :)",
+                text = "YTM web remix by Innertube :)",
                 fontFamily = NothingFont,
                 fontSize = 12.sp,
                 color = subTextColor,
