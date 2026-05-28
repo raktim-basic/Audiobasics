@@ -35,7 +35,7 @@ object Innertube {
         append("YFDNX30")
     }
     private const val YTM_CLIENT_NAME = "WEB_REMIX"
-    private const val YTM_CLIENT_VERSION = "1.20240101.01.00"
+    private const val YTM_CLIENT_VERSION = "1.20240515.01.00"
 
     private fun ytmContext(): JSONObject = JSONObject().put(
         "client", JSONObject()
@@ -51,7 +51,7 @@ object Innertube {
             val request = Request.Builder()
                 .url("$YTM_BASE/$endpoint?key=$YTM_KEY")
                 .addHeader("Content-Type", "application/json")
-                .addHeader("User-Agent", "Mozilla/5.0")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/")
                 .addHeader("X-YouTube-Client-Name", "67")
@@ -115,7 +115,6 @@ object Innertube {
     }
 
     private fun parseDurationMs(item: JSONObject): Long {
-        // Check fixedColumns first — duration lives here in album tracks
         val fixedCols = item.optJSONArray("fixedColumns")
         if (fixedCols != null) {
             for (fc in 0 until fixedCols.length()) {
@@ -129,7 +128,6 @@ object Innertube {
                 }
             }
         }
-        // Fallback: flexColumns
         val flexCols = item.optJSONArray("flexColumns") ?: return 0L
         for (fc in 0 until flexCols.length()) {
             val runs = flexCols.optJSONObject(fc)
@@ -386,81 +384,10 @@ object Innertube {
         fallbackArtist: String = ""
     ): Pair<Album?, List<Song>> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
-        var album: Album? = null
-
         try {
-            var albumTitle = "Unknown Album"
-            // Use fallbackArtist (from search result) as starting value
-            var albumArtist = fallbackArtist.ifBlank { "Unknown Artist" }
-            var albumThumb = ""
-
-            // STEP 1: Browse the browseId (MPREb_ or OLAK5uy_)
             val step1 = ytmPost("browse", JSONObject().put("browseId", browseId))
                 ?: return@withContext Pair(null, emptyList())
 
-            // Header: twoColumnBrowseResultsRenderer → tabs[0] →
-            // sectionListRenderer → contents[0] → musicResponsiveHeaderRenderer
-            val headerRenderer = step1
-                .optJSONObject("contents")
-                ?.optJSONObject("twoColumnBrowseResultsRenderer")
-                ?.optJSONArray("tabs")
-                ?.optJSONObject(0)
-                ?.optJSONObject("tabRenderer")
-                ?.optJSONObject("content")
-                ?.optJSONObject("sectionListRenderer")
-                ?.optJSONArray("contents")
-                ?.optJSONObject(0)
-                ?.optJSONObject("musicResponsiveHeaderRenderer")
-
-            if (headerRenderer != null) {
-                albumTitle = headerRenderer.optJSONObject("title")
-                    ?.optJSONArray("runs")?.optJSONObject(0)
-                    ?.optString("text") ?: "Unknown Album"
-
-                // Artist from straplineTextOne
-                val strapRuns = headerRenderer.optJSONObject("straplineTextOne")
-                    ?.optJSONArray("runs")
-                if (strapRuns != null) {
-                    val artists = mutableListOf<String>()
-                    for (r in 0 until strapRuns.length()) {
-                        val t = strapRuns.optJSONObject(r)
-                            ?.optString("text", "") ?: ""
-                        if (t == " & " || t == ", " || t.isBlank()) continue
-                        artists.add(t)
-                    }
-                    if (artists.isNotEmpty()) albumArtist = artists.joinToString(", ")
-                }
-
-                // Fallback artist from subtitle
-                if (albumArtist == fallbackArtist.ifBlank { "Unknown Artist" } &&
-                    albumArtist == "Unknown Artist") {
-                    val subRuns = headerRenderer.optJSONObject("subtitle")
-                        ?.optJSONArray("runs")
-                    if (subRuns != null) {
-                        var nonSep = 0
-                        for (r in 0 until subRuns.length()) {
-                            val t = subRuns.optJSONObject(r)
-                                ?.optString("text", "") ?: ""
-                            if (t == " • " || t == "•" || t.isBlank()) continue
-                            nonSep++
-                            if (nonSep == 2 && !t.all { c -> c.isDigit() }) {
-                                albumArtist = t; break
-                            }
-                        }
-                    }
-                }
-
-                // Thumbnail
-                val thumbs = headerRenderer.optJSONObject("thumbnail")
-                    ?.optJSONObject("musicThumbnailRenderer")
-                    ?.optJSONObject("thumbnail")
-                    ?.optJSONArray("thumbnails")
-                if (thumbs != null && thumbs.length() > 0)
-                    albumThumb = thumbs.getJSONObject(thumbs.length() - 1)
-                        .optString("url", "")
-            }
-
-            // Get playlistId from microformat (Metrolist's exact method)
             var playlistId: String? = step1
                 .optJSONObject("microformat")
                 ?.optJSONObject("microformatDataRenderer")
@@ -468,18 +395,15 @@ object Innertube {
                 ?.substringAfterLast("=")
                 ?.takeIf { it.isNotBlank() }
 
-            // If browseId is already OLAK5uy_, use directly
             if (playlistId == null && browseId.startsWith("OLAK5uy_")) {
                 playlistId = browseId
             }
 
-            // Regex fallback
             if (playlistId == null) {
                 playlistId = Regex("\"playlistId\":\"(OLAK5uy_[^\"]+)\"")
                     .find(step1.toString())?.groupValues?.get(1)
             }
 
-            // STEP 2: Browse "VL$playlistId" with WEB_REMIX (Metrolist's exact method)
             if (playlistId != null) {
                 val step2 = ytmPost(
                     "browse",
@@ -504,7 +428,6 @@ object Innertube {
                                     .optJSONObject("musicResponsiveListItemRenderer")
                                     ?: continue
 
-                                // Metrolist uses playlistItemData.videoId
                                 val videoId = item
                                     .optJSONObject("playlistItemData")
                                     ?.optString("videoId")
@@ -530,7 +453,7 @@ object Innertube {
                                 songs.add(Song(
                                     id = videoId,
                                     title = songTitle,
-                                    artist = albumArtist,
+                                    artist = fallbackArtist.ifBlank { "Unknown Artist" },
                                     thumbnail = ytThumbnail(videoId),
                                     duration = parseDurationMs(item),
                                     albumId = browseId,
@@ -543,19 +466,8 @@ object Innertube {
                     }
                 }
             }
-
-            album = Album(
-                id = browseId,
-                title = albumTitle,
-                artist = albumArtist,
-                thumbnail = albumThumb,
-                songCount = songs.size,
-                youtubeUrl = "https://music.youtube.com/browse/$browseId"
-            )
-
         } catch (_: Exception) {}
-
-        Pair(album, songs)
+        Pair(null, songs)
     }
 
     suspend fun getVideoMetadata(videoId: String): Song? = withContext(Dispatchers.IO) {
@@ -657,8 +569,7 @@ object NewPipeDownloader : Downloader() {
             .url(request.url())
             .addHeader(
                 "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                        "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
             .addHeader("Accept-Language", "en-US,en;q=0.9")
             .addHeader(
