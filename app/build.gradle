@@ -12,8 +12,8 @@ android {
         applicationId 'com.yt.lite'
         minSdk 26
         targetSdk 36
-        versionCode 8
-        versionName '2.2'
+        versionCode 9
+        versionName '2.2.1'
     }
 
     signingConfigs {
@@ -85,5 +85,5 @@ dependencies {
 
     implementation 'io.coil-kt:coil-compose:2.6.0'
 
-    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.1'
+    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.2'
 }
