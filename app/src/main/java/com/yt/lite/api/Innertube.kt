@@ -490,9 +490,56 @@ object Innertube {
             null
         }
     }
+    private fun getInnerTubeStreamFast(videoId: String): String? {
+        return try {
+            val body = JSONObject().put("videoId", videoId).put(
+                "context", JSONObject().put(
+                    "client", JSONObject()
+                        .put("clientName", "ANDROID_MUSIC")
+                        .put("clientVersion", "6.41.52")
+                        .put("hl", "en")
+                        .put("gl", "US")
+                )
+            )
+            val request = Request.Builder()
+                .url("$YTM_BASE/player?key=$YTM_KEY")
+                .addHeader("Content-Type", "application/json")
+                .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
+                .build()
+
+            val response = ytMusicClient.newCall(request).execute()
+            val text = response.body?.string() ?: return null
+            val json = JSONObject(text)
+
+            val status = json.optJSONObject("playabilityStatus")?.optString("status")
+            if (status != "OK") return null 
+
+            val formats = json.optJSONObject("streamingData")?.optJSONArray("adaptiveFormats") ?: return null
+            for (i in 0 until formats.length()) {
+                val f = formats.getJSONObject(i)
+                if (f.optString("mimeType").startsWith("audio/")) {
+                    val url = f.optString("url", "")
+                    if (url.isNotEmpty()) return url 
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     suspend fun getStreamUrl(context: Context, videoId: String): String? =
         withContext(Dispatchers.IO) {
+
+            for (i in 1..2) {
+                val fastUrl = getInnerTubeStreamFast(videoId)
+                if (!fastUrl.isNullOrEmpty()) {
+                    Log.d("Innertube", "Stream resolved via InnerTube natively (Try $i)")
+                    return@withContext fastUrl
+                }
+            }
+
+            Log.d("Innertube", "Using newpipe")
             initNewPipe()
             try {
                 val extractor = ServiceList.YouTube
@@ -502,7 +549,7 @@ object Innertube {
                 streams.filter { it.content != null && it.content.isNotEmpty() }
                     .maxByOrNull { it.averageBitrate }?.content
             } catch (e: Exception) {
-                Log.e("Innertube", "Stream error $videoId: ${e.message}")
+                Log.e("Innertube", "Stream fallback error $videoId: ${e.message}")
                 null
             }
         }
@@ -565,19 +612,19 @@ object NewPipeDownloader : Downloader() {
     override fun execute(
         request: org.schabi.newpipe.extractor.downloader.Request
     ): Response {
-        val rb = Request.Builder()
-            .url(request.url())
-            .addHeader(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
-            )
-            .addHeader("Accept-Language", "en-US,en;q=0.9")
-            .addHeader(
-                "Cookie",
-                "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg"
-            )
+        val rb = Request.Builder().url(request.url())
 
-        request.headers()?.forEach { (k, v) -> v.forEach { rb.addHeader(k, it) } }
+        val requestedHeaders = request.headers() ?: emptyMap()
+        requestedHeaders.forEach { (k, v) -> 
+            v.forEach { rb.addHeader(k, it) } 
+        }
+
+        if (!requestedHeaders.containsKey("Accept-Language")) {
+            rb.addHeader("Accept-Language", "en-US,en;q=0.9")
+        }
+        if (!requestedHeaders.containsKey("Cookie")) {
+            rb.addHeader("Cookie", "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
+        }
 
         when (request.httpMethod()) {
             "POST" -> {
