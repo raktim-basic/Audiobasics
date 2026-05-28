@@ -35,6 +35,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.yt.lite.data.Album
@@ -84,7 +85,9 @@ class MainActivity : ComponentActivity() {
         checkForUpdateAndNotify()
 
         setContent {
-            val vm: MusicViewModel = viewModel()
+            val vm: MusicViewModel = viewModel(
+                factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+            )
             val isDarkMode by vm.isDarkMode.collectAsState()
 
             val openUpdater = intent.getBooleanExtra("OPEN_UPDATER", false)
@@ -110,9 +113,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        intent?.let { setIntent(it) }
+  
         if (intent?.getBooleanExtra("OPEN_UPDATER", false) == true) {
-            finish()
-            startActivity(intent)
+            val vm = ViewModelProvider(
+                this, 
+                ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+            )[MusicViewModel::class.java]
+            
+            vm.triggerUpdater()
         }
     }
 
