@@ -140,8 +140,8 @@ fun UpdaterScreen(
 
         if (checked) {
             Text(
-                text = if (updateAvailable) "An update is available"
-                       else "You're currently running the latest version",
+                text = if (updateAvailable) "An update is available. Update asap"
+                       else "You're currently running the absolute latest version",
                 fontFamily = NothingFont,
                 fontSize = 13.sp,
                 color = subTextColor,
