@@ -34,8 +34,8 @@ class MusicService : MediaSessionService() {
             .setDefaultRequestProperties(
                 mapOf(
                     "Cookie" to "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg",
-                    "Referer" to "https://music.youtube.com/",
-                    "Origin" to "https://music.youtube.com"
+                    "Referer" to "https://www.youtube.com/",
+                    "Origin" to "https://www.youtube.com"
                 )
             )
 
