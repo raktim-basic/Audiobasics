@@ -532,18 +532,20 @@ object Innertube {
         }
     }
 
-    suspend fun getStreamUrl(context: Context, videoId: String): String? =
+    suspend fun getStreamUrl(context: Context, videoId: String, forceFallback: Boolean = false): String? =
         withContext(Dispatchers.IO) {
 
-            for (i in 1..2) {
-                val fastUrl = getInnerTubeStreamFast(videoId)
-                if (!fastUrl.isNullOrEmpty()) {
-                    Log.d("Innertube", "Stream resolved via InnerTube natively (Try $i)")
-                    return@withContext fastUrl
+            if (!forceFallback) {
+                for (i in 1..2) {
+                    val fastUrl = getInnerTubeStreamFast(videoId)
+                    if (!fastUrl.isNullOrEmpty()) {
+                        Log.d("Innertube", "Stream resolved via InnerTube natively (Try $i)")
+                        return@withContext fastUrl
+                    }
                 }
             }
 
-            Log.d("Innertube", "Using newpipe")
+            Log.d("Innertube", "Using newpipe (Fallback Forced: $forceFallback)")
             initNewPipe()
             try {
                 val extractor = ServiceList.YouTube
