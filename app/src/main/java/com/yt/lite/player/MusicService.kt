@@ -31,6 +31,13 @@ class MusicService : MediaSessionService() {
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15000)
             .setReadTimeoutMs(15000)
+            .setDefaultRequestProperties(
+                mapOf(
+                    "Cookie" to "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg",
+                    "Referer" to "https://music.youtube.com/",
+                    "Origin" to "https://music.youtube.com"
+                )
+            )
 
         val uriAwareFactory = DataSource.Factory {
             httpFactory.createDataSource()
@@ -39,14 +46,13 @@ class MusicService : MediaSessionService() {
         val resolvingFactory = ResolvingDataSource.Factory(uriAwareFactory) { dataSpec ->
             val uriString = dataSpec.uri.toString()
             when {
-                uriString.startsWith("file://") -> {
-                    dataSpec
-                }
+                uriString.startsWith("file://") -> dataSpec
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
+                    val forceFallback = uriString.contains("fallback=true")
                     val videoId = extractVideoId(uriString)
                     if (videoId != null) {
                         val realUrl = runBlocking {
-                            Innertube.getStreamUrl(this@MusicService, videoId)
+                            Innertube.getStreamUrl(this@MusicService, videoId, forceFallback)
                         }
                         if (realUrl != null) dataSpec.withUri(Uri.parse(realUrl))
                         else dataSpec
@@ -90,10 +96,11 @@ class MusicService : MediaSessionService() {
             when {
                 uriString.startsWith("file://") -> dataSpec
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
+                    val forceFallback = uriString.contains("fallback=true")
                     val videoId = extractVideoId(uriString)
                     if (videoId != null) {
                         val realUrl = runBlocking {
-                            Innertube.getStreamUrl(this@MusicService, videoId)
+                            Innertube.getStreamUrl(this@MusicService, videoId, forceFallback)
                         }
                         if (realUrl != null) dataSpec.withUri(Uri.parse(realUrl))
                         else dataSpec
@@ -127,13 +134,14 @@ class MusicService : MediaSessionService() {
     }
 
     private fun extractVideoId(url: String): String? {
+        val cleanUrl = url.substringBefore("&fallback=true")
         val patterns = listOf(
             Regex("v=([a-zA-Z0-9_-]{11})"),
             Regex("youtu\\.be/([a-zA-Z0-9_-]{11})"),
             Regex("embed/([a-zA-Z0-9_-]{11})")
         )
         for (pattern in patterns) {
-            val match = pattern.find(url)
+            val match = pattern.find(cleanUrl)
             if (match != null) return match.groupValues[1]
         }
         return null
