@@ -498,14 +498,15 @@ object Innertube {
             val body = JSONObject().put("videoId", videoId).put(
                 "context", JSONObject().put(
                     "client", JSONObject()
-                        .put("clientName", "ANDROID_MUSIC")
-                        .put("clientVersion", "6.41.52")
+                        .put("clientName", "TVHTML5")
+                        .put("clientVersion", "7.20240214.02.00")
+                        .put("tvAppInfo", JSONObject().put("appVersion", "7.20240214.02.00"))
                         .put("hl", "en")
                         .put("gl", "US")
                 )
             )
             val request = Request.Builder()
-                .url("$YTM_BASE/player?key=$YTM_KEY")
+                .url("https://www.youtube.com/youtubei/v1/player?key=$YTM_KEY")
                 .addHeader("Content-Type", "application/json")
                 .addHeader("User-Agent", CHROME_USER_AGENT)
                 .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
@@ -534,7 +535,6 @@ object Innertube {
 
     suspend fun getStreamUrl(context: Context, videoId: String, forceFallback: Boolean = false): String? =
         withContext(Dispatchers.IO) {
-
             if (!forceFallback) {
                 for (i in 1..2) {
                     val fastUrl = getInnerTubeStreamFast(videoId)
