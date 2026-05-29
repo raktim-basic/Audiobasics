@@ -153,16 +153,28 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
         override fun onPlayerError(error: PlaybackException) {
             Log.e("YTLite", "Player error caught: ${error.message}", error)
-            if (fallbackRetryCount < 3) {
+            
+            if (fallbackRetryCount < 1) {
                 fallbackRetryCount++
-                Log.d("YTLite", "Initiating automatic fallback retry $fallbackRetryCount")
+                Log.d("YTLite", "Initiating automatic fallback retry with NewPipe!")
                 _isLoading.value = true
-                controller?.run {
-                    prepare()
-                    play()
+                
+                val currentSong = _currentSong.value
+                val ctrl = controller
+                if (currentSong != null && ctrl != null) {
+                    val currentIndex = ctrl.currentMediaItemIndex
+                    val currentPos = ctrl.currentPosition.coerceAtLeast(0L)
+
+                    val fallbackUri = resolveUri(currentSong, forceFallback = true)
+                    val newMediaItem = buildMediaItem(currentSong, fallbackUri)
+
+                    ctrl.replaceMediaItem(currentIndex, newMediaItem)
+                    ctrl.seekTo(currentIndex, currentPos)
+                    ctrl.prepare()
+                    ctrl.play()
                 }
             } else {
-                Log.e("YTLite", "Fallback exhausted after 3 attempts.")
+                Log.e("YTLite", "Fallback exhausted.")
                 _isLoading.value = false
                 _isPlaying.value = false
                 _error.value = "Stream failed. Please try another song."
@@ -447,10 +459,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         return null
     }
 
-    private fun resolveUri(song: Song): String {
+    private fun resolveUri(song: Song, forceFallback: Boolean = false): String {
         val cached = CacheManager.getCachedFilePath(getApplication(), song.id)
         return if (cached != null) "file://$cached"
-        else "https://www.youtube.com/watch?v=${song.id}"
+        else "https://www.youtube.com/watch?v=${song.id}${if (forceFallback) "&fallback=true" else ""}"
     }
 
     private fun resolveArtworkUri(song: Song): Uri {
