@@ -7,13 +7,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.annotation.MainThread
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import okhttp3.Headers.Companion.toHeaders
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -23,17 +17,11 @@ import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class PoTokenWebView private constructor(
-    context: Context,
-    private val continuation: Continuation<PoTokenWebView>,
-) {
+class PoTokenWebView private constructor(context: Context, private val continuation: Continuation<PoTokenWebView>) {
     private val webView = WebView(context)
     private val scope = MainScope()
     private val poTokenContinuations = ConcurrentHashMap<String, Continuation<String>>()
-    
-    private val exceptionHandler = CoroutineExceptionHandler { _, t ->
-        onInitializationErrorCloseAndCancel(t)
-    }
+    private val exceptionHandler = CoroutineExceptionHandler { _, t -> onInitializationErrorCloseAndCancel(t) }
 
     init {
         webView.settings.apply {
@@ -41,12 +29,10 @@ class PoTokenWebView private constructor(
             mediaPlaybackRequiresUserGesture = false
         }
         webView.addJavascriptInterface(this, JS_INTERFACE)
-
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                val level = consoleMessage.messageLevel()
                 val msg = "[WebView] ${consoleMessage.message()}"
-                when (level) {
+                when (consoleMessage.messageLevel()) {
                     ConsoleMessage.MessageLevel.ERROR -> Log.e(TAG, msg)
                     ConsoleMessage.MessageLevel.WARNING -> Log.w(TAG, msg)
                     else -> Log.d(TAG, msg)
@@ -60,30 +46,22 @@ class PoTokenWebView private constructor(
             val html = withContext(Dispatchers.IO) {
                 context.assets.open("po_token.html").bufferedReader().use { it.readText() }
             }
-            
-            val finalHtml = html.replace(
-                "", 
-                "<script>loadBotGuard($challengeData);</script>"
-            )
-            
+            val finalHtml = html.replace("", "<script>loadBotGuard($challengeData);</script>")
             webView.loadDataWithBaseURL("https://www.youtube.com", finalHtml, "text/html", "utf-8", null)
         }
     }
 
-    suspend fun generatePoToken(identifier: String): String {
-        return withContext(Dispatchers.Main) {
-            suspendCancellableCoroutine { cont ->
-                poTokenContinuations[identifier] = cont
-                webView.evaluateJavascript("obtainPoToken(\"$identifier\");", null)
-                cont.invokeOnCancellation { poTokenContinuations.remove(identifier) }
-            }
+    suspend fun generatePoToken(identifier: String): String = withContext(Dispatchers.Main) {
+        suspendCancellableCoroutine { cont ->
+            poTokenContinuations[identifier] = cont
+            webView.evaluateJavascript("obtainPoToken(\"$identifier\");", null)
+            cont.invokeOnCancellation { poTokenContinuations.remove(identifier) }
         }
     }
 
     @JavascriptInterface
     fun onPoTokenGenerated(identifier: String, token: String) {
-        val base64Token = u8ToBase64(token)
-        poTokenContinuations.remove(identifier)?.resume(base64Token)
+        poTokenContinuations.remove(identifier)?.resume(u8ToBase64(token))
     }
 
     @JavascriptInterface
@@ -104,16 +82,13 @@ class PoTokenWebView private constructor(
             .build()
             
         val response = httpClient.newCall(request).execute()
-        if (!response.isSuccessful) throw Exception("Failed to fetch BotGuard JSON: ${response.code}")
-        
-        val body = response.body?.string() ?: throw Exception("Empty response body")
-        val json = JSONObject(body)
-        val bgConfig = json.optJSONArray("playerAds")
+        val body = response.body?.string() ?: throw Exception("Empty body")
+        val bgConfig = JSONObject(body).optJSONArray("playerAds")
             ?.optJSONObject(0)?.optJSONObject("playerLegacyDesktopWatchAdsRenderer")
             ?.optJSONObject("playerAdParams")?.optJSONObject("showAdFragmentsCommand")
             ?.optJSONObject("generateIt")?.optString("bgConfig")
-            ?: throw Exception("Could not find bgConfig in ad_break payload")
-
+            ?: throw Exception("No bgConfig")
+            
         parseChallengeData(bgConfig)
     }
 
@@ -139,15 +114,12 @@ class PoTokenWebView private constructor(
         private const val REQUEST_KEY = "O43z0dpjhgX20SCx4KAo"
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.3"
         private const val JS_INTERFACE = "PoTokenWebView"
-
         private val httpClient = OkHttpClient.Builder().build()
 
-        suspend fun getNewPoTokenGenerator(context: Context): PoTokenWebView {
-            return withContext(Dispatchers.Main) {
-                suspendCancellableCoroutine { cont ->
-                    val generator = PoTokenWebView(context, cont)
-                    cont.invokeOnCancellation { generator.close() }
-                }
+        suspend fun getNewPoTokenGenerator(context: Context): PoTokenWebView = withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { cont ->
+                val generator = PoTokenWebView(context, cont)
+                cont.invokeOnCancellation { generator.close() }
             }
         }
     }
