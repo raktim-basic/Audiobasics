@@ -7,7 +7,6 @@ import kotlinx.coroutines.sync.withLock
 
 object PoTokenGenerator {
     private const val TAG = "PoTokenGenerator"
-
     private val webPoTokenGenLock = Mutex()
     private var webPoTokenSessionId: String? = null
     private var webPoTokenStreamingPot: String? = null
@@ -29,13 +28,9 @@ object PoTokenGenerator {
         val playerPot = try {
             poTokenGenerator.generatePoToken(videoId)
         } catch (throwable: Throwable) {
-            if (hasBeenRecreated) {
-                Log.e(TAG, "Failed to generate player token even after recreate", throwable)
-                throw throwable
-            } else {
-                Log.w(TAG, "Token generation failed, forcing recreate and retrying...")
-                return getWebClientPoToken(context, videoId, sessionId, forceRecreate = true)
-            }
+            if (hasBeenRecreated) throw throwable
+            Log.w(TAG, "Token generation failed, forcing recreate and retrying...")
+            return getWebClientPoToken(context, videoId, sessionId, forceRecreate = true)
         }
 
         return PoTokenResult(playerPot, streamingPot)
