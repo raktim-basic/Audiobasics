@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.yt.lite.api.potoken.PoTokenGenerator
+import com.yt.lite.api.sabr.EjsNTransformSolver
 import com.yt.lite.data.Album
 import com.yt.lite.data.Song
 import kotlinx.coroutines.Dispatchers
@@ -547,7 +548,7 @@ object Innertube {
                         val uri = Uri.parse(url)
                         val n = uri.getQueryParameter("n")
                         if (n != null) {
-                            val solvedN = YouTubeCipher.solveN(context, n, videoId)
+                            val solvedN = EjsNTransformSolver.solveN(context, n, videoId)
                             if (solvedN != null) {
                                 url = url.replace("n=$n", "n=$solvedN")
                             }
