@@ -1,7 +1,9 @@
 package com.yt.lite.api
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
+import com.yt.lite.api.potoken.PoTokenGenerator
 import com.yt.lite.data.Album
 import com.yt.lite.data.Song
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +19,8 @@ import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.stream.AudioStream
+import java.net.URLDecoder
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 object Innertube {
@@ -493,18 +497,25 @@ object Innertube {
         }
     }
 
-    private fun getInnerTubeStreamFast(videoId: String): String? {
+    private suspend fun getInnerTubeStreamFast(context: Context, videoId: String): String? {
         return try {
+            val sessionId = UUID.randomUUID().toString()
+            val poTokenResult = PoTokenGenerator.getWebClientPoToken(context, videoId, sessionId)
+
             val body = JSONObject().put("videoId", videoId).put(
                 "context", JSONObject().put(
                     "client", JSONObject()
-                        .put("clientName", "TVHTML5")
-                        .put("clientVersion", "7.20240214.02.00")
-                        .put("tvAppInfo", JSONObject().put("appVersion", "7.20240214.02.00"))
+                        .put("clientName", "WEB")
+                        .put("clientVersion", "2.20240909.00.00")
                         .put("hl", "en")
                         .put("gl", "US")
                 )
             )
+            
+            if (poTokenResult != null) {
+                body.put("serviceIntegrityDimensions", JSONObject().put("poToken", poTokenResult.playerRequestPoToken))
+            }
+
             val request = Request.Builder()
                 .url("https://www.youtube.com/youtubei/v1/player?key=$YTM_KEY")
                 .addHeader("Content-Type", "application/json")
@@ -523,21 +534,51 @@ object Innertube {
             for (i in 0 until formats.length()) {
                 val f = formats.getJSONObject(i)
                 if (f.optString("mimeType").startsWith("audio/")) {
-                    val url = f.optString("url", "")
-                    if (url.isNotEmpty()) return url 
+                    var url = f.optString("url", "")
+                    val signatureCipher = f.optString("signatureCipher", "")
+                    
+                    if (url.isEmpty() && signatureCipher.isNotEmpty()) {
+                        val parsed = parseCipher(signatureCipher)
+                        val s = parsed["s"] ?: ""
+                        url = (parsed["url"] ?: "") + "&sig=" + s
+                    }
+
+                    if (url.isNotEmpty()) {
+                        val uri = Uri.parse(url)
+                        val n = uri.getQueryParameter("n")
+                        if (n != null) {
+                            val solvedN = YouTubeCipher.solveN(context, n, videoId)
+                            if (solvedN != null) {
+                                url = url.replace("n=$n", "n=$solvedN")
+                            }
+                        }
+                        return url 
+                    }
                 }
             }
             null
         } catch (e: Exception) {
+            Log.e("Innertube", "Fast stream extraction failed: ${e.message}")
             null
         }
+    }
+
+    private fun parseCipher(cipher: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        cipher.split("&").forEach { param ->
+            val parts = param.split("=")
+            if (parts.size == 2) {
+                map[parts[0]] = URLDecoder.decode(parts[1], "UTF-8")
+            }
+        }
+        return map
     }
 
     suspend fun getStreamUrl(context: Context, videoId: String, forceFallback: Boolean = false): String? =
         withContext(Dispatchers.IO) {
             if (!forceFallback) {
                 for (i in 1..2) {
-                    val fastUrl = getInnerTubeStreamFast(videoId)
+                    val fastUrl = getInnerTubeStreamFast(context, videoId)
                     if (!fastUrl.isNullOrEmpty()) {
                         Log.d("Innertube", "Stream resolved via InnerTube natively (Try $i)")
                         return@withContext fastUrl
