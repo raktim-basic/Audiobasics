@@ -1,11 +1,27 @@
-# Preserve the JavaScript Interface so the Ghost Browser can talk to Kotlin
--keepclassmembers class com.yt.lite.api.potoken.PoTokenWebView {
+# ---------------------------------------------------------
+# THE ENGINE SHIELD (BotGuard & QuickJS)
+# ---------------------------------------------------------
+
+# 1. Protect the Javascript Interfaces (Ghost Browser)
+-keepattributes JavascriptInterface
+-keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# Preserve the PoToken models so they aren't scrambled
--keep class com.yt.lite.api.potoken.** { *; }
+# 2. Protect the API, Cipher, and PoToken packages from renaming
+-keep class com.yt.lite.api.** { *; }
 
-# Preserve QuickJS and the Cipher Engine so the math doesn't break
+# 3. Protect QuickJS Math Engine
 -keep class app.cash.quickjs.** { *; }
--keep class com.yt.lite.api.YouTubeCipher { *; }
+-dontwarn app.cash.quickjs.**
+
+# 4. Protect Kotlinx Serialization (Crucial for JSON parsing)
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.**
+-keep,includedescriptorclasses class com.yt.lite.api.**$$serializer { *; }
+-keepclassmembers class com.yt.lite.api.** {
+    *** Companion;
+}
+-keepclasseswithmembers class com.yt.lite.api.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
