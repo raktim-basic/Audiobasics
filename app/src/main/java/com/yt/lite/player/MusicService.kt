@@ -17,8 +17,10 @@ import androidx.media3.session.MediaSessionService
 import com.yt.lite.MainActivity
 import com.yt.lite.api.Innertube
 import kotlinx.coroutines.runBlocking
+import dagger.hilt.android.AndroidEntryPoint
 
 @UnstableApi
+@AndroidEntryPoint
 class MusicService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
