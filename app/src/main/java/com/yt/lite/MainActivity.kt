@@ -58,10 +58,13 @@ import com.yt.lite.ui.theme.NothingFont
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import dagger.hilt.android.AndroidEntryPoint
 
 private const val NOTIF_CHANNEL_ID = "audiobasics_updates"
 private const val NOTIF_ID = 1001
 
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
 @UnstableApi
 class MainActivity : ComponentActivity() {
 
