@@ -63,9 +63,8 @@ import dagger.hilt.android.AndroidEntryPoint
 private const val NOTIF_CHANNEL_ID = "audiobasics_updates"
 private const val NOTIF_ID = 1001
 
-@AndroidEntryPoint
-class MainActivity : ComponentActivity() {
 @UnstableApi
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val notificationPermissionLauncher = registerForActivityResult(
