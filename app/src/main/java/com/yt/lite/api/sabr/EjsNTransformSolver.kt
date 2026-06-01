@@ -1,4 +1,4 @@
-package com.yt.lite.api.sbar
+package com.yt.lite.api.sabr
 
 import android.content.Context
 import android.net.Uri
