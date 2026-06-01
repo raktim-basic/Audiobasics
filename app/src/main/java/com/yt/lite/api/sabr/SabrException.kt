@@ -1,3 +1,3 @@
-package com.metrolist.music.utils.sabr
+package com.yt.lite.api.sabr
 
 class SabrException(message: String, cause: Throwable? = null) : Exception(message, cause)
