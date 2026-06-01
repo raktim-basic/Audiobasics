@@ -1,4 +1,4 @@
-package com.yt.lite.api
+package com.yt.lite.api.potoken
 
 class PoTokenException(message: String) : Exception(message)
 
