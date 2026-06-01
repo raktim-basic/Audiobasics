@@ -1,4 +1,4 @@
-package com.yt.lite.api
+package com.yt.lite.api.cipher
 
 import android.content.Context
 import android.net.Uri
