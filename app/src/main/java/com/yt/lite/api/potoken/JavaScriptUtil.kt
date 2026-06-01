@@ -1,4 +1,4 @@
-package com.yt.lite.api
+package com.yt.lite.api.potoken
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
