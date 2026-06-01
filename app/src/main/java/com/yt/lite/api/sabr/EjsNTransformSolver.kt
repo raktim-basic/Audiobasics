@@ -1,4 +1,4 @@
-package com.metrolist.music.utils.sabr
+package com.yt.lite.api.sbar
 
 import android.content.Context
 import android.net.Uri
