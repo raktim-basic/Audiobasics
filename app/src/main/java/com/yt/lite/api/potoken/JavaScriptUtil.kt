@@ -1,4 +1,4 @@
-package com.metrolist.music.utils.potoken
+package com.yt.lite.api
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
