@@ -1,4 +1,4 @@
-package com.metrolist.music.utils.potoken
+package com.yt.lite.api
 
 class PoTokenException(message: String) : Exception(message)
 
