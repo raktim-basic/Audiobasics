@@ -69,8 +69,11 @@ jobs:
               print(f"Default icon created: {out_path}")
           EOF
 
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Build signed release APK
-        run: gradle clean assembleRelease --no-build-cache --no-configuration-cache --rerun-tasks
+        run: ./gradlew clean assembleRelease --no-build-cache --no-configuration-cache --rerun-tasks
         env:
           KEYSTORE_PATH: audiobasics.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
