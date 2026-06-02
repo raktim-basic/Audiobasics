@@ -1,10 +1,10 @@
 plugins {
-    id 'com.android.application'
+  id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.serialization'
     id 'org.jetbrains.kotlin.plugin.compose'
-    id 'com.google.devtools.ksp'
-    id 'com.google.dagger.hilt.android'
+    id 'com.google.devtools.ksp' version '2.3.7'
+    id 'com.google.dagger.hilt.android' version '2.51.1'
 }
 
 android {
