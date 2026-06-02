@@ -501,7 +501,7 @@ object Innertube {
     private suspend fun getInnerTubeStreamFast(context: Context, videoId: String): String? {
         return try {
             val sessionId = UUID.randomUUID().toString()
-            val poTokenResult = PoTokenGenerator.getWebClientPoToken(context, videoId, sessionId)
+            val poTokenResult = PoTokenGenerator().getWebClientPoToken(videoId, sessionId)
 
             val body = JSONObject().put("videoId", videoId).put(
                 "context", JSONObject().put(
@@ -545,15 +545,8 @@ object Innertube {
                     }
 
                     if (url.isNotEmpty()) {
-                        val uri = Uri.parse(url)
-                        val n = uri.getQueryParameter("n")
-                        if (n != null) {
-                            val solvedN = EjsNTransformSolver.solveN(context, n, videoId)
-                            if (solvedN != null) {
-                                url = url.replace("n=$n", "n=$solvedN")
-                            }
-                        }
-                        return url 
+                        url = EjsNTransformSolver.transformNParamInUrl(url)
+                        return url
                     }
                 }
             }
