@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.yt.lite.api.potoken.PoTokenGenerator
-import com.yt.lite.api.sabr.EjsNTransformSolver
+import com.yt.lite.api.cipher.CipherDeobfuscator
 import com.yt.lite.data.Album
 import com.yt.lite.data.Song
 import kotlinx.coroutines.Dispatchers
@@ -498,63 +498,129 @@ object Innertube {
         }
     }
 
+    // Clients to try in order. WEB_REMIX is the main one YouTube Music uses.
+    // Fallbacks handle age-restricted and regional restrictions.
+    private data class YTClient(
+        val clientName: String,
+        val clientVersion: String,
+        val userAgent: String = CHROME_USER_AGENT,
+        val usePoToken: Boolean = false
+    )
+
+    private val STREAM_CLIENTS = listOf(
+        YTClient("WEB_REMIX",  "1.20260213.01.00", usePoToken = true),
+        YTClient("TVHTML5",    "7.20260213.00.00", usePoToken = false),
+        YTClient("WEB",        "2.20260213.00.00", usePoToken = true),
+        YTClient("IOS",        "21.03.1",
+            userAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)",
+            usePoToken = false),
+    )
+
+    private val poTokenGenerator = PoTokenGenerator()
+
     private suspend fun getInnerTubeStreamFast(context: Context, videoId: String): String? {
-        return try {
+        // Generate PoToken once and reuse across client attempts
+        val poTokenResult = try {
             val sessionId = UUID.randomUUID().toString()
-            val poTokenResult = PoTokenGenerator().getWebClientPoToken(videoId, sessionId)
-
-            val body = JSONObject().put("videoId", videoId).put(
-                "context", JSONObject().put(
-                    "client", JSONObject()
-                        .put("clientName", "WEB")
-                        .put("clientVersion", "2.20240909.00.00")
-                        .put("hl", "en")
-                        .put("gl", "US")
-                )
-            )
-            
-            if (poTokenResult != null) {
-                body.put("serviceIntegrityDimensions", JSONObject().put("poToken", poTokenResult.playerRequestPoToken))
-            }
-
-            val request = Request.Builder()
-                .url("https://www.youtube.com/youtubei/v1/player?key=$YTM_KEY")
-                .addHeader("Content-Type", "application/json")
-                .addHeader("User-Agent", CHROME_USER_AGENT)
-                .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
-                .build()
-
-            val response = ytMusicClient.newCall(request).execute()
-            val text = response.body?.string() ?: return null
-            val json = JSONObject(text)
-
-            val status = json.optJSONObject("playabilityStatus")?.optString("status")
-            if (status != "OK") return null 
-
-            val formats = json.optJSONObject("streamingData")?.optJSONArray("adaptiveFormats") ?: return null
-            for (i in 0 until formats.length()) {
-                val f = formats.getJSONObject(i)
-                if (f.optString("mimeType").startsWith("audio/")) {
-                    var url = f.optString("url", "")
-                    val signatureCipher = f.optString("signatureCipher", "")
-                    
-                    if (url.isEmpty() && signatureCipher.isNotEmpty()) {
-                        val parsed = parseCipher(signatureCipher)
-                        val s = parsed["s"] ?: ""
-                        url = (parsed["url"] ?: "") + "&sig=" + s
-                    }
-
-                    if (url.isNotEmpty()) {
-                        url = EjsNTransformSolver.transformNParamInUrl(url)
-                        return url
-                    }
-                }
-            }
-            null
+            poTokenGenerator.getWebClientPoToken(videoId, sessionId)
         } catch (e: Exception) {
-            Log.e("Innertube", "Fast stream extraction failed: ${e.message}")
+            Log.w("Innertube", "PoToken generation failed, continuing without it: ${e.message}")
             null
         }
+
+        for (client in STREAM_CLIENTS) {
+            try {
+                Log.d("Innertube", "Trying client: ${client.clientName}")
+                val url = tryClientForStream(videoId, client, poTokenResult?.playerRequestPoToken, poTokenResult?.streamingDataPoToken)
+                if (!url.isNullOrEmpty()) {
+                    Log.d("Innertube", "Stream resolved via ${client.clientName}")
+                    return url
+                }
+            } catch (e: Exception) {
+                Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
+            }
+        }
+
+        Log.e("Innertube", "All clients failed for videoId=$videoId")
+        return null
+    }
+
+    private suspend fun tryClientForStream(
+        videoId: String,
+        client: YTClient,
+        playerRequestPoToken: String?,
+        streamingDataPoToken: String?
+    ): String? {
+        val clientContext = JSONObject()
+            .put("clientName", client.clientName)
+            .put("clientVersion", client.clientVersion)
+            .put("hl", "en")
+            .put("gl", "US")
+
+        val body = JSONObject()
+            .put("videoId", videoId)
+            .put("context", JSONObject().put("client", clientContext))
+
+        // Only attach poToken in request body for clients that support it
+        if (client.usePoToken && playerRequestPoToken != null) {
+            body.put("serviceIntegrityDimensions",
+                JSONObject().put("poToken", playerRequestPoToken))
+        }
+
+        val request = Request.Builder()
+            .url("https://www.youtube.com/youtubei/v1/player?key=$YTM_KEY")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("User-Agent", client.userAgent)
+            .addHeader("X-Youtube-Client-Name", client.clientName)
+            .addHeader("X-Youtube-Client-Version", client.clientVersion)
+            .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
+            .build()
+
+        val response = ytMusicClient.newCall(request).execute()
+        val text = response.body?.string() ?: return null
+        val json = JSONObject(text)
+
+        val status = json.optJSONObject("playabilityStatus")?.optString("status")
+        if (status != "OK") {
+            Log.d("Innertube", "${client.clientName} playabilityStatus=$status")
+            return null
+        }
+
+        val formats = json.optJSONObject("streamingData")
+            ?.optJSONArray("adaptiveFormats") ?: return null
+
+        for (i in 0 until formats.length()) {
+            val f = formats.getJSONObject(i)
+            if (!f.optString("mimeType").startsWith("audio/")) continue
+
+            var url = f.optString("url", "")
+
+            // Handle signatureCipher -- must properly deobfuscate, not just append raw "s"
+            if (url.isEmpty()) {
+                val signatureCipher = f.optString("signatureCipher", "")
+                    .ifEmpty { f.optString("cipher", "") }
+                if (signatureCipher.isNotEmpty()) {
+                    url = CipherDeobfuscator.deobfuscateStreamUrl(signatureCipher, videoId) ?: ""
+                }
+            }
+
+            if (url.isEmpty()) continue
+
+            // Apply n-param transform to avoid throttling/403 for web clients
+            if (client.usePoToken) {
+                url = CipherDeobfuscator.transformNParamInUrl(url)
+
+                // Append pot= (streamingDataPoToken) to the stream URL
+                if (streamingDataPoToken != null) {
+                    val separator = if ("?" in url) "&" else "?"
+                    url = "${url}${separator}pot=${android.net.Uri.encode(streamingDataPoToken)}"
+                }
+            }
+
+            return url
+        }
+
+        return null
     }
 
     private fun parseCipher(cipher: String): Map<String, String> {
