@@ -22,7 +22,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import com.yt.lite.BuildConfig
 import kotlinx.coroutines.launch
 
 // ── Log Interceptor ──────────────────────────────────────────────────────────
@@ -40,7 +39,6 @@ object DebugLogCollector {
 
     // Call this from AudiobasicsApp.onCreate() to intercept logs
     fun install() {
-        if (!BuildConfig.DEBUG) return
         val origHandler = Thread.getDefaultUncaughtExceptionHandler()
         // We hook into Timber via a custom tree - see AudiobasicsApp
     }
@@ -60,8 +58,6 @@ object DebugLogCollector {
 
 @Composable
 fun DebugLogOverlay() {
-    if (!BuildConfig.DEBUG) return  // Never shows in release builds
-
     var visible by remember { mutableStateOf(false) }
     val logs = DebugLogCollector.logs
     val listState = rememberLazyListState()
