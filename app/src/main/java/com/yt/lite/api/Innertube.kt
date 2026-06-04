@@ -498,8 +498,6 @@ object Innertube {
         }
     }
 
-    // Clients to try in order. WEB_REMIX is the main one YouTube Music uses.
-    // Fallbacks handle age-restricted and regional restrictions.
     private data class YTClient(
         val clientName: String,
         val clientVersion: String,
@@ -518,16 +516,11 @@ object Innertube {
 
     private val poTokenGenerator = PoTokenGenerator()
 
-    private suspend fun getInnerTubeStreamFast(context: Context, videoId: String): String? {
-        // Generate PoToken once and reuse across client attempts
-        val poTokenResult = try {
-            val sessionId = UUID.randomUUID().toString()
-            poTokenGenerator.getWebClientPoToken(videoId, sessionId)
-        } catch (e: Exception) {
-            Log.w("Innertube", "PoToken generation failed, continuing without it: ${e.message}")
-            null
-        }
-
+    private suspend fun getInnerTubeStreamFast(
+        context: Context,
+        videoId: String,
+        poTokenResult: com.yt.lite.api.potoken.PoTokenResult? = null
+    ): String? {
         for (client in STREAM_CLIENTS) {
             try {
                 Log.d("Innertube", "Trying client: ${client.clientName}")
@@ -561,7 +554,6 @@ object Innertube {
             .put("videoId", videoId)
             .put("context", JSONObject().put("client", clientContext))
 
-        // Only attach poToken in request body for clients that support it
         if (client.usePoToken && playerRequestPoToken != null) {
             body.put("serviceIntegrityDimensions",
                 JSONObject().put("poToken", playerRequestPoToken))
@@ -595,7 +587,6 @@ object Innertube {
 
             var url = f.optString("url", "")
 
-            // Handle signatureCipher -- must properly deobfuscate, not just append raw "s"
             if (url.isEmpty()) {
                 val signatureCipher = f.optString("signatureCipher", "")
                     .ifEmpty { f.optString("cipher", "") }
@@ -606,11 +597,9 @@ object Innertube {
 
             if (url.isEmpty()) continue
 
-            // Apply n-param transform to avoid throttling/403 for web clients
             if (client.usePoToken) {
                 url = CipherDeobfuscator.transformNParamInUrl(url)
 
-                // Append pot= (streamingDataPoToken) to the stream URL
                 if (streamingDataPoToken != null) {
                     val separator = if ("?" in url) "&" else "?"
                     url = "${url}${separator}pot=${android.net.Uri.encode(streamingDataPoToken)}"
@@ -636,9 +625,24 @@ object Innertube {
 
     suspend fun getStreamUrl(context: Context, videoId: String, forceFallback: Boolean = false): String? =
         withContext(Dispatchers.IO) {
+            val sharedPoToken = try {
+                val sessionId = UUID.randomUUID().toString()
+                withContext(Dispatchers.IO) {
+                    poTokenGenerator.getWebClientPoToken(videoId, sessionId)
+                }
+            } catch (e: Exception) {
+                Log.w("Innertube", "PoToken generation failed: ${e.message}")
+                null
+            }
+
+            sharedPoToken?.let {
+                NewPipeDownloader.poToken = it.playerRequestPoToken
+                Log.d("Innertube", "PoToken ready for both native and NewPipe")
+            }
+
             if (!forceFallback) {
                 for (i in 1..2) {
-                    val fastUrl = getInnerTubeStreamFast(context, videoId)
+                    val fastUrl = getInnerTubeStreamFast(context, videoId, sharedPoToken)
                     if (!fastUrl.isNullOrEmpty()) {
                         Log.d("Innertube", "Stream resolved via InnerTube natively (Try $i)")
                         return@withContext fastUrl
@@ -648,6 +652,7 @@ object Innertube {
 
             Log.d("Innertube", "Using newpipe (Fallback Forced: $forceFallback)")
             initNewPipe()
+
             try {
                 val extractor = ServiceList.YouTube
                     .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
@@ -716,19 +721,23 @@ object NewPipeDownloader : Downloader() {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private const val CHROME_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+    private const val FIREFOX_USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+
+    @Volatile var visitorData: String? = null
+    @Volatile var poToken: String? = null
 
     override fun execute(
         request: org.schabi.newpipe.extractor.downloader.Request
     ): Response {
         val rb = Request.Builder().url(request.url())
 
-        rb.header("User-Agent", CHROME_USER_AGENT)
+        rb.header("User-Agent", FIREFOX_USER_AGENT)
 
         val requestedHeaders = request.headers() ?: emptyMap()
-        requestedHeaders.forEach { (k, v) -> 
+        requestedHeaders.forEach { (k, v) ->
             if (!k.equals("User-Agent", ignoreCase = true)) {
-                v.forEach { rb.addHeader(k, it) } 
+                v.forEach { rb.addHeader(k, it) }
             }
         }
 
@@ -737,6 +746,13 @@ object NewPipeDownloader : Downloader() {
         }
         if (!requestedHeaders.containsKey("Cookie")) {
             rb.addHeader("Cookie", "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
+        }
+
+        visitorData?.let { rb.addHeader("X-Visitor-Data", it) }
+
+        if (request.url().contains("/youtubei/v1/player") ||
+            request.url().contains("/youtubei/v1/next")) {
+            poToken?.let { rb.addHeader("X-Goog-Visitor-Id", it) }
         }
 
         when (request.httpMethod()) {
@@ -748,6 +764,9 @@ object NewPipeDownloader : Downloader() {
         }
 
         val response = client.newCall(rb.build()).execute()
+
+        response.header("X-Visitor-Data")?.let { visitorData = it }
+
         val responseBody = response.body?.string() ?: ""
         val headers = mutableMapOf<String, MutableList<String>>()
         response.headers.names().forEach { name ->
