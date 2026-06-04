@@ -3,6 +3,7 @@ package com.yt.lite.api
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import timber.log.Timber
 import com.yt.lite.api.potoken.PoTokenGenerator
 import com.yt.lite.api.cipher.CipherDeobfuscator
 import com.yt.lite.data.Album
@@ -523,10 +524,10 @@ object Innertube {
     ): String? {
         for (client in STREAM_CLIENTS) {
             try {
-                Log.d("Innertube", "Trying client: ${client.clientName}")
+                Timber.d("Trying client: ${client.clientName} | poToken=${poTokenResult?.playerRequestPoToken?.take(10)}...")
                 val url = tryClientForStream(videoId, client, poTokenResult?.playerRequestPoToken, poTokenResult?.streamingDataPoToken)
                 if (!url.isNullOrEmpty()) {
-                    Log.d("Innertube", "Stream resolved via ${client.clientName}")
+                    Timber.d("Stream resolved via ${client.clientName} ✅")
                     return url
                 }
             } catch (e: Exception) {
@@ -534,7 +535,7 @@ object Innertube {
             }
         }
 
-        Log.e("Innertube", "All clients failed for videoId=$videoId")
+        Timber.e("All native clients FAILED for videoId=$videoId ❌")
         return null
     }
 
@@ -574,7 +575,7 @@ object Innertube {
 
         val status = json.optJSONObject("playabilityStatus")?.optString("status")
         if (status != "OK") {
-            Log.d("Innertube", "${client.clientName} playabilityStatus=$status")
+            Timber.w("${client.clientName} rejected: playabilityStatus=$status")
             return null
         }
 
@@ -625,6 +626,7 @@ object Innertube {
 
     suspend fun getStreamUrl(context: Context, videoId: String, forceFallback: Boolean = false): String? =
         withContext(Dispatchers.IO) {
+
             val sharedPoToken = try {
                 val sessionId = UUID.randomUUID().toString()
                 withContext(Dispatchers.IO) {
@@ -650,7 +652,7 @@ object Innertube {
                 }
             }
 
-            Log.d("Innertube", "Using newpipe (Fallback Forced: $forceFallback)")
+            Timber.w("Falling to NewPipe (forceFallback=$forceFallback)")
             initNewPipe()
 
             try {
@@ -661,7 +663,7 @@ object Innertube {
                 streams.filter { it.content != null && it.content.isNotEmpty() }
                     .maxByOrNull { it.averageBitrate }?.content
             } catch (e: Exception) {
-                Log.e("Innertube", "Stream fallback error $videoId: ${e.message}")
+                Timber.e("NewPipe ALSO failed: ${e.message} ❌")
                 null
             }
         }
@@ -721,9 +723,11 @@ object NewPipeDownloader : Downloader() {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    // Firefox 140 ESR - required to pass YouTube integrity checks post-May 2026
     private const val FIREFOX_USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
+    // Visitor data and poToken injected from outside before NewPipe is used
     @Volatile var visitorData: String? = null
     @Volatile var poToken: String? = null
 
@@ -732,6 +736,7 @@ object NewPipeDownloader : Downloader() {
     ): Response {
         val rb = Request.Builder().url(request.url())
 
+        // Firefox 140 UA - passes YouTube bot checks
         rb.header("User-Agent", FIREFOX_USER_AGENT)
 
         val requestedHeaders = request.headers() ?: emptyMap()
@@ -748,8 +753,10 @@ object NewPipeDownloader : Downloader() {
             rb.addHeader("Cookie", "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
         }
 
+        // Inject visitor data if available - makes YouTube treat us as returning user
         visitorData?.let { rb.addHeader("X-Visitor-Data", it) }
 
+        // Inject poToken for integrity checks on player requests
         if (request.url().contains("/youtubei/v1/player") ||
             request.url().contains("/youtubei/v1/next")) {
             poToken?.let { rb.addHeader("X-Goog-Visitor-Id", it) }
