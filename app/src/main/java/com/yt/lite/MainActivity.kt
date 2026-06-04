@@ -11,6 +11,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import com.yt.lite.ui.DebugLogOverlay
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -108,7 +109,10 @@ class MainActivity : ComponentActivity() {
             }
 
             AppTheme(darkTheme = isDarkMode) {
-                AudiobasicsApp(vm = vm, isDarkMode = isDarkMode)
+                Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                    AudiobasicsApp(vm = vm, isDarkMode = isDarkMode)
+                    DebugLogOverlay()
+                }
             }
         }
     }
