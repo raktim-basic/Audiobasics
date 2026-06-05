@@ -5,8 +5,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.datasource.ResolvingDataSource
@@ -17,7 +19,9 @@ import androidx.media3.session.MediaSessionService
 import com.yt.lite.MainActivity
 import com.yt.lite.api.Innertube
 import kotlinx.coroutines.runBlocking
+import timber.log.Timber
 import dagger.hilt.android.AndroidEntryPoint
+import java.util.concurrent.ConcurrentHashMap
 
 @UnstableApi
 @AndroidEntryPoint
@@ -25,17 +29,24 @@ class MusicService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
 
+    // Cache resolved stream URLs so we don't re-fetch on every ExoPlayer retry
+    // Key = videoId, Value = Pair(streamUrl, expiryTimeMs)
+    private val songUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
+
+    // Stream URLs from YouTube are valid for ~6 hours
+    private val STREAM_URL_TTL_MS = 5 * 60 * 60 * 1000L // 5 hours to be safe
+
     override fun onCreate() {
         super.onCreate()
 
-        // IOS client UA — must match what resolved the stream URL to avoid 403
+        // IOS client UA — matches the client used to resolve the stream
         val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
 
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(iosUserAgent)
             .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(20000)
-            .setReadTimeoutMs(20000)
+            .setConnectTimeoutMs(30000)
+            .setReadTimeoutMs(30000)
             .setDefaultRequestProperties(
                 mapOf(
                     "Cookie" to "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg",
@@ -62,44 +73,55 @@ class MusicService : MediaSessionService() {
                     delegate.read(buffer, offset, length)
 
                 override fun getUri(): Uri? = delegate.uri
-
                 override fun close() = delegate.close()
-
                 override fun addTransferListener(
                     transferListener: androidx.media3.datasource.TransferListener
-                ) {
-                    delegate.addTransferListener(transferListener)
-                }
+                ) = delegate.addTransferListener(transferListener)
             }
         }
 
         val finalResolvingFactory = ResolvingDataSource.Factory(finalFactory) { dataSpec ->
             val uriString = dataSpec.uri.toString()
+
             when {
                 uriString.startsWith("file://") -> dataSpec
-                // Already a resolved stream URL — don't resolve again
-                uriString.contains("googlevideo.com") ||
-                uriString.contains("rr") && uriString.contains(".googlevideo") -> dataSpec
+
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
                     val forceFallback = uriString.contains("fallback=true")
                     val videoId = extractVideoId(uriString)
-                    if (videoId != null) {
+
+                    if (videoId == null) {
+                        Timber.e("Could not extract videoId from: $uriString")
+                        dataSpec
+                    } else {
+                        // Check cache first — avoids re-fetching on ExoPlayer retries
+                        val cached = songUrlCache[videoId]
+                        if (cached != null && cached.second > System.currentTimeMillis() && !forceFallback) {
+                            Timber.d("Using cached stream URL for $videoId ✅")
+                            return@Factory dataSpec.withUri(Uri.parse(cached.first))
+                        }
+
+                        Timber.d("Fetching fresh stream URL for $videoId...")
                         val realUrl = runBlocking {
                             Innertube.getStreamUrl(this@MusicService, videoId, forceFallback)
                         }
+
                         if (realUrl != null) {
-                            // Resolved stream URL — pass through with correct headers
-                            val streamSpec = dataSpec.withUri(Uri.parse(realUrl))
-                            streamSpec
+                            // Cache the resolved URL
+                            songUrlCache[videoId] = realUrl to (System.currentTimeMillis() + STREAM_URL_TTL_MS)
+                            Timber.d("Stream URL cached for $videoId ✅")
+                            dataSpec.withUri(Uri.parse(realUrl))
                         } else {
-                            // Failed to resolve — throw to trigger ExoPlayer error, not infinite loop
-                            throw androidx.media3.datasource.DataSourceException(
+                            Timber.e("All stream resolution failed for $videoId ❌")
+                            throw DataSourceException(
                                 "Failed to resolve stream URL for videoId=$videoId",
-                                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+                                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
                             )
                         }
-                    } else dataSpec
+                    }
                 }
+
+                // Already a resolved stream URL (googlevideo etc) — pass through
                 else -> dataSpec
             }
         }
@@ -149,6 +171,7 @@ class MusicService : MediaSessionService() {
             release()
             mediaSession = null
         }
+        songUrlCache.clear()
         super.onDestroy()
     }
 }
