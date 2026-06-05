@@ -28,11 +28,14 @@ class MusicService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
+        // IOS client UA — must match what resolved the stream URL to avoid 403
+        val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
+
         val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+            .setUserAgent(iosUserAgent)
             .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(15000)
+            .setConnectTimeoutMs(20000)
+            .setReadTimeoutMs(20000)
             .setDefaultRequestProperties(
                 mapOf(
                     "Cookie" to "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg",
@@ -40,29 +43,6 @@ class MusicService : MediaSessionService() {
                     "Origin" to "https://www.youtube.com"
                 )
             )
-
-        val uriAwareFactory = DataSource.Factory {
-            httpFactory.createDataSource()
-        }
-
-        val resolvingFactory = ResolvingDataSource.Factory(uriAwareFactory) { dataSpec ->
-            val uriString = dataSpec.uri.toString()
-            when {
-                uriString.startsWith("file://") -> dataSpec
-                uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
-                    val forceFallback = uriString.contains("fallback=true")
-                    val videoId = extractVideoId(uriString)
-                    if (videoId != null) {
-                        val realUrl = runBlocking {
-                            Innertube.getStreamUrl(this@MusicService, videoId, forceFallback)
-                        }
-                        if (realUrl != null) dataSpec.withUri(Uri.parse(realUrl))
-                        else dataSpec
-                    } else dataSpec
-                }
-                else -> dataSpec
-            }
-        }
 
         val finalFactory = DataSource.Factory {
             object : androidx.media3.datasource.DataSource {
@@ -97,6 +77,9 @@ class MusicService : MediaSessionService() {
             val uriString = dataSpec.uri.toString()
             when {
                 uriString.startsWith("file://") -> dataSpec
+                // Already a resolved stream URL — don't resolve again
+                uriString.contains("googlevideo.com") ||
+                uriString.contains("rr") && uriString.contains(".googlevideo") -> dataSpec
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
                     val forceFallback = uriString.contains("fallback=true")
                     val videoId = extractVideoId(uriString)
@@ -104,8 +87,17 @@ class MusicService : MediaSessionService() {
                         val realUrl = runBlocking {
                             Innertube.getStreamUrl(this@MusicService, videoId, forceFallback)
                         }
-                        if (realUrl != null) dataSpec.withUri(Uri.parse(realUrl))
-                        else dataSpec
+                        if (realUrl != null) {
+                            // Resolved stream URL — pass through with correct headers
+                            val streamSpec = dataSpec.withUri(Uri.parse(realUrl))
+                            streamSpec
+                        } else {
+                            // Failed to resolve — throw to trigger ExoPlayer error, not infinite loop
+                            throw androidx.media3.datasource.DataSourceException(
+                                "Failed to resolve stream URL for videoId=$videoId",
+                                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+                            )
+                        }
                     } else dataSpec
                 }
                 else -> dataSpec
