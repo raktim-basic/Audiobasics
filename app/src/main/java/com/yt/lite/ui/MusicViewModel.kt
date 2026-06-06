@@ -36,6 +36,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Dispatchers
 import org.json.JSONArray
+import timber.log.Timber
 import org.json.JSONObject
 
 @UnstableApi
@@ -152,11 +153,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            Log.e("YTLite", "Player error caught: ${error.message}", error)
+            Timber.e("Player error ❌ code=${error.errorCode} | ${error.message}")
             
             if (fallbackRetryCount < 1) {
                 fallbackRetryCount++
-                Log.d("YTLite", "Initiating automatic fallback retry with NewPipe!")
+                Timber.w("Fallback retry attempt #$fallbackRetryCount")
                 _isLoading.value = true
                 
                 val currentSong = _currentSong.value
@@ -174,7 +175,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     ctrl.play()
                 }
             } else {
-                Log.e("YTLite", "Fallback exhausted.")
+                Timber.e("Fallback exhausted — giving up ❌")
                 _isLoading.value = false
                 _isPlaying.value = false
                 _error.value = "Stream failed. Please try another song."
