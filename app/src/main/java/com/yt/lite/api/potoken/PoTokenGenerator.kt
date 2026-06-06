@@ -70,7 +70,7 @@ class PoTokenGenerator {
 
     private companion object {
 
-        const val POTOKEN_TIMEOUT_MS = 8_000L
+        const val POTOKEN_TIMEOUT_MS = 15_000L
     }
 
     private suspend fun getWebClientPoToken(videoId: String, sessionId: String, forceRecreate: Boolean): PoTokenResult {
