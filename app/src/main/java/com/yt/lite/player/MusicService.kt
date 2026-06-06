@@ -179,18 +179,19 @@ class MusicService : MediaSessionService() {
                 songUrlCache[videoId] = url to (System.currentTimeMillis() + STREAM_URL_TTL_MS)
                 Timber.d("preResolve: cached stream for $videoId ✅")
 
-                // Probe stream URL — log HTTP response so we know if YouTube accepts it
+                // Probe with GET + Range header (HEAD returns 403 on googlevideo)
                 try {
                     val probeClient = okhttp3.OkHttpClient.Builder()
                         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                         .build()
                     val probeReq = okhttp3.Request.Builder()
                         .url(url)
-                        .head()
+                        .get()
                         .addHeader("User-Agent", "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)")
+                        .addHeader("Range", "bytes=0-1")
                         .build()
                     val probe = probeClient.newCall(probeReq).execute()
-                    Timber.d("Stream probe $videoId: HTTP ${probe.code} | type=${probe.header("Content-Type")} | len=${probe.header("Content-Length")}")
+                    Timber.d("Stream probe $videoId: HTTP ${probe.code} | type=${probe.header("Content-Type")} | len=${probe.header("Content-Length")} | range=${probe.header("Content-Range")}")
                     probe.close()
                 } catch (e: Exception) {
                     Timber.w("Stream probe failed $videoId: ${e.message}")
