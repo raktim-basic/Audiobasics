@@ -85,19 +85,25 @@ class MusicService : MediaSessionService() {
                 uriString.startsWith("file://") -> dataSpec
 
                 uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
+                    val forceFallback = uriString.contains("fallback=true")
                     val videoId = extractVideoId(uriString)
                     if (videoId == null) {
                         Timber.e("Could not extract videoId from URI")
                         dataSpec
                     } else {
+                        // Invalidate cache on forceFallback so we get a fresh URL
+                        if (forceFallback) {
+                            Timber.w("Resolver: forceFallback=true, clearing cache for $videoId")
+                            songUrlCache.remove(videoId)
+                        }
+
                         val cached = songUrlCache[videoId]
                         if (cached != null && cached.second > System.currentTimeMillis()) {
                             Timber.d("Resolver: cache hit for $videoId ✅")
                             dataSpec.withUri(Uri.parse(cached.first))
                         } else {
-                            // Cache miss — wait for pre-resolve to finish (max 15s)
-                            Timber.d("Resolver: waiting for pre-resolve of $videoId...")
-                            preResolveUrl(videoId, force = false)
+                            Timber.d("Resolver: waiting for pre-resolve of $videoId (forceFallback=$forceFallback)...")
+                            preResolveUrl(videoId, force = forceFallback)
                             var waited = 0
                             while (waited < 15000) {
                                 val ready = songUrlCache[videoId]
