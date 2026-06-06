@@ -505,21 +505,26 @@ object Innertube {
         val clientName: String,
         val clientVersion: String,
         val userAgent: String = CHROME_USER_AGENT,
-        val usePoToken: Boolean = false
+        val usePoTokenInBody: Boolean = false,  // Add poToken to request body (web clients)
+        val appendPotToUrl: Boolean = false     // Append pot= to stream URL (mobile clients)
     )
 
     private val STREAM_CLIENTS = listOf(
-        // IOS first — works without poToken, returns direct URLs, most reliable post-May 2026
+        // IOS — returns direct URLs, needs pot= appended to stream URL
         YTClient("IOS", "21.03.1",
             userAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)",
-            usePoToken = false),
-        // Android as second fallback — also returns direct URLs
+            usePoTokenInBody = false,
+            appendPotToUrl = true),
+        // ANDROID — most reliable, also needs pot= on URL
         YTClient("ANDROID", "19.44.38",
             userAgent = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
-            usePoToken = false),
-        // Web clients last — need poToken and cipher
-        YTClient("WEB_REMIX", "1.20260213.01.00", usePoToken = true),
-        YTClient("WEB",       "2.20260213.00.00", usePoToken = true),
+            usePoTokenInBody = false,
+            appendPotToUrl = true),
+        // Web clients — poToken in body + pot= on URL
+        YTClient("WEB_REMIX", "1.20260213.01.00",
+            usePoTokenInBody = true, appendPotToUrl = true),
+        YTClient("WEB", "2.20260213.00.00",
+            usePoTokenInBody = true, appendPotToUrl = true),
     )
 
     private val poTokenGenerator = PoTokenGenerator()
@@ -562,8 +567,8 @@ object Innertube {
             .put("videoId", videoId)
             .put("context", JSONObject().put("client", clientContext))
 
-        // Only attach poToken in request body for clients that support it
-        if (client.usePoToken && playerRequestPoToken != null) {
+        // Only add poToken to request body for web clients
+        if (client.usePoTokenInBody && playerRequestPoToken != null) {
             body.put("serviceIntegrityDimensions",
                 JSONObject().put("poToken", playerRequestPoToken))
         }
@@ -590,13 +595,19 @@ object Innertube {
         val formats = json.optJSONObject("streamingData")
             ?.optJSONArray("adaptiveFormats") ?: return null
 
+        // Pick best audio format by bitrate, skip alr=yes for mobile clients
+        var bestUrl: String? = null
+        var bestBitrate = -1
+
         for (i in 0 until formats.length()) {
             val f = formats.getJSONObject(i)
             if (!f.optString("mimeType").startsWith("audio/")) continue
 
             var url = f.optString("url", "")
 
-            // Handle signatureCipher -- must properly deobfuscate, not just append raw "s"
+            // Mobile clients: skip alr=yes adaptive loading URLs — use standard formats
+            if (!client.usePoTokenInBody && url.contains("alr=yes")) continue
+
             if (url.isEmpty()) {
                 val signatureCipher = f.optString("signatureCipher", "")
                     .ifEmpty { f.optString("cipher", "") }
@@ -607,21 +618,28 @@ object Innertube {
 
             if (url.isEmpty()) continue
 
-            // Apply n-param transform to avoid throttling/403 for web clients
-            if (client.usePoToken) {
-                url = CipherDeobfuscator.transformNParamInUrl(url)
-
-                // Append pot= (streamingDataPoToken) to the stream URL
-                if (streamingDataPoToken != null) {
-                    val separator = if ("?" in url) "&" else "?"
-                    url = "${url}${separator}pot=${android.net.Uri.encode(streamingDataPoToken)}"
-                }
+            val bitrate = f.optInt("bitrate", 0)
+            if (bitrate > bestBitrate) {
+                bestBitrate = bitrate
+                bestUrl = url
             }
-
-            return url
         }
 
-        return null
+        if (bestUrl == null) return null
+
+        // Web clients: apply n-transform
+        if (client.usePoTokenInBody) {
+            bestUrl = CipherDeobfuscator.transformNParamInUrl(bestUrl!!)
+        }
+
+        // Append pot= to stream URL for all clients that support it
+        if (client.appendPotToUrl && streamingDataPoToken != null) {
+            val separator = if ("?" in bestUrl!!) "&" else "?"
+            bestUrl = "${bestUrl}${separator}pot=${android.net.Uri.encode(streamingDataPoToken)}"
+            Timber.d("${client.clientName}: appended pot= to stream URL ✅")
+        }
+
+        return bestUrl
     }
 
     private fun parseCipher(cipher: String): Map<String, String> {
