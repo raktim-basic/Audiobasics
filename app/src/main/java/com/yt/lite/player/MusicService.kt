@@ -178,6 +178,23 @@ class MusicService : MediaSessionService() {
             if (url != null) {
                 songUrlCache[videoId] = url to (System.currentTimeMillis() + STREAM_URL_TTL_MS)
                 Timber.d("preResolve: cached stream for $videoId ✅")
+
+                // Probe stream URL — log HTTP response so we know if YouTube accepts it
+                try {
+                    val probeClient = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+                    val probeReq = okhttp3.Request.Builder()
+                        .url(url)
+                        .head()
+                        .addHeader("User-Agent", "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)")
+                        .build()
+                    val probe = probeClient.newCall(probeReq).execute()
+                    Timber.d("Stream probe $videoId: HTTP ${probe.code} | type=${probe.header("Content-Type")} | len=${probe.header("Content-Length")}")
+                    probe.close()
+                } catch (e: Exception) {
+                    Timber.w("Stream probe failed $videoId: ${e.message}")
+                }
             } else {
                 Timber.e("preResolve: failed for $videoId ❌")
             }
