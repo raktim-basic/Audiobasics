@@ -499,6 +499,8 @@ object Innertube {
         }
     }
 
+    // Clients to try in order. WEB_REMIX is the main one YouTube Music uses.
+    // Fallbacks handle age-restricted and regional restrictions.
     private data class YTClient(
         val clientName: String,
         val clientVersion: String,
@@ -507,12 +509,17 @@ object Innertube {
     )
 
     private val STREAM_CLIENTS = listOf(
-        YTClient("WEB_REMIX",  "1.20260213.01.00", usePoToken = true),
-        YTClient("TVHTML5",    "7.20260213.00.00", usePoToken = false),
-        YTClient("WEB",        "2.20260213.00.00", usePoToken = true),
-        YTClient("IOS",        "21.03.1",
+        // IOS first — works without poToken, returns direct URLs, most reliable post-May 2026
+        YTClient("IOS", "21.03.1",
             userAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)",
             usePoToken = false),
+        // Android as second fallback — also returns direct URLs
+        YTClient("ANDROID", "19.44.38",
+            userAgent = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
+            usePoToken = false),
+        // Web clients last — need poToken and cipher
+        YTClient("WEB_REMIX", "1.20260213.01.00", usePoToken = true),
+        YTClient("WEB",       "2.20260213.00.00", usePoToken = true),
     )
 
     private val poTokenGenerator = PoTokenGenerator()
@@ -555,6 +562,7 @@ object Innertube {
             .put("videoId", videoId)
             .put("context", JSONObject().put("client", clientContext))
 
+        // Only attach poToken in request body for clients that support it
         if (client.usePoToken && playerRequestPoToken != null) {
             body.put("serviceIntegrityDimensions",
                 JSONObject().put("poToken", playerRequestPoToken))
@@ -588,6 +596,7 @@ object Innertube {
 
             var url = f.optString("url", "")
 
+            // Handle signatureCipher -- must properly deobfuscate, not just append raw "s"
             if (url.isEmpty()) {
                 val signatureCipher = f.optString("signatureCipher", "")
                     .ifEmpty { f.optString("cipher", "") }
@@ -598,9 +607,11 @@ object Innertube {
 
             if (url.isEmpty()) continue
 
+            // Apply n-param transform to avoid throttling/403 for web clients
             if (client.usePoToken) {
                 url = CipherDeobfuscator.transformNParamInUrl(url)
 
+                // Append pot= (streamingDataPoToken) to the stream URL
                 if (streamingDataPoToken != null) {
                     val separator = if ("?" in url) "&" else "?"
                     url = "${url}${separator}pot=${android.net.Uri.encode(streamingDataPoToken)}"
@@ -626,7 +637,7 @@ object Innertube {
 
     suspend fun getStreamUrl(context: Context, videoId: String, forceFallback: Boolean = false): String? =
         withContext(Dispatchers.IO) {
-
+            // Generate poToken once at this level — shared by native engine AND NewPipe fallback
             val sharedPoToken = try {
                 val sessionId = UUID.randomUUID().toString()
                 withContext(Dispatchers.IO) {
@@ -637,6 +648,7 @@ object Innertube {
                 null
             }
 
+            // Pre-inject into NewPipe downloader so it's ready if we fall through
             sharedPoToken?.let {
                 NewPipeDownloader.poToken = it.playerRequestPoToken
                 Log.d("Innertube", "PoToken ready for both native and NewPipe")
@@ -772,6 +784,7 @@ object NewPipeDownloader : Downloader() {
 
         val response = client.newCall(rb.build()).execute()
 
+        // Extract and persist visitor data from response for future requests
         response.header("X-Visitor-Data")?.let { visitorData = it }
 
         val responseBody = response.body?.string() ?: ""
