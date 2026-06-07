@@ -50,9 +50,9 @@ class MusicService : MediaSessionService() {
             .setReadTimeoutMs(30000)
             .setDefaultRequestProperties(
                 mapOf(
-                    "Cookie" to "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg",
-                    "Referer" to "https://www.youtube.com/",
-                    "Origin" to "https://www.youtube.com"
+                    // No Referer or Origin — mobile stream URLs reject browser-style headers
+                    "Accept" to "*/*",
+                    "Accept-Language" to "en-US,en;q=0.9"
                 )
             )
 
