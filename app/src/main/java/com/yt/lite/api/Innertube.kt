@@ -592,21 +592,35 @@ object Innertube {
             return null
         }
 
-        val formats = json.optJSONObject("streamingData")
-            ?.optJSONArray("adaptiveFormats") ?: return null
+        val streamingData = json.optJSONObject("streamingData") ?: return null
 
-        // Pick best audio format by bitrate, skip alr=yes for mobile clients
+        // Check both adaptiveFormats and formats arrays
+        val adaptiveFormats = streamingData.optJSONArray("adaptiveFormats")
+        val regularFormats = streamingData.optJSONArray("formats")
+
+        // Combine both arrays
+        val allFormats = mutableListOf<JSONObject>()
+        if (adaptiveFormats != null) {
+            for (i in 0 until adaptiveFormats.length()) allFormats.add(adaptiveFormats.getJSONObject(i))
+        }
+        if (regularFormats != null) {
+            for (i in 0 until regularFormats.length()) allFormats.add(regularFormats.getJSONObject(i))
+        }
+        if (allFormats.isEmpty()) return null
+
+        // Pick best audio-only format by bitrate
+        // Prefer URLs WITHOUT alr=yes since ExoPlayer handles those better
         var bestUrl: String? = null
         var bestBitrate = -1
+        var bestUrlHasAlr = true
 
-        for (i in 0 until formats.length()) {
-            val f = formats.getJSONObject(i)
-            if (!f.optString("mimeType").startsWith("audio/")) continue
+        for (f in allFormats) {
+            val mimeType = f.optString("mimeType")
+            // For audio-only, prefer audio/ mime types
+            // For formats array (combined audio+video), skip video-dominant ones
+            if (!mimeType.startsWith("audio/") && !mimeType.contains("mp4a")) continue
 
             var url = f.optString("url", "")
-
-            // Mobile clients: skip alr=yes adaptive loading URLs — use standard formats
-            if (!client.usePoTokenInBody && url.contains("alr=yes")) continue
 
             if (url.isEmpty()) {
                 val signatureCipher = f.optString("signatureCipher", "")
@@ -619,13 +633,29 @@ object Innertube {
             if (url.isEmpty()) continue
 
             val bitrate = f.optInt("bitrate", 0)
-            if (bitrate > bestBitrate) {
+            val hasAlr = url.contains("alr=yes")
+
+            // Prefer non-alr URLs; among same alr status prefer higher bitrate
+            val isBetter = when {
+                bestUrl == null -> true
+                bestUrlHasAlr && !hasAlr -> true   // non-alr beats alr
+                !bestUrlHasAlr && hasAlr -> false   // alr loses to non-alr
+                else -> bitrate > bestBitrate       // same alr status: higher bitrate wins
+            }
+
+            if (isBetter) {
                 bestBitrate = bitrate
                 bestUrl = url
+                bestUrlHasAlr = hasAlr
             }
         }
 
+        Timber.d("${client.clientName}: selected format bitrate=$bestBitrate alr=$bestUrlHasAlr")
+
         if (bestUrl == null) return null
+
+        // Remove alr=yes parameter — ExoPlayer can't handle YouTube's adaptive loading protocol
+        bestUrl = bestUrl!!.replace("&alr=yes", "").replace("alr=yes&", "").replace("alr=yes", "")
 
         // Web clients: apply n-transform
         if (client.usePoTokenInBody) {
