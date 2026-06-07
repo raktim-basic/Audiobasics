@@ -153,7 +153,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            Timber.e("Player error ❌ code=${error.errorCode} | ${error.message}")
+            Timber.e("Player error ❌ code=${error.errorCode} | ${error.message} | cause=${error.cause?.message} | rootCause=${error.cause?.cause?.message}")
             
             if (fallbackRetryCount < 1) {
                 fallbackRetryCount++
