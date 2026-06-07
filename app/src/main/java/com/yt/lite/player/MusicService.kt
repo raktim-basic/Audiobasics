@@ -4,15 +4,15 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSourceException
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.FileDataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import okhttp3.OkHttpClient
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
@@ -43,40 +43,17 @@ class MusicService : MediaSessionService() {
 
         val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
 
-        val httpFactory = DefaultHttpDataSource.Factory()
+        // Use OkHttpDataSource like Metrolist — handles redirects and headers correctly
+        val okHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
             .setUserAgent(iosUserAgent)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(30000)
-            .setReadTimeoutMs(30000)
-            .setDefaultRequestProperties(
-                mapOf(
-                    // No Referer or Origin — mobile stream URLs reject browser-style headers
-                    "Accept" to "*/*",
-                    "Accept-Language" to "en-US,en;q=0.9"
-                )
-            )
 
-        val finalFactory = DataSource.Factory {
-            object : androidx.media3.datasource.DataSource {
-                private var delegate: androidx.media3.datasource.DataSource =
-                    httpFactory.createDataSource()
-
-                override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
-                    delegate = if (dataSpec.uri.scheme == "file") FileDataSource()
-                    else httpFactory.createDataSource()
-                    return delegate.open(dataSpec)
-                }
-
-                override fun read(buffer: ByteArray, offset: Int, length: Int) =
-                    delegate.read(buffer, offset, length)
-
-                override fun getUri(): Uri? = delegate.uri
-                override fun close() = delegate.close()
-                override fun addTransferListener(
-                    transferListener: androidx.media3.datasource.TransferListener
-                ) = delegate.addTransferListener(transferListener)
-            }
-        }
+        // Wrap with DefaultDataSource to handle file:// URIs automatically
+        val finalFactory = DefaultDataSource.Factory(this, okHttpDataSourceFactory)
 
         // Resolver: ONLY does cache lookups — never blocks for network
         val finalResolvingFactory = ResolvingDataSource.Factory(finalFactory) { dataSpec ->
