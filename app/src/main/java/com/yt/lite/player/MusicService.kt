@@ -45,9 +45,30 @@ class MusicService : MediaSessionService() {
         val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
 
         // Use OkHttpDataSource like Metrolist — handles redirects and headers correctly
+        // Interceptor: YouTube CDN requires a Range header — without it returns 403
+        // ExoPlayer's initial open() doesn't set Range when position=0 and length=-1
+        val rangeInterceptor = okhttp3.Interceptor { chain ->
+            val original = chain.request()
+            val request = original.newBuilder().apply {
+                // Ensure User-Agent is set correctly (replaces any duplicate)
+                header("User-Agent", iosUserAgent)
+                // YouTube CDN rejects open-ended Range (bytes=0-) and no-Range requests.
+                // Use specific chunk size to force proper range request.
+                if (original.header("Range") == null) {
+                    addHeader("Range", "bytes=0-524287") // 512KB initial chunk
+                }
+                // Remove Accept-Encoding — match real iOS app behavior
+                removeHeader("Accept-Encoding")
+            }.build()
+            chain.proceed(request)
+        }
+
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            // Force HTTP/1.1 — YouTube CDN behaves more consistently on HTTP/1.1 for range requests
+            .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+            .addInterceptor(rangeInterceptor)
             .build()
 
         val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
