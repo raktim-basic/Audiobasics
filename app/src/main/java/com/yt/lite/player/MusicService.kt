@@ -55,7 +55,7 @@ class MusicService : MediaSessionService() {
                 // YouTube CDN rejects open-ended Range (bytes=0-) and no-Range requests.
                 // Use specific chunk size to force proper range request.
                 if (original.header("Range") == null) {
-                    addHeader("Range", "bytes=0-524287") // 512KB initial chunk
+                    addHeader("Range", "bytes=0-20971519") // 20MB — covers up to ~10min songs
                 }
                 // Remove Accept-Encoding — match real iOS app behavior
                 removeHeader("Accept-Encoding")
