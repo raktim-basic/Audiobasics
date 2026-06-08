@@ -14,6 +14,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import okhttp3.OkHttpClient
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
@@ -55,7 +56,7 @@ class MusicService : MediaSessionService() {
                 // YouTube CDN rejects open-ended Range (bytes=0-) and no-Range requests.
                 // Use specific chunk size to force proper range request.
                 if (original.header("Range") == null) {
-                    addHeader("Range", "bytes=0-20971519") // 20MB — covers up to ~10min songs
+                    addHeader("Range", "bytes=0-524287") // 512KB initial chunk
                 }
                 // Remove Accept-Encoding — match real iOS app behavior
                 removeHeader("Accept-Encoding")
@@ -126,6 +127,16 @@ class MusicService : MediaSessionService() {
             }
         }
 
+        // Buffer enough audio ahead so chunk transitions are seamless
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                30_000,    // min buffer before playback starts: 30s
+                120_000,   // max buffer to keep ahead: 2 minutes
+                1_500,     // min buffer to resume after rebuffer: 1.5s
+                5_000      // min buffer to resume after seek: 5s
+            )
+            .build()
+
         val player = ExoPlayer.Builder(this)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -134,6 +145,7 @@ class MusicService : MediaSessionService() {
                     .build(),
                 true
             )
+            .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(finalResolvingFactory))
             .setHandleAudioBecomingNoisy(true)
             .build()
