@@ -50,18 +50,21 @@ class MusicService : MediaSessionService() {
         // ExoPlayer's initial open() doesn't set Range when position=0 and length=-1
         val rangeInterceptor = okhttp3.Interceptor { chain ->
             val original = chain.request()
-            // 8MB chunks — covers ~8min at 128kbps
-            // Expand ALL requests (not just first) so YouTube CDN limit of ~7-8 is never hit
-            val chunkSize = 8L * 1024 * 1024
+            val chunkSize = 8L * 1024L * 1024L // 8MB per chunk
             val request = original.newBuilder().apply {
                 header("User-Agent", iosUserAgent)
                 removeHeader("Accept-Encoding")
                 val existingRange = original.header("Range")
                 if (existingRange == null) {
+                    // Initial request - start from byte 0
                     addHeader("Range", "bytes=0-${chunkSize - 1}")
                 } else {
-                    val start = Regex("bytes=(\d+)").find(existingRange)
-                        ?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+                    // Subsequent request - expand to 8MB from current start position
+                    // Parse start byte from "bytes=X-Y" without regex to avoid escape issues
+                    val start = existingRange
+                        .removePrefix("bytes=")
+                        .substringBefore("-")
+                        .toLongOrNull() ?: 0L
                     header("Range", "bytes=$start-${start + chunkSize - 1}")
                 }
             }.build()
@@ -131,16 +134,9 @@ class MusicService : MediaSessionService() {
             }
         }
 
-        // Large buffer forces ExoPlayer to read full 8MB chunks before closing connection
-        // This keeps total CDN connections per song to 1-2, under YouTube's ~7-8 limit
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                15_000,       // min buffer to start: 15s
-                10 * 60_000,  // max buffer: 10 minutes — reads full 8MB chunk
-                1_500,        // resume after rebuffer: 1.5s
-                3_000         // resume after seek: 3s
-            )
-            .setTargetBufferBytes(10 * 1024 * 1024) // 10MB
+            .setBufferDurationsMs(15_000, 10 * 60_000, 1_500, 3_000)
+            .setTargetBufferBytes(10 * 1024 * 1024)
             .build()
 
         val player = ExoPlayer.Builder(this)
