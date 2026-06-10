@@ -15,7 +15,7 @@ class PoTokenGenerator {
     private val TAG = "PoTokenGenerator"
 
     private val webViewSupported by lazy { runCatching { CookieManager.getInstance() }.isSuccess }
-    private var webViewBadImpl = false // whether the system has a bad WebView implementation
+    private var webViewBadImpl = false
 
     private val webPoTokenGenLock = Mutex()
     private var webPoTokenSessionId: String? = null
@@ -26,7 +26,7 @@ class PoTokenGenerator {
         Timber.tag(TAG).d("getWebClientPoToken called: videoId=$videoId, sessionId=$sessionId")
         Timber.tag(TAG).d("WebView state: supported=$webViewSupported, badImpl=$webViewBadImpl")
         if (!webViewSupported || webViewBadImpl) {
-            Timber.tag(TAG).d("WebView not available: supported=$webViewSupported, badImpl=$webViewBadImpl")
+            Timber.tag(TAG).d("WebView not available")
             return null
         }
 
@@ -38,7 +38,6 @@ class PoTokenGenerator {
                 }
             }
         } catch (e: TimeoutCancellationException) {
-
             Timber.tag(TAG).w("poToken generation timed out after ${POTOKEN_TIMEOUT_MS}ms; proceeding without PoToken")
             runBlocking {
                 webPoTokenGenLock.withLock {
@@ -69,8 +68,8 @@ class PoTokenGenerator {
     }
 
     private companion object {
-
-        const val POTOKEN_TIMEOUT_MS = 15_000L
+        // Reduced from 15s to 8s to match Metrolist's faster fallback
+        const val POTOKEN_TIMEOUT_MS = 8_000L
     }
 
     private suspend fun getWebClientPoToken(videoId: String, sessionId: String, forceRecreate: Boolean): PoTokenResult {
@@ -102,17 +101,20 @@ class PoTokenGenerator {
             poTokenGenerator.generatePoToken(videoId)
         } catch (throwable: Throwable) {
             if (hasBeenRecreated) {
-
                 throw throwable
             } else {
-
                 Timber.tag(TAG).e(throwable, "Failed to obtain poToken, retrying")
                 return getWebClientPoToken(videoId = videoId, sessionId = sessionId, forceRecreate = true)
             }
         }
 
-        Timber.tag(TAG).d("poToken generated successfully: player=${playerPot.take(20)}..., streaming=${streamingPot.take(20)}...")
+        // CRITICAL FIX: Swap the order – streaming token must be first (playerRequestPoToken),
+        // and player token second (streamingDataPoToken). Your old code did the opposite.
+        Timber.tag(TAG).d("poToken generated successfully: session=${streamingPot.take(20)}..., video=${playerPot.take(20)}...")
 
-        return PoTokenResult(playerPot, streamingPot)
+        return PoTokenResult(
+            playerRequestPoToken = streamingPot,   // used for videoId-based token (player)
+            streamingDataPoToken = playerPot       // used for the actual stream URL
+        )
     }
 }
