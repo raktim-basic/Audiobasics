@@ -7,7 +7,6 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.annotation.MainThread
 import androidx.collection.ArrayMap
-
 import com.yt.lite.BuildConfig
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +21,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.Base64
 import java.util.Collections
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
@@ -29,13 +29,11 @@ import kotlin.coroutines.resumeWithException
 
 class PoTokenWebView private constructor(
     context: Context,
-    
     private val continuation: Continuation<PoTokenWebView>,
 ) {
     private val webView = WebView(context)
     private val scope = MainScope()
-    private val poTokenContinuations =
-        Collections.synchronizedMap(ArrayMap<String, Continuation<String>>())
+    private val poTokenContinuations = Collections.synchronizedMap(ArrayMap<String, Continuation<String>>())
     private val exceptionHandler = CoroutineExceptionHandler { _, t ->
         onInitializationErrorCloseAndCancel(t)
     }
@@ -52,7 +50,6 @@ class PoTokenWebView private constructor(
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
                 val msg = m.message()
-                
                 when (m.messageLevel()) {
                     ConsoleMessage.MessageLevel.ERROR -> Timber.tag(TAG).e("JS: $msg")
                     ConsoleMessage.MessageLevel.WARNING -> Timber.tag(TAG).w("JS: $msg")
@@ -63,7 +60,6 @@ class PoTokenWebView private constructor(
                     val fmt = "\"$msg\", source: ${m.sourceId()} (${m.lineNumber()})"
                     val exception = BadWebViewException(fmt)
                     Timber.tag(TAG).e("This WebView implementation is broken: $fmt")
-
                     onInitializationErrorCloseAndCancel(exception)
                     popAllPoTokenContinuations().forEach { (_, cont) -> cont.resumeWithException(exception) }
                 }
@@ -74,12 +70,10 @@ class PoTokenWebView private constructor(
 
     private fun loadHtmlAndObtainBotguard() {
         Timber.tag(TAG).d("loadHtmlAndObtainBotguard() called")
-
         scope.launch(exceptionHandler) {
             val html = withContext(Dispatchers.IO) {
                 webView.context.assets.open("po_token.html").bufferedReader().use { it.readText() }
             }
-
             val data = html.replaceFirst("</script>", "\n$JS_INTERFACE.downloadAndRunBotguard()</script>")
             webView.loadDataWithBaseURL("https://www.youtube.com", data, "text/html", "utf-8", null)
         }
@@ -88,7 +82,6 @@ class PoTokenWebView private constructor(
     @JavascriptInterface
     fun downloadAndRunBotguard() {
         Timber.tag(TAG).d("downloadAndRunBotguard() called")
-
         makeBotguardServiceRequest(
             "https://www.youtube.com/api/jnn/v1/Create",
             "[ \"$REQUEST_KEY\" ]",
@@ -130,7 +123,6 @@ class PoTokenWebView private constructor(
             try {
                 val (integrityToken, expirationTimeInSeconds) = parseIntegrityTokenData(responseBody)
                 Timber.tag(TAG).d("Parsed integrityToken (${integrityToken.take(50)}...), expires in $expirationTimeInSeconds sec")
-
                 expirationInstant = Instant.now().plusSeconds(expirationTimeInSeconds).minus(10, ChronoUnit.MINUTES)
 
                 Timber.tag(TAG).d("Evaluating createPoTokenMinter JavaScript...")
@@ -207,6 +199,20 @@ class PoTokenWebView private constructor(
             return
         }
 
+        // --- ADDED: Verify token size (critical for debugging) ---
+        val decodedBytes = try {
+            Base64.getDecoder().decode(poToken)
+        } catch (e: IllegalArgumentException) {
+            Timber.tag(TAG).e(e, "Failed to decode base64 poToken")
+            popPoTokenContinuation(identifier)?.resumeWithException(e)
+            return
+        }
+        Timber.tag(TAG).d("Decoded poToken byte length: ${decodedBytes.size} (expected 110-128)")
+        if (decodedBytes.size < 110) {
+            Timber.tag(TAG).w("Token too short (${decodedBytes.size} bytes) – will likely cause 403 after first chunk")
+        }
+        // -------------------------------------------------------
+
         Timber.tag(TAG).d("Generated poToken: identifier=$identifier poToken=$poToken")
         popPoTokenContinuation(identifier)?.resume(poToken)
     }
@@ -267,12 +273,9 @@ class PoTokenWebView private constructor(
     @MainThread
     fun close() {
         scope.cancel()
-
         webView.clearHistory()
         webView.clearCache(true)
-
         webView.loadUrl("about:blank")
-
         webView.onPause()
         webView.removeAllViews()
         webView.destroy()
@@ -287,7 +290,8 @@ class PoTokenWebView private constructor(
         private const val JS_INTERFACE = "PoTokenWebView"
 
         private val httpClient = OkHttpClient.Builder()
-            
+            // If you have a proxy setup (like Metrolist does), add it here:
+            // .proxy(YouTube.proxy)
             .build()
 
         suspend fun getNewPoTokenGenerator(context: Context): PoTokenWebView {
