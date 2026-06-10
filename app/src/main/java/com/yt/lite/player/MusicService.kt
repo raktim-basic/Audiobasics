@@ -45,38 +45,12 @@ class MusicService : MediaSessionService() {
 
         val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
 
-        // Use OkHttpDataSource like Metrolist — handles redirects and headers correctly
-        // Interceptor: YouTube CDN requires a Range header — without it returns 403
-        // ExoPlayer's initial open() doesn't set Range when position=0 and length=-1
-        val rangeInterceptor = okhttp3.Interceptor { chain ->
-            val original = chain.request()
-            val chunkSize = 8L * 1024L * 1024L // 8MB per chunk
-            val request = original.newBuilder().apply {
-                header("User-Agent", iosUserAgent)
-                removeHeader("Accept-Encoding")
-                val existingRange = original.header("Range")
-                if (existingRange == null) {
-                    // Initial request - start from byte 0
-                    addHeader("Range", "bytes=0-${chunkSize - 1}")
-                } else {
-                    // Subsequent request - expand to 8MB from current start position
-                    // Parse start byte from "bytes=X-Y" without regex to avoid escape issues
-                    val start = existingRange
-                        .removePrefix("bytes=")
-                        .substringBefore("-")
-                        .toLongOrNull() ?: 0L
-                    header("Range", "bytes=$start-${start + chunkSize - 1}")
-                }
-            }.build()
-            chain.proceed(request)
-        }
-
+        // SIMPLE OkHttpClient - NO custom interceptors!
+        // Let ExoPlayer handle Range headers naturally.
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            // Force HTTP/1.1 — YouTube CDN behaves more consistently on HTTP/1.1 for range requests
             .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-            .addInterceptor(rangeInterceptor)
             .build()
 
         val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
@@ -85,7 +59,7 @@ class MusicService : MediaSessionService() {
         // Wrap with DefaultDataSource to handle file:// URIs automatically
         val finalFactory = DefaultDataSource.Factory(this, okHttpDataSourceFactory)
 
-        // Resolver: ONLY does cache lookups — never blocks for network
+        // Resolver: cache lookups and pre-resolve (no Range modifications)
         val finalResolvingFactory = ResolvingDataSource.Factory(finalFactory) { dataSpec ->
             val uriString = dataSpec.uri.toString()
             when {
@@ -134,9 +108,9 @@ class MusicService : MediaSessionService() {
             }
         }
 
+        // Simpler load control – let ExoPlayer decide buffer sizes
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 10 * 60_000, 1_500, 3_000)
-            .setTargetBufferBytes(10 * 1024 * 1024)
             .build()
 
         val player = ExoPlayer.Builder(this)
