@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import okio.ByteString.Companion.decodeBase64
 import okio.ByteString.Companion.toByteString
+import java.util.Base64
 
 fun parseChallengeData(rawChallengeData: String): String {
     val scrambled = Json.parseToJsonElement(rawChallengeData).jsonArray
@@ -65,14 +66,13 @@ fun stringToU8(identifier: String): String {
     return newUint8Array(identifier.toByteArray())
 }
 
+// FIXED: returns standard base64 (with + and /) – no URL‑safe replacement
 fun u8ToBase64(poToken: String): String {
     return poToken.split(",")
         .map { it.toUByte().toByte() }
         .toByteArray()
         .toByteString()
-        .base64()
-        .replace("+", "-")
-        .replace("/", "_")
+        .base64()  // No .replace("+", "-").replace("/", "_")
 }
 
 private fun descramble(scrambledChallenge: String): String {
