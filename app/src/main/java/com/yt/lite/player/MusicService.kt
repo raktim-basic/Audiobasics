@@ -37,16 +37,20 @@ class MusicService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Cache: videoId -> Pair(streamUrl, expiryTimeMs)
+    // Expiry comes from the `expire=` param in the YouTube URL itself — no hardcoded TTL.
     private val songUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
-    private val STREAM_URL_TTL_MS = 5 * 60 * 60 * 1000L // 5 hours
+
+    companion object {
+        // 512KB chunks — same as Metrolist. Keeps each Range request small so we
+        // don't exhaust the CDN's per-URL request limit (~7-8 requests per URL).
+        private const val CHUNK_LENGTH = 512 * 1024L
+    }
 
     override fun onCreate() {
         super.onCreate()
 
         val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
 
-        // SIMPLE OkHttpClient - NO custom interceptors!
-        // Let ExoPlayer handle Range headers naturally.
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -59,7 +63,6 @@ class MusicService : MediaSessionService() {
         // Wrap with DefaultDataSource to handle file:// URIs automatically
         val finalFactory = DefaultDataSource.Factory(this, okHttpDataSourceFactory)
 
-        // Resolver: cache lookups and pre-resolve (no Range modifications)
         val finalResolvingFactory = ResolvingDataSource.Factory(finalFactory) { dataSpec ->
             val uriString = dataSpec.uri.toString()
             when {
@@ -72,7 +75,6 @@ class MusicService : MediaSessionService() {
                         Timber.e("Could not extract videoId from URI")
                         dataSpec
                     } else {
-                        // Invalidate cache on forceFallback so we get a fresh URL
                         if (forceFallback) {
                             Timber.w("Resolver: forceFallback=true, clearing cache for $videoId")
                             songUrlCache.remove(videoId)
@@ -81,7 +83,9 @@ class MusicService : MediaSessionService() {
                         val cached = songUrlCache[videoId]
                         if (cached != null && cached.second > System.currentTimeMillis()) {
                             Timber.d("Resolver: cache hit for $videoId ✅")
+                            // Apply 512KB chunk limit so ExoPlayer doesn't make huge Range requests
                             dataSpec.withUri(Uri.parse(cached.first))
+                                .subrange(dataSpec.uriPositionOffset, CHUNK_LENGTH)
                         } else {
                             Timber.d("Resolver: waiting for pre-resolve of $videoId (forceFallback=$forceFallback)...")
                             preResolveUrl(videoId, force = forceFallback)
@@ -91,6 +95,7 @@ class MusicService : MediaSessionService() {
                                 if (ready != null && ready.second > System.currentTimeMillis()) {
                                     Timber.d("Resolver: pre-resolve ready for $videoId ✅")
                                     return@Factory dataSpec.withUri(Uri.parse(ready.first))
+                                        .subrange(dataSpec.uriPositionOffset, CHUNK_LENGTH)
                                 }
                                 Thread.sleep(200)
                                 waited += 200
@@ -108,7 +113,6 @@ class MusicService : MediaSessionService() {
             }
         }
 
-        // Simpler load control – let ExoPlayer decide buffer sizes
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 10 * 60_000, 1_500, 3_000)
             .build()
@@ -126,7 +130,7 @@ class MusicService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        // Listen for media item transitions to pre-resolve the next song's URL
+        // Pre-resolve next song's URL on track transition
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(
                 mediaItem: androidx.media3.common.MediaItem?,
@@ -158,7 +162,8 @@ class MusicService : MediaSessionService() {
             .build()
     }
 
-    // Pre-resolve stream URL on IO coroutine — no blocking, no thread starvation
+    // Pre-resolve stream URL on IO coroutine — no blocking, no thread starvation.
+    // Stores Pair(url, expiryMs) where expiry comes from the URL's `expire=` param.
     fun preResolveUrl(videoId: String, force: Boolean = false) {
         val cached = songUrlCache[videoId]
         if (!force && cached != null && cached.second > System.currentTimeMillis()) {
@@ -167,12 +172,13 @@ class MusicService : MediaSessionService() {
         }
         serviceScope.launch {
             Timber.d("preResolve: fetching stream for $videoId...")
-            val url = Innertube.getStreamUrl(this@MusicService, videoId)
-            if (url != null) {
-                songUrlCache[videoId] = url to (System.currentTimeMillis() + STREAM_URL_TTL_MS)
-                Timber.d("preResolve: cached stream for $videoId ✅")
+            val result = Innertube.getStreamUrl(this@MusicService, videoId)
+            if (result != null) {
+                val (url, expiryMs) = result
+                songUrlCache[videoId] = url to expiryMs
+                Timber.d("preResolve: cached stream for $videoId ✅ (expires in ${(expiryMs - System.currentTimeMillis()) / 60000}min)")
 
-                // Probe with GET + Range header (HEAD returns 403 on googlevideo)
+                // Probe with a tiny Range request to confirm URL is alive
                 try {
                     val probeClient = okhttp3.OkHttpClient.Builder()
                         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
