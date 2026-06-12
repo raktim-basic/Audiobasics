@@ -529,18 +529,30 @@ object Innertube {
 
     private val poTokenGenerator = PoTokenGenerator()
 
+    // Result: Pair(streamUrl, expiryTimeMs) — expiry parsed from `expire=` in URL
+    // Falls back to 6-hour TTL if parsing fails.
+    private fun parseExpiry(url: String): Long {
+        val match = Regex("[?&]expire=(\\d+)").find(url)
+        val expireUnixSec = match?.groupValues?.get(1)?.toLongOrNull()
+        return if (expireUnixSec != null) {
+            expireUnixSec * 1000L  // convert to ms
+        } else {
+            System.currentTimeMillis() + 6 * 60 * 60 * 1000L  // 6hr fallback
+        }
+    }
+
     private suspend fun getInnerTubeStreamFast(
         context: Context,
         videoId: String,
         poTokenResult: com.yt.lite.api.potoken.PoTokenResult? = null
-    ): String? {
+    ): Pair<String, Long>? {
         for (client in STREAM_CLIENTS) {
             try {
                 Timber.d("Trying client: ${client.clientName} | poToken=${poTokenResult?.playerRequestPoToken?.take(10)}...")
                 val url = tryClientForStream(videoId, client, poTokenResult?.playerRequestPoToken, poTokenResult?.streamingDataPoToken)
                 if (!url.isNullOrEmpty()) {
                     Timber.d("Stream resolved via ${client.clientName} ✅")
-                    return url
+                    return url to parseExpiry(url)
                 }
             } catch (e: Exception) {
                 Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
@@ -683,14 +695,14 @@ object Innertube {
         return map
     }
 
-    suspend fun getStreamUrl(context: Context, videoId: String, forceFallback: Boolean = false): String? =
+    // Returns Pair(streamUrl, expiryTimeMs) or null on failure.
+    // Expiry is parsed from the `expire=` param in the URL (Unix seconds → ms).
+    suspend fun getStreamUrl(context: Context, videoId: String, forceFallback: Boolean = false): Pair<String, Long>? =
         withContext(Dispatchers.IO) {
-            // Generate poToken once at this level — shared by native engine AND NewPipe fallback
+            // Generate poToken once — shared by all clients
             val sharedPoToken = try {
                 val sessionId = UUID.randomUUID().toString()
-                withContext(Dispatchers.IO) {
-                    poTokenGenerator.getWebClientPoToken(videoId, sessionId)
-                }
+                poTokenGenerator.getWebClientPoToken(videoId, sessionId)
             } catch (e: Exception) {
                 Log.w("Innertube", "PoToken generation failed: ${e.message}")
                 null
@@ -703,12 +715,11 @@ object Innertube {
             }
 
             if (!forceFallback) {
-                for (i in 1..2) {
-                    val fastUrl = getInnerTubeStreamFast(context, videoId, sharedPoToken)
-                    if (!fastUrl.isNullOrEmpty()) {
-                        Log.d("Innertube", "Stream resolved via InnerTube natively (Try $i)")
-                        return@withContext fastUrl
-                    }
+                // Single attempt through all clients — no double retry
+                val result = getInnerTubeStreamFast(context, videoId, sharedPoToken)
+                if (result != null) {
+                    Log.d("Innertube", "Stream resolved via InnerTube natively ✅")
+                    return@withContext result
                 }
             }
 
@@ -720,8 +731,13 @@ object Innertube {
                     .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
                 extractor.fetchPage()
                 val streams: List<AudioStream> = extractor.audioStreams
-                streams.filter { it.content != null && it.content.isNotEmpty() }
+                val url = streams.filter { it.content != null && it.content.isNotEmpty() }
                     .maxByOrNull { it.averageBitrate }?.content
+                if (url != null) {
+                    url to parseExpiry(url)
+                } else {
+                    null
+                }
             } catch (e: Exception) {
                 Timber.e("NewPipe ALSO failed: ${e.message} ❌")
                 null
