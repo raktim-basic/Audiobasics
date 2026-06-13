@@ -154,21 +154,19 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
         override fun onPlayerError(error: PlaybackException) {
             Timber.e("Player error ❌ code=${error.errorCode} | ${error.message} | cause=${error.cause?.message} | rootCause=${error.cause?.cause?.message}")
-            
+
             if (fallbackRetryCount < 1) {
                 fallbackRetryCount++
                 Timber.w("Fallback retry attempt #$fallbackRetryCount")
                 _isLoading.value = true
-                
+
                 val currentSong = _currentSong.value
                 val ctrl = controller
                 if (currentSong != null && ctrl != null) {
                     val currentIndex = ctrl.currentMediaItemIndex
                     val currentPos = ctrl.currentPosition.coerceAtLeast(0L)
-
                     val fallbackUri = resolveUri(currentSong, forceFallback = true)
                     val newMediaItem = buildMediaItem(currentSong, fallbackUri)
-
                     ctrl.replaceMediaItem(currentIndex, newMediaItem)
                     ctrl.seekTo(currentIndex, currentPos)
                     ctrl.prepare()
@@ -184,7 +182,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
-            val mapped = when(repeatMode) {
+            val mapped = when (repeatMode) {
                 Player.REPEAT_MODE_ALL -> 1
                 Player.REPEAT_MODE_ONE -> 2
                 else -> 0
@@ -246,8 +244,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         val dur = ctrl.duration.takeIf { it > 0 } ?: 0L
         if (_duration.value != dur) _duration.value = dur
         _currentPosition.value = ctrl.currentPosition.coerceAtLeast(0L)
-        
-        val mappedRepeat = when(ctrl.repeatMode) {
+        val mappedRepeat = when (ctrl.repeatMode) {
             Player.REPEAT_MODE_ALL -> 1
             Player.REPEAT_MODE_ONE -> 2
             else -> 0
@@ -256,13 +253,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _repeatMode.value = mappedRepeat
             prefs.edit().putInt("repeat_mode", mappedRepeat).apply()
         }
-        
         if (playing) startProgressTracking() else stopProgressTracking()
     }
 
     private fun restoreStateFromController() {
         val ctrl = controller ?: return
-        
         val savedRepeat = prefs.getInt("repeat_mode", 0)
         ctrl.repeatMode = when (savedRepeat) {
             1 -> Player.REPEAT_MODE_ALL
@@ -270,13 +265,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             else -> Player.REPEAT_MODE_OFF
         }
         _repeatMode.value = savedRepeat
-
         if (ctrl.mediaItemCount == 0) return
         val restoredQueue = (0 until ctrl.mediaItemCount).mapNotNull { i ->
             ctrl.getMediaItemAt(i).toSong()
         }
         if (restoredQueue.isNotEmpty()) _queue.value = restoredQueue
-        
         syncStateFromController()
     }
 
@@ -358,9 +351,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     setMediaItem(buildMediaItem(song, resolveUri(song)))
                     prepare()
                     play()
-                } ?: Toast.makeText(
-                    getApplication(), "Player not ready", Toast.LENGTH_SHORT
-                ).show()
+                } ?: Toast.makeText(getApplication(), "Player not ready", Toast.LENGTH_SHORT).show()
                 fetchAndQueueSimilar(song)
             } catch (e: Exception) {
                 handlePlaybackError(e)
@@ -375,9 +366,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val newQueue = listOf(song) + similar
                 _queue.value = newQueue
                 val ctrl = controller ?: return
-                similar.forEach { s ->
-                    ctrl.addMediaItem(buildMediaItem(s, resolveUri(s)))
-                }
+                similar.forEach { s -> ctrl.addMediaItem(buildMediaItem(s, resolveUri(s))) }
                 Log.d("YTLite", "Queued ${similar.size} related songs")
             }
         } catch (e: Exception) {
@@ -401,9 +390,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     setMediaItems(mediaItems, songIndex, 0L)
                     prepare()
                     play()
-                } ?: Toast.makeText(
-                    getApplication(), "Player not ready", Toast.LENGTH_SHORT
-                ).show()
+                } ?: Toast.makeText(getApplication(), "Player not ready", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 handlePlaybackError(e)
             }
@@ -420,20 +407,18 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
             _isLoading.value = true
             val placeholder = Song(
-                id = videoId,
-                title = "Loading...",
-                artist = "",
+                id = videoId, title = "Loading...", artist = "",
                 thumbnail = "https://img.youtube.com/vi/$videoId/maxresdefault.jpg"
             )
             _currentSong.value = placeholder
             _queue.value = listOf(placeholder)
             try {
                 val metadata = Innertube.getVideoMetadata(videoId)
-                val streamUrl = Innertube.getStreamUrl(getApplication(), videoId)
+                // getStreamUrl returns Pair(url, expiryMs) — we only need the URL here.
+                // MusicService handles caching with the real expiry internally.
+                val streamUrl = Innertube.getStreamUrl(getApplication(), videoId)?.first
                 if (streamUrl == null) {
-                    Toast.makeText(
-                        getApplication(), "Could not load song", Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(getApplication(), "Could not load song", Toast.LENGTH_LONG).show()
                     _isLoading.value = false
                     return@launch
                 }
@@ -468,8 +453,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun resolveArtworkUri(song: Song): Uri {
         val cached = CacheManager.getCachedThumbPath(getApplication(), song.id)
-        return if (cached != null) Uri.parse("file://$cached")
-        else Uri.parse(song.thumbnail)
+        return if (cached != null) Uri.parse("file://$cached") else Uri.parse(song.thumbnail)
     }
 
     private fun buildMediaItem(song: Song, uri: String): MediaItem {
@@ -537,20 +521,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         controller?.moveMediaItem(fromIndex, toIndex)
     }
 
-    fun skipToNext() {
-        _isLoading.value = true
-        controller?.seekToNextMediaItem()
-    }
+    fun skipToNext() { _isLoading.value = true; controller?.seekToNextMediaItem() }
+    fun skipToPrevious() { _isLoading.value = true; controller?.seekToPreviousMediaItem() }
+    fun togglePlayPause() { controller?.run { if (isPlaying) pause() else play() } }
 
-    fun skipToPrevious() {
-        _isLoading.value = true
-        controller?.seekToPreviousMediaItem()
-    }
-
-    fun togglePlayPause() {
-        controller?.run { if (isPlaying) pause() else play() }
-    }
-    
     fun toggleRepeatMode() {
         val next = (_repeatMode.value + 1) % 3
         _repeatMode.value = next
@@ -568,8 +542,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun like(song: Song) {
         val updatedSong = song.copy(isCached = false, cacheFailed = false)
-        _likedSongs.value = listOf(updatedSong) +
-                _likedSongs.value.filter { it.id != song.id }
+        _likedSongs.value = listOf(updatedSong) + _likedSongs.value.filter { it.id != song.id }
         saveLikedSongs()
         viewModelScope.launch {
             cacheSemaphore.withPermit { cacheSongSilently(updatedSong) }
@@ -611,9 +584,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissStorageLow() { _showStorageLow.value = false }
 
-    private fun updateLikedSongCacheStatus(
-        id: String, isCached: Boolean, cacheFailed: Boolean
-    ) {
+    private fun updateLikedSongCacheStatus(id: String, isCached: Boolean, cacheFailed: Boolean) {
         _likedSongs.value = _likedSongs.value.map { s ->
             if (s.id == id) s.copy(isCached = isCached, cacheFailed = cacheFailed) else s
         }
@@ -626,8 +597,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             cacheSemaphore.withPermit {
                 val success = cacheSongSilently(song)
-                if (!success)
-                    updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
+                if (!success) updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
             }
         }
     }
@@ -652,9 +622,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 coroutineScope {
                     uncached.map { song ->
                         async {
-                            updateLikedSongCacheStatus(
-                                song.id, isCached = false, cacheFailed = false
-                            )
+                            updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = false)
                             cacheSemaphore.withPermit { cacheSongSilently(song) }
                             synchronized(this@MusicViewModel) { done++ }
                             _cacheProgress.value = Pair(done, total)
@@ -737,13 +705,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("haptics_enabled", _hapticsEnabled.value).apply()
     }
 
-    fun triggerUpdater() {
-        _navigateToUpdater.value = true
-    }
-
-    fun onUpdaterNavigated() {
-        _navigateToUpdater.value = false
-    }
+    fun triggerUpdater() { _navigateToUpdater.value = true }
+    fun onUpdaterNavigated() { _navigateToUpdater.value = false }
 
     fun checkForUpdate() {
         viewModelScope.launch(Dispatchers.IO) {
@@ -776,13 +739,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val id = obj.getString("id")
                 val isCached = CacheManager.isCached(getApplication(), id)
                 Song(
-                    id = id,
-                    title = obj.getString("title"),
-                    artist = obj.getString("artist"),
-                    thumbnail = obj.getString("thumbnail"),
+                    id = id, title = obj.getString("title"),
+                    artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
                     isCached = isCached,
-                    cacheFailed = if (isCached) false
-                    else obj.optBoolean("cacheFailed", false),
+                    cacheFailed = if (isCached) false else obj.optBoolean("cacheFailed", false),
                     isExplicit = obj.optBoolean("isExplicit", false)
                 )
             }
@@ -811,10 +771,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             (0 until arr.length()).map { i ->
                 val obj = arr.getJSONObject(i)
                 Album(
-                    id = obj.getString("id"),
-                    title = obj.getString("title"),
-                    artist = obj.getString("artist"),
-                    thumbnail = obj.getString("thumbnail"),
+                    id = obj.getString("id"), title = obj.getString("title"),
+                    artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
                     duration = obj.optLong("duration", 0L),
                     songCount = obj.optInt("songCount", 0),
                     youtubeUrl = obj.optString("youtubeUrl", "")
@@ -830,21 +788,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val songsArr = JSONArray()
                 _likedSongs.value.forEach { song ->
                     songsArr.put(JSONObject().apply {
-                        put("id", song.id)
-                        put("title", song.title)
-                        put("artist", song.artist)
-                        put("thumbnail", song.thumbnail)
+                        put("id", song.id); put("title", song.title)
+                        put("artist", song.artist); put("thumbnail", song.thumbnail)
                     })
                 }
                 val albumsArr = JSONArray()
                 _savedAlbums.value.forEach { album ->
                     albumsArr.put(JSONObject().apply {
-                        put("id", album.id)
-                        put("title", album.title)
-                        put("artist", album.artist)
-                        put("thumbnail", album.thumbnail)
-                        put("duration", album.duration)
-                        put("songCount", album.songCount)
+                        put("id", album.id); put("title", album.title)
+                        put("artist", album.artist); put("thumbnail", album.thumbnail)
+                        put("duration", album.duration); put("songCount", album.songCount)
                         put("youtubeUrl", album.youtubeUrl)
                     })
                 }
@@ -855,9 +808,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 Toast.makeText(context, "Exported! :)", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(
-                    context, "Export failed :( ${e.message}", Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(context, "Export failed :( ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -871,21 +822,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val songs = (0 until root.getJSONArray("liked_songs").length()).map { i ->
                     val obj = root.getJSONArray("liked_songs").getJSONObject(i)
                     Song(
-                        id = obj.getString("id"),
-                        title = obj.getString("title"),
-                        artist = obj.getString("artist"),
-                        thumbnail = obj.getString("thumbnail"),
-                        isCached = false,
-                        cacheFailed = true
+                        id = obj.getString("id"), title = obj.getString("title"),
+                        artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
+                        isCached = false, cacheFailed = true
                     )
                 }
                 val albums = (0 until root.getJSONArray("saved_albums").length()).map { i ->
                     val obj = root.getJSONArray("saved_albums").getJSONObject(i)
                     Album(
-                        id = obj.getString("id"),
-                        title = obj.getString("title"),
-                        artist = obj.getString("artist"),
-                        thumbnail = obj.getString("thumbnail"),
+                        id = obj.getString("id"), title = obj.getString("title"),
+                        artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
                         duration = obj.optLong("duration", 0L),
                         songCount = obj.optInt("songCount", 0),
                         youtubeUrl = obj.optString("youtubeUrl", "")
@@ -901,9 +847,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     Toast.LENGTH_LONG
                 ).show()
             } catch (e: Exception) {
-                Toast.makeText(
-                    context, "Import failed :( ${e.message}", Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(context, "Import failed :( ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
