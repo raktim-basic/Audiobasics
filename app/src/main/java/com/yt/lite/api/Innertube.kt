@@ -455,8 +455,6 @@ object Innertube {
 
     private val poTokenGenerator = PoTokenGenerator()
 
-    // Parse real expiry from YouTube URL's `expire=` param (Unix seconds → ms).
-    // Falls back to 6-hour TTL if param is missing.
     fun parseExpiry(url: String): Long {
         val match = Regex("[?&]expire=(\\d+)").find(url)
         val expireUnixSec = match?.groupValues?.get(1)?.toLongOrNull()
@@ -464,89 +462,43 @@ object Innertube {
         else System.currentTimeMillis() + 6 * 60 * 60 * 1000L
     }
 
-    // Selects the best audio format from the player response.
-    // Priority: non-alr > alr, then highest bitrate within each group.
-    // Skips formats with no contentLength (broken/incomplete YouTube streams).
-    // For IOS/ANDROID clients: only mp4a (AAC) is available, opus not returned.
-    // For WEB clients: both opus and AAC available — opus wins at same bitrate tier
-    // since it's higher quality, but AAC is preferred for device compatibility.
+    // Pure selection function — no suspend needed, no cipher resolution here.
+    // Cipher URLs are pre-resolved in tryClientForStream() before this is called.
+    // Receives a list of ResolvedFormat(url, bitrate, mimeType, itag, hasAlr).
+    private data class ResolvedFormat(
+        val url: String,
+        val bitrate: Int,
+        val mimeType: String,
+        val itag: Int,
+        val hasAlr: Boolean
+    )
+
     private fun selectBestAudioFormat(
-        allFormats: List<JSONObject>,
-        client: YTClient,
-        videoId: String
-    ): Pair<String, Int>? {  // returns Pair(url, bitrate)
-
-        data class Candidate(
-            val url: String,
-            val bitrate: Int,
-            val hasAlr: Boolean,
-            val mimeType: String,
-            val itag: Int,
-            val hasContentLength: Boolean
-        )
-
-        val candidates = mutableListOf<Candidate>()
-
-        for (f in allFormats) {
-            val mimeType = f.optString("mimeType", "")
-
-            // Audio-only formats only — skip video streams
-            if (!mimeType.startsWith("audio/")) continue
-
-            // Skip formats with no contentLength — these are often broken
-            val contentLength = f.optString("contentLength", "")
-            if (contentLength.isBlank() || contentLength == "0") continue
-
-            var url = f.optString("url", "")
-            if (url.isEmpty()) {
-                val signatureCipher = f.optString("signatureCipher", "")
-                    .ifEmpty { f.optString("cipher", "") }
-                if (signatureCipher.isNotEmpty()) {
-                    url = CipherDeobfuscator.deobfuscateStreamUrl(signatureCipher, videoId) ?: ""
-                }
-            }
-            if (url.isEmpty()) continue
-
-            val bitrate = f.optInt("bitrate", 0)
-            val itag = f.optInt("itag", 0)
-            val hasAlr = url.contains("alr=yes")
-
-            candidates.add(Candidate(
-                url = url,
-                bitrate = bitrate,
-                hasAlr = hasAlr,
-                mimeType = mimeType,
-                itag = itag,
-                hasContentLength = contentLength.isNotBlank()
-            ))
-        }
-
-        if (candidates.isEmpty()) return null
+        formats: List<ResolvedFormat>,
+        client: YTClient
+    ): ResolvedFormat? {
+        if (formats.isEmpty()) return null
 
         // Sort priority:
         // 1. Non-alr before alr
         // 2. Higher bitrate wins
-        // 3. For web clients: prefer opus (webm) over AAC at same bitrate — better quality
-        //    For mobile clients: prefer mp4a (AAC) — opus not available but just in case
-        val sorted = candidates.sortedWith(compareByDescending<Candidate> {
-            if (!it.hasAlr) 1 else 0           // non-alr first
-        }.thenByDescending {
-            it.bitrate                          // highest bitrate
-        }.thenByDescending {
-            // Codec tiebreaker: web prefers opus, mobile prefers AAC
-            if (client.usePoTokenInBody) {
-                if (it.mimeType.contains("opus")) 1 else 0
-            } else {
-                if (it.mimeType.contains("mp4a")) 1 else 0
-            }
-        })
+        // 3. Codec tiebreaker: web prefers opus, mobile prefers mp4a
+        val sorted = formats.sortedWith(
+            compareByDescending<ResolvedFormat> { if (!it.hasAlr) 1 else 0 }
+                .thenByDescending { it.bitrate }
+                .thenByDescending {
+                    if (client.usePoTokenInBody) {
+                        if (it.mimeType.contains("opus")) 1 else 0
+                    } else {
+                        if (it.mimeType.contains("mp4a")) 1 else 0
+                    }
+                }
+        )
 
-        val best = sorted.firstOrNull() ?: return null
-
+        val best = sorted.first()
         Timber.d("${client.clientName}: selected itag=${best.itag} bitrate=${best.bitrate} " +
                 "mime=${best.mimeType} alr=${best.hasAlr}")
-
-        return best.url to best.bitrate
+        return best
     }
 
     private suspend fun getInnerTubeStreamFast(
@@ -561,7 +513,7 @@ object Innertube {
                     poTokenResult?.playerRequestPoToken, poTokenResult?.streamingDataPoToken)
                 if (result != null) {
                     Timber.d("Stream resolved via ${client.clientName} ✅")
-                    return result.first to parseExpiry(result.first)
+                    return result to parseExpiry(result)
                 }
             } catch (e: Exception) {
                 Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
@@ -576,7 +528,7 @@ object Innertube {
         client: YTClient,
         playerRequestPoToken: String?,
         streamingDataPoToken: String?
-    ): Pair<String, Int>? {  // returns Pair(url, bitrate) or null
+    ): String? {
         val clientContext = JSONObject()
             .put("clientName", client.clientName)
             .put("clientVersion", client.clientVersion)
@@ -612,26 +564,56 @@ object Innertube {
         }
 
         val streamingData = json.optJSONObject("streamingData") ?: return null
-
-        // Collect audio-only formats from adaptiveFormats only
-        // (regular `formats` are muxed audio+video — lower quality, skip them)
         val adaptiveFormats = streamingData.optJSONArray("adaptiveFormats")
-        val allFormats = mutableListOf<JSONObject>()
-        if (adaptiveFormats != null) {
-            for (i in 0 until adaptiveFormats.length()) allFormats.add(adaptiveFormats.getJSONObject(i))
+        if (adaptiveFormats == null || adaptiveFormats.length() == 0) return null
+
+        // Pre-resolve all URLs here in suspend context before passing to pure selectBestAudioFormat().
+        // Cipher resolution (deobfuscateStreamUrl) is suspend, so it must happen here.
+        val resolvedFormats = mutableListOf<ResolvedFormat>()
+        for (i in 0 until adaptiveFormats.length()) {
+            val f = adaptiveFormats.getJSONObject(i)
+            val mimeType = f.optString("mimeType", "")
+
+            // Audio-only formats only
+            if (!mimeType.startsWith("audio/")) continue
+
+            // Skip formats with no contentLength — often broken/incomplete
+            val contentLength = f.optString("contentLength", "")
+            if (contentLength.isBlank() || contentLength == "0") continue
+
+            // Resolve URL — direct or cipher
+            var url = f.optString("url", "")
+            if (url.isEmpty()) {
+                val signatureCipher = f.optString("signatureCipher", "")
+                    .ifEmpty { f.optString("cipher", "") }
+                if (signatureCipher.isNotEmpty()) {
+                    // deobfuscateStreamUrl is suspend — safe to call here
+                    url = CipherDeobfuscator.deobfuscateStreamUrl(signatureCipher, videoId) ?: ""
+                }
+            }
+            if (url.isEmpty()) continue
+
+            resolvedFormats.add(ResolvedFormat(
+                url = url,
+                bitrate = f.optInt("bitrate", 0),
+                mimeType = mimeType,
+                itag = f.optInt("itag", 0),
+                hasAlr = url.contains("alr=yes")
+            ))
         }
-        if (allFormats.isEmpty()) return null
 
-        val (bestUrl, bestBitrate) = selectBestAudioFormat(allFormats, client, videoId)
-            ?: return null
+        if (resolvedFormats.isEmpty()) return null
 
-        // Clean up: remove alr=yes — ExoPlayer can't handle YouTube's adaptive loading protocol
-        var finalUrl = bestUrl
+        // Now select the best — pure function, no suspend needed
+        val best = selectBestAudioFormat(resolvedFormats, client) ?: return null
+
+        // Clean up alr=yes
+        var finalUrl = best.url
             .replace("&alr=yes", "")
             .replace("alr=yes&", "")
             .replace("alr=yes", "")
 
-        // Web clients: apply n-param transform to unlock throttle-free URLs
+        // Web clients: apply n-param transform
         if (client.usePoTokenInBody) {
             finalUrl = CipherDeobfuscator.transformNParamInUrl(finalUrl)
         }
@@ -643,11 +625,9 @@ object Innertube {
             Timber.d("${client.clientName}: appended pot= to stream URL ✅")
         }
 
-        return finalUrl to bestBitrate
+        return finalUrl
     }
 
-    // Returns Pair(streamUrl, expiryTimeMs) or null on total failure.
-    // Single pass through all clients — no double retry loop.
     suspend fun getStreamUrl(
         context: Context,
         videoId: String,
