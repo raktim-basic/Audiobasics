@@ -3,8 +3,10 @@ package com.yt.lite.api
 import android.content.Context
 import android.util.Log
 import timber.log.Timber
-import com.yt.lite.api.potoken.PoTokenGenerator
 import com.yt.lite.api.cipher.CipherDeobfuscator
+import com.yt.lite.api.cipher.FunctionNameExtractor
+import com.yt.lite.api.cipher.PlayerJsFetcher
+import com.yt.lite.api.potoken.PoTokenGenerator
 import com.yt.lite.data.Album
 import com.yt.lite.data.Song
 import kotlinx.coroutines.Dispatchers
@@ -20,15 +22,13 @@ import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.stream.AudioStream
-import java.net.URLDecoder
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 object Innertube {
 
-    private var initialized = false
+    private var newPipeInitialized = false
 
-    private val ytMusicClient = OkHttpClient.Builder()
+    private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
@@ -41,9 +41,93 @@ object Innertube {
     }
     private const val YTM_CLIENT_NAME = "WEB_REMIX"
     private const val YTM_CLIENT_VERSION = "1.20260520.01.00"
+    private const val FIREFOX_UA =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
-    private const val CHROME_USER_AGENT =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+    // Visitor data fetched from YouTube on first use — used as poToken session ID.
+    // Using a real YouTube visitor ID gives BotGuard enough entropy to produce
+    // valid 110-128 byte tokens. Random UUIDs can produce short tokens for some videos.
+    @Volatile var visitorData: String? = null
+
+    // Cached signature timestamp from player.js — required for WEB_REMIX to return OK.
+    // Changes when YouTube updates their player JS (every few days/weeks).
+    @Volatile private var signatureTimestamp: Int? = null
+    @Volatile private var signatureTimestampFetchedAt: Long = 0
+    private const val SIG_TIMESTAMP_TTL = 6 * 60 * 60 * 1000L // 6 hours
+
+    private val poTokenGenerator = PoTokenGenerator()
+
+    // ─── Startup init ────────────────────────────────────────────────────────────
+
+    // Call this once from MusicService.onCreate() — fetches visitorData + signatureTimestamp
+    // so they're ready before the first song plays.
+    suspend fun init() = withContext(Dispatchers.IO) {
+        if (visitorData == null) fetchVisitorData()
+        if (signatureTimestamp == null) fetchSignatureTimestamp()
+    }
+
+    private suspend fun fetchVisitorData() {
+        try {
+            // Hit the YouTube homepage with a browser UA — YouTube sets X-Visitor-Data
+            // in the response which is a real visitor session identifier.
+            val request = Request.Builder()
+                .url("https://www.youtube.com/")
+                .header("User-Agent", FIREFOX_UA)
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .get()
+                .build()
+            val response = httpClient.newCall(request).execute()
+            val vd = response.header("X-Visitor-Data")
+                ?: response.header("x-visitor-data")
+            if (!vd.isNullOrBlank()) {
+                visitorData = vd
+                NewPipeDownloader.visitorData = vd
+                Timber.d("visitorData fetched: ${vd.take(20)}... ✅")
+            } else {
+                // Fallback: extract from HTML
+                val body = response.body?.string() ?: ""
+                val match = Regex(""""visitorData"\s*:\s*"([^"]+)"""").find(body)
+                    ?: Regex(""""VISITOR_DATA"\s*:\s*"([^"]+)"""").find(body)
+                val extracted = match?.groupValues?.get(1)
+                if (!extracted.isNullOrBlank()) {
+                    visitorData = extracted
+                    NewPipeDownloader.visitorData = extracted
+                    Timber.d("visitorData extracted from HTML: ${extracted.take(20)}... ✅")
+                } else {
+                    Timber.w("Could not fetch visitorData — will use UUID fallback")
+                }
+            }
+        } catch (e: Exception) {
+            Timber.w("fetchVisitorData failed: ${e.message}")
+        }
+    }
+
+    private suspend fun fetchSignatureTimestamp() {
+        try {
+            val now = System.currentTimeMillis()
+            if (signatureTimestamp != null &&
+                now - signatureTimestampFetchedAt < SIG_TIMESTAMP_TTL) return
+
+            val result = PlayerJsFetcher.getPlayerJs()
+            if (result != null) {
+                val (playerJs, _) = result
+                val sts = FunctionNameExtractor.extractSignatureTimestamp(playerJs)
+                if (sts != null) {
+                    signatureTimestamp = sts
+                    signatureTimestampFetchedAt = now
+                    Timber.d("signatureTimestamp=$sts ✅")
+                } else {
+                    Timber.w("extractSignatureTimestamp returned null")
+                }
+            } else {
+                Timber.w("PlayerJsFetcher returned null")
+            }
+        } catch (e: Exception) {
+            Timber.w("fetchSignatureTimestamp failed: ${e.message}")
+        }
+    }
+
+    // ─── YTM helpers (search / album / metadata) ─────────────────────────────────
 
     private fun ytmContext(): JSONObject = JSONObject().put(
         "client", JSONObject()
@@ -59,14 +143,14 @@ object Innertube {
             val request = Request.Builder()
                 .url("$YTM_BASE/$endpoint?key=$YTM_KEY")
                 .addHeader("Content-Type", "application/json")
-                .addHeader("User-Agent", CHROME_USER_AGENT)
+                .addHeader("User-Agent", FIREFOX_UA)
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/")
                 .addHeader("X-YouTube-Client-Name", "67")
                 .addHeader("X-YouTube-Client-Version", YTM_CLIENT_VERSION)
                 .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
                 .build()
-            val response = ytMusicClient.newCall(request).execute()
+            val response = httpClient.newCall(request).execute()
             val text = response.body?.string() ?: return null
             JSONObject(text)
         } catch (e: Exception) {
@@ -113,8 +197,7 @@ object Innertube {
     private fun parseDurationString(t: String): Long {
         val p = t.trim().split(":")
         return when (p.size) {
-            2 -> (p[0].toLongOrNull() ?: 0) * 60000 +
-                    (p[1].toLongOrNull() ?: 0) * 1000
+            2 -> (p[0].toLongOrNull() ?: 0) * 60000 + (p[1].toLongOrNull() ?: 0) * 1000
             3 -> (p[0].toLongOrNull() ?: 0) * 3600000 +
                     (p[1].toLongOrNull() ?: 0) * 60000 +
                     (p[2].toLongOrNull() ?: 0) * 1000
@@ -128,8 +211,7 @@ object Innertube {
             for (fc in 0 until fixedCols.length()) {
                 val runs = fixedCols.optJSONObject(fc)
                     ?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
-                    ?.optJSONObject("text")
-                    ?.optJSONArray("runs") ?: continue
+                    ?.optJSONObject("text")?.optJSONArray("runs") ?: continue
                 for (r in 0 until runs.length()) {
                     val t = runs.optJSONObject(r)?.optString("text", "") ?: ""
                     if (t.matches(Regex("\\d+:\\d{2}"))) return parseDurationString(t)
@@ -140,8 +222,7 @@ object Innertube {
         for (fc in 0 until flexCols.length()) {
             val runs = flexCols.optJSONObject(fc)
                 ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                ?.optJSONObject("text")
-                ?.optJSONArray("runs") ?: continue
+                ?.optJSONObject("text")?.optJSONArray("runs") ?: continue
             for (r in 0 until runs.length()) {
                 val t = runs.optJSONObject(r)?.optString("text", "") ?: ""
                 if (t.matches(Regex("\\d+:\\d{2}"))) return parseDurationString(t)
@@ -154,16 +235,10 @@ object Innertube {
         val songs = mutableListOf<Song>()
         val albums = mutableListOf<Song>()
         try {
-            val songsResponse = ytmPost(
-                "search",
-                JSONObject().put("query", query).put("params", "EgWKAQIIAWoMEA4QChADEAQQCRAF")
-            )
-            parseSongsFromYTM(songsResponse, songs)
-            val albumsResponse = ytmPost(
-                "search",
-                JSONObject().put("query", query).put("params", "EgWKAQIYAWoMEA4QChADEAQQCRAF")
-            )
-            parseAlbumsFromYTM(albumsResponse, albums)
+            parseSongsFromYTM(ytmPost("search",
+                JSONObject().put("query", query).put("params", "EgWKAQIIAWoMEA4QChADEAQQCRAF")), songs)
+            parseAlbumsFromYTM(ytmPost("search",
+                JSONObject().put("query", query).put("params", "EgWKAQIYAWoMEA4QChADEAQQCRAF")), albums)
         } catch (e: Exception) {
             Log.e("Innertube", "YTM search error: ${e.message}")
         }
@@ -179,13 +254,11 @@ object Innertube {
             val sections = response
                 ?.optJSONObject("contents")
                 ?.optJSONObject("tabbedSearchResultsRenderer")
-                ?.optJSONArray("tabs")
-                ?.getJSONObject(0)
+                ?.optJSONArray("tabs")?.getJSONObject(0)
                 ?.optJSONObject("tabRenderer")
                 ?.optJSONObject("content")
                 ?.optJSONObject("sectionListRenderer")
                 ?.optJSONArray("contents") ?: return
-
             for (si in 0 until sections.length()) {
                 val items = sections.optJSONObject(si)
                     ?.optJSONObject("musicShelfRenderer")
@@ -196,43 +269,29 @@ object Innertube {
                             .optJSONObject("musicResponsiveListItemRenderer") ?: continue
                         val overlay = item.optJSONObject("overlay")
                             ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                            ?.optJSONObject("content")
-                            ?.optJSONObject("musicPlayButtonRenderer")
-                        val videoId = extractVideoId(
-                            overlay?.optJSONObject("playNavigationEndpoint")
-                        ) ?: continue
+                            ?.optJSONObject("content")?.optJSONObject("musicPlayButtonRenderer")
+                        val videoId = extractVideoId(overlay?.optJSONObject("playNavigationEndpoint")) ?: continue
                         val flexCols = item.optJSONArray("flexColumns") ?: continue
-                        val col0 = flexCols.optJSONObject(0)
-                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                        val title = extractText(col0, "text")
-                        if (title.isBlank()) continue
-                        val col1 = flexCols.optJSONObject(1)
-                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        val col0 = flexCols.optJSONObject(0)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        val title = extractText(col0, "text"); if (title.isBlank()) continue
+                        val col1 = flexCols.optJSONObject(1)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
                         val runs = col1?.optJSONObject("text")?.optJSONArray("runs")
-                        var artist = ""
-                        var durationMs = 0L
+                        var artist = ""; var durationMs = 0L
                         if (runs != null) {
                             for (r in 0 until runs.length()) {
                                 val t = runs.optJSONObject(r)?.optString("text", "") ?: ""
                                 if (t == " • " || t == "•" || t.isBlank()) continue
-                                if (r == runs.length() - 1 && t.contains(":")) {
-                                    durationMs = parseDurationString(t)
-                                } else if (artist.isEmpty()) {
-                                    artist = t
-                                }
+                                if (r == runs.length() - 1 && t.contains(":")) durationMs = parseDurationString(t)
+                                else if (artist.isEmpty()) artist = t
                             }
                         }
-                        out.add(Song(
-                            id = videoId, title = title, artist = artist,
+                        out.add(Song(id = videoId, title = title, artist = artist,
                             thumbnail = ytThumbnail(videoId), duration = durationMs,
-                            isExplicit = parseExplicit(item.optJSONArray("badges"))
-                        ))
+                            isExplicit = parseExplicit(item.optJSONArray("badges"))))
                     } catch (_: Exception) {}
                 }
             }
-        } catch (e: Exception) {
-            Log.e("Innertube", "parseSongsFromYTM error: ${e.message}")
-        }
+        } catch (e: Exception) { Log.e("Innertube", "parseSongsFromYTM error: ${e.message}") }
     }
 
     private fun parseAlbumsFromYTM(response: JSONObject?, out: MutableList<Song>) {
@@ -240,70 +299,52 @@ object Innertube {
             val sections = response
                 ?.optJSONObject("contents")
                 ?.optJSONObject("tabbedSearchResultsRenderer")
-                ?.optJSONArray("tabs")
-                ?.getJSONObject(0)
-                ?.optJSONObject("tabRenderer")
-                ?.optJSONObject("content")
-                ?.optJSONObject("sectionListRenderer")
-                ?.optJSONArray("contents") ?: return
-
+                ?.optJSONArray("tabs")?.getJSONObject(0)
+                ?.optJSONObject("tabRenderer")?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")?.optJSONArray("contents") ?: return
             for (si in 0 until sections.length()) {
                 val items = sections.optJSONObject(si)
-                    ?.optJSONObject("musicShelfRenderer")
-                    ?.optJSONArray("contents") ?: continue
+                    ?.optJSONObject("musicShelfRenderer")?.optJSONArray("contents") ?: continue
                 for (ii in 0 until items.length()) {
                     if (out.size >= 3) break
                     try {
                         val item = items.getJSONObject(ii)
                             .optJSONObject("musicResponsiveListItemRenderer") ?: continue
                         val flexCols = item.optJSONArray("flexColumns") ?: continue
-                        val col0 = flexCols.optJSONObject(0)
-                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                        val title = extractText(col0, "text")
-                        if (title.isBlank()) continue
-                        val col1 = flexCols.optJSONObject(1)
-                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        val col0 = flexCols.optJSONObject(0)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        val title = extractText(col0, "text"); if (title.isBlank()) continue
+                        val col1 = flexCols.optJSONObject(1)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
                         val runs = col1?.optJSONObject("text")?.optJSONArray("runs")
                         var artist = ""
                         if (runs != null) {
-                            var nonSepCount = 0
+                            var n = 0
                             for (r in 0 until runs.length()) {
                                 val t = runs.optJSONObject(r)?.optString("text", "") ?: ""
                                 if (t == " • " || t == "•" || t.isBlank()) continue
-                                nonSepCount++
-                                if (nonSepCount == 1) continue
-                                if (nonSepCount == 2 && !t.all { c -> c.isDigit() }) { artist = t; break }
+                                n++; if (n == 1) continue
+                                if (n == 2 && !t.all { c -> c.isDigit() }) { artist = t; break }
                             }
                         }
-                        var browseId = ""
-                        val titleRuns = col0?.optJSONObject("text")?.optJSONArray("runs")
-                        if (titleRuns != null && titleRuns.length() > 0) {
-                            browseId = titleRuns.getJSONObject(0)
-                                .optJSONObject("navigationEndpoint")
-                                ?.optJSONObject("browseEndpoint")
-                                ?.optString("browseId") ?: ""
-                        }
+                        var browseId = col0?.optJSONObject("text")?.optJSONArray("runs")
+                            ?.getJSONObject(0)?.optJSONObject("navigationEndpoint")
+                            ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
                         if (browseId.isEmpty()) {
-                            val overlay = item.optJSONObject("overlay")
+                            browseId = item.optJSONObject("overlay")
                                 ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                                ?.optJSONObject("content")
-                                ?.optJSONObject("musicPlayButtonRenderer")
-                            browseId = overlay?.optJSONObject("playNavigationEndpoint")
+                                ?.optJSONObject("content")?.optJSONObject("musicPlayButtonRenderer")
+                                ?.optJSONObject("playNavigationEndpoint")
                                 ?.optJSONObject("watchPlaylistEndpoint")
                                 ?.optString("playlistId") ?: ""
                         }
                         if (browseId.isEmpty()) continue
                         val thumbnails = item.optJSONObject("thumbnail")
                             ?.optJSONObject("musicThumbnailRenderer")
-                            ?.optJSONObject("thumbnail")
-                            ?.optJSONArray("thumbnails")
+                            ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                         val thumb = if (thumbnails != null && thumbnails.length() > 0)
                             thumbnails.getJSONObject(thumbnails.length() - 1).optString("url", "") else ""
-                        out.add(Song(
-                            id = browseId, title = title,
+                        out.add(Song(id = browseId, title = title,
                             artist = "(Album) ${artist.ifBlank { "Unknown Artist" }}",
-                            thumbnail = thumb, isAlbum = true
-                        ))
+                            thumbnail = thumb, isAlbum = true))
                     } catch (_: Exception) {}
                 }
             }
@@ -319,34 +360,24 @@ object Innertube {
                 try {
                     when (item) {
                         is org.schabi.newpipe.extractor.playlist.PlaylistInfoItem -> {
-                            if (albums.size < 3) {
-                                val id = extractIdFromUrl(item.url)
-                                albums.add(Song(
-                                    id = id, title = item.name ?: continue,
-                                    artist = "(Album) ${item.uploaderName ?: ""}",
-                                    thumbnail = item.thumbnails.maxByOrNull { it.width * it.height }?.url ?: "",
-                                    isAlbum = true
-                                ))
-                            }
+                            if (albums.size < 3) albums.add(Song(
+                                id = extractIdFromUrl(item.url), title = item.name ?: continue,
+                                artist = "(Album) ${item.uploaderName ?: ""}",
+                                thumbnail = item.thumbnails.maxByOrNull { it.width * it.height }?.url ?: "",
+                                isAlbum = true))
                         }
                         is org.schabi.newpipe.extractor.stream.StreamInfoItem -> {
-                            val dur = item.duration
-                            if (dur < 60 || dur > 900) continue
-                            val id = extractIdFromUrl(item.url)
+                            val dur = item.duration; if (dur < 60 || dur > 900) continue
                             val title = item.name ?: continue
-                            songs.add(Song(
-                                id = id, title = title, artist = item.uploaderName ?: "",
-                                thumbnail = ytThumbnail(id), duration = dur * 1000,
-                                isExplicit = title.lowercase().contains("explicit") ||
-                                        title.lowercase().contains("dirty")
-                            ))
+                            songs.add(Song(id = extractIdFromUrl(item.url), title = title,
+                                artist = item.uploaderName ?: "", thumbnail = ytThumbnail(extractIdFromUrl(item.url)),
+                                duration = dur * 1000,
+                                isExplicit = title.lowercase().contains("explicit") || title.lowercase().contains("dirty")))
                         }
                     }
                 } catch (_: Exception) {}
             }
-        } catch (e: Exception) {
-            Log.e("Innertube", "Fallback search error: ${e.message}")
-        }
+        } catch (e: Exception) { Log.e("Innertube", "Fallback search error: ${e.message}") }
     }
 
     suspend fun getAlbumSongs(browseId: String, fallbackArtist: String = ""): Pair<Album?, List<Song>> =
@@ -355,58 +386,40 @@ object Innertube {
             try {
                 val step1 = ytmPost("browse", JSONObject().put("browseId", browseId))
                     ?: return@withContext Pair(null, emptyList())
-                var playlistId: String? = step1
-                    .optJSONObject("microformat")
-                    ?.optJSONObject("microformatDataRenderer")
-                    ?.optString("urlCanonical")
-                    ?.substringAfterLast("=")
-                    ?.takeIf { it.isNotBlank() }
+                var playlistId: String? = step1.optJSONObject("microformat")
+                    ?.optJSONObject("microformatDataRenderer")?.optString("urlCanonical")
+                    ?.substringAfterLast("=")?.takeIf { it.isNotBlank() }
                 if (playlistId == null && browseId.startsWith("OLAK5uy_")) playlistId = browseId
-                if (playlistId == null) {
-                    playlistId = Regex("\"playlistId\":\"(OLAK5uy_[^\"]+)\"")
-                        .find(step1.toString())?.groupValues?.get(1)
-                }
+                if (playlistId == null)
+                    playlistId = Regex("\"playlistId\":\"(OLAK5uy_[^\"]+)\"").find(step1.toString())?.groupValues?.get(1)
                 if (playlistId != null) {
                     val step2 = ytmPost("browse", JSONObject().put("browseId", "VL$playlistId"))
-                    if (step2 != null) {
-                        val shelfContents = step2
-                            .optJSONObject("contents")
-                            ?.optJSONObject("twoColumnBrowseResultsRenderer")
-                            ?.optJSONObject("secondaryContents")
-                            ?.optJSONObject("sectionListRenderer")
-                            ?.optJSONArray("contents")
-                            ?.optJSONObject(0)
-                            ?.optJSONObject("musicPlaylistShelfRenderer")
-                            ?.optJSONArray("contents")
-                        if (shelfContents != null) {
-                            for (i in 0 until shelfContents.length()) {
-                                try {
-                                    val item = shelfContents.getJSONObject(i)
-                                        .optJSONObject("musicResponsiveListItemRenderer") ?: continue
-                                    val videoId = item.optJSONObject("playlistItemData")
-                                        ?.optString("videoId")?.takeIf { it.isNotBlank() }
-                                        ?: item.optJSONObject("overlay")
-                                            ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                                            ?.optJSONObject("content")
-                                            ?.optJSONObject("musicPlayButtonRenderer")
-                                            ?.optJSONObject("playNavigationEndpoint")
-                                            ?.optJSONObject("watchEndpoint")
-                                            ?.optString("videoId")
-                                        ?: continue
-                                    val flexCols = item.optJSONArray("flexColumns") ?: continue
-                                    val col0 = flexCols.optJSONObject(0)
-                                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                                    val songTitle = extractText(col0, "text")
-                                    if (songTitle.isBlank()) continue
-                                    songs.add(Song(
-                                        id = videoId, title = songTitle,
-                                        artist = fallbackArtist.ifBlank { "Unknown Artist" },
-                                        thumbnail = ytThumbnail(videoId),
-                                        duration = parseDurationMs(item), albumId = browseId,
-                                        isExplicit = parseExplicit(item.optJSONArray("badges"))
-                                    ))
-                                } catch (_: Exception) {}
-                            }
+                    val shelfContents = step2?.optJSONObject("contents")
+                        ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                        ?.optJSONObject("secondaryContents")
+                        ?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                        ?.optJSONObject(0)?.optJSONObject("musicPlaylistShelfRenderer")
+                        ?.optJSONArray("contents")
+                    if (shelfContents != null) {
+                        for (i in 0 until shelfContents.length()) {
+                            try {
+                                val item = shelfContents.getJSONObject(i)
+                                    .optJSONObject("musicResponsiveListItemRenderer") ?: continue
+                                val videoId = item.optJSONObject("playlistItemData")
+                                    ?.optString("videoId")?.takeIf { it.isNotBlank() }
+                                    ?: item.optJSONObject("overlay")
+                                        ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                                        ?.optJSONObject("content")?.optJSONObject("musicPlayButtonRenderer")
+                                        ?.optJSONObject("playNavigationEndpoint")
+                                        ?.optJSONObject("watchEndpoint")?.optString("videoId") ?: continue
+                                val col0 = item.optJSONArray("flexColumns")?.optJSONObject(0)
+                                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                                val songTitle = extractText(col0, "text"); if (songTitle.isBlank()) continue
+                                songs.add(Song(id = videoId, title = songTitle,
+                                    artist = fallbackArtist.ifBlank { "Unknown Artist" },
+                                    thumbnail = ytThumbnail(videoId), duration = parseDurationMs(item),
+                                    albumId = browseId, isExplicit = parseExplicit(item.optJSONArray("badges"))))
+                            } catch (_: Exception) {}
                         }
                     }
                 }
@@ -421,50 +434,45 @@ object Innertube {
                 .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
             val title = extractor.name ?: return@withContext null
-            Song(
-                id = videoId, title = title, artist = extractor.uploaderName ?: "",
+            Song(id = videoId, title = title, artist = extractor.uploaderName ?: "",
                 thumbnail = ytThumbnail(videoId), duration = extractor.length * 1000L,
-                isExplicit = title.lowercase().contains("explicit")
-            )
-        } catch (e: Exception) {
-            Log.e("Innertube", "Metadata error: ${e.message}")
-            null
-        }
+                isExplicit = title.lowercase().contains("explicit"))
+        } catch (e: Exception) { Log.e("Innertube", "Metadata error: ${e.message}"); null }
     }
+
+    // ─── Stream resolution ───────────────────────────────────────────────────────
 
     private data class YTClient(
         val clientName: String,
         val clientVersion: String,
-        val userAgent: String = CHROME_USER_AGENT,
+        val clientId: String,
+        val userAgent: String,
         val usePoTokenInBody: Boolean = false,
-        val appendPotToUrl: Boolean = false
+        val appendPotToUrl: Boolean = false,
+        val useSignatureTimestamp: Boolean = false
     )
 
+    // WEB_REMIX first — its CDN URLs have no per-URL chunk request limit.
+    // IOS/ANDROID as fallbacks — limited to ~16 chunks per URL (~64s at 512KB).
     private val STREAM_CLIENTS = listOf(
-        YTClient("IOS", "21.03.1",
-            userAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)",
-            usePoTokenInBody = false, appendPotToUrl = true),
-        YTClient("ANDROID", "19.44.38",
-            userAgent = "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
-            usePoTokenInBody = false, appendPotToUrl = true),
-        YTClient("WEB_REMIX", "1.20260213.01.00",
-            usePoTokenInBody = true, appendPotToUrl = true),
-        YTClient("WEB", "2.20260213.00.00",
-            usePoTokenInBody = true, appendPotToUrl = true),
+        YTClient("WEB_REMIX", "1.20260213.01.00", "67", FIREFOX_UA,
+            usePoTokenInBody = true, appendPotToUrl = true, useSignatureTimestamp = true),
+        YTClient("WEB", "2.20260213.00.00", "1", FIREFOX_UA,
+            usePoTokenInBody = true, appendPotToUrl = true, useSignatureTimestamp = true),
+        YTClient("IOS", "21.03.1", "5",
+            "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)",
+            usePoTokenInBody = false, appendPotToUrl = true, useSignatureTimestamp = false),
+        YTClient("ANDROID", "19.44.38", "3",
+            "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
+            usePoTokenInBody = false, appendPotToUrl = true, useSignatureTimestamp = false),
     )
-
-    private val poTokenGenerator = PoTokenGenerator()
 
     fun parseExpiry(url: String): Long {
-        val match = Regex("[?&]expire=(\\d+)").find(url)
-        val expireUnixSec = match?.groupValues?.get(1)?.toLongOrNull()
+        val expireUnixSec = Regex("[?&]expire=(\\d+)").find(url)?.groupValues?.get(1)?.toLongOrNull()
         return if (expireUnixSec != null) expireUnixSec * 1000L
         else System.currentTimeMillis() + 6 * 60 * 60 * 1000L
     }
 
-    // Pure selection function — no suspend needed, no cipher resolution here.
-    // Cipher URLs are pre-resolved in tryClientForStream() before this is called.
-    // Receives a list of ResolvedFormat(url, bitrate, mimeType, itag, hasAlr).
     private data class ResolvedFormat(
         val url: String,
         val bitrate: Int,
@@ -473,61 +481,45 @@ object Innertube {
         val hasAlr: Boolean
     )
 
-    private fun selectBestAudioFormat(
-        formats: List<ResolvedFormat>,
-        client: YTClient
-    ): ResolvedFormat? {
+    // Pure selection — no suspend, no side effects.
+    // Web clients prefer opus for quality; mobile clients prefer mp4a for compatibility.
+    private fun selectBestAudioFormat(formats: List<ResolvedFormat>, client: YTClient): ResolvedFormat? {
         if (formats.isEmpty()) return null
-
-        // Sort priority:
-        // 1. Non-alr before alr
-        // 2. Higher bitrate wins
-        // 3. Codec tiebreaker: web prefers opus, mobile prefers mp4a
         val sorted = formats.sortedWith(
             compareByDescending<ResolvedFormat> { if (!it.hasAlr) 1 else 0 }
                 .thenByDescending { it.bitrate }
                 .thenByDescending {
-                    if (client.usePoTokenInBody) {
-                        if (it.mimeType.contains("opus")) 1 else 0
-                    } else {
-                        if (it.mimeType.contains("mp4a")) 1 else 0
-                    }
+                    if (client.usePoTokenInBody) { if (it.mimeType.contains("opus")) 1 else 0 }
+                    else { if (it.mimeType.contains("mp4a")) 1 else 0 }
                 }
         )
-
         val best = sorted.first()
-        Timber.d("${client.clientName}: selected itag=${best.itag} bitrate=${best.bitrate} " +
-                "mime=${best.mimeType} alr=${best.hasAlr}")
+        Timber.d("${client.clientName}: selected itag=${best.itag} bitrate=${best.bitrate} mime=${best.mimeType} alr=${best.hasAlr}")
         return best
     }
 
-    private suspend fun getInnerTubeStreamFast(
-        context: Context,
-        videoId: String,
-        poTokenResult: com.yt.lite.api.potoken.PoTokenResult? = null
-    ): Pair<String, Long>? {
-        for (client in STREAM_CLIENTS) {
-            try {
-                Timber.d("Trying client: ${client.clientName} | poToken=${poTokenResult?.playerRequestPoToken?.take(10)}...")
-                val result = tryClientForStream(videoId, client,
-                    poTokenResult?.playerRequestPoToken, poTokenResult?.streamingDataPoToken)
-                if (result != null) {
-                    Timber.d("Stream resolved via ${client.clientName} ✅")
-                    return result to parseExpiry(result)
-                }
-            } catch (e: Exception) {
-                Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
-            }
+    // Validate stream URL with a HEAD request before using it.
+    // Catches URLs that resolve but are already expired or geo-blocked.
+    private fun validateStreamUrl(url: String, clientName: String): Boolean {
+        return try {
+            val response = httpClient.newCall(
+                Request.Builder().url(url).head().build()
+            ).execute()
+            val ok = response.isSuccessful
+            Timber.d("$clientName: stream validate HTTP ${response.code} → ${if (ok) "✅" else "❌"}")
+            ok
+        } catch (e: Exception) {
+            Timber.w("$clientName: stream validate exception: ${e.message}")
+            false
         }
-        Timber.e("All native clients FAILED for videoId=$videoId ❌")
-        return null
     }
 
     private suspend fun tryClientForStream(
         videoId: String,
         client: YTClient,
         playerRequestPoToken: String?,
-        streamingDataPoToken: String?
+        streamingDataPoToken: String?,
+        sigTimestamp: Int?
     ): String? {
         val clientContext = JSONObject()
             .put("clientName", client.clientName)
@@ -535,61 +527,68 @@ object Innertube {
             .put("hl", "en")
             .put("gl", "US")
 
+        // Include visitorData in context for web clients — ties request to real browser session
+        visitorData?.let { clientContext.put("visitorData", it) }
+
         val body = JSONObject()
             .put("videoId", videoId)
             .put("context", JSONObject().put("client", clientContext))
 
+        // poToken in body for web clients (WEB_REMIX, WEB)
         if (client.usePoTokenInBody && playerRequestPoToken != null) {
             body.put("serviceIntegrityDimensions",
                 JSONObject().put("poToken", playerRequestPoToken))
+        }
+
+        // signatureTimestamp in playbackContext for web clients — required for OK status
+        if (client.useSignatureTimestamp && sigTimestamp != null) {
+            body.put("playbackContext", JSONObject().put("contentPlaybackContext",
+                JSONObject().put("signatureTimestamp", sigTimestamp)))
         }
 
         val request = Request.Builder()
             .url("https://www.youtube.com/youtubei/v1/player?key=$YTM_KEY")
             .addHeader("Content-Type", "application/json")
             .addHeader("User-Agent", client.userAgent)
-            .addHeader("X-Youtube-Client-Name", client.clientName)
-            .addHeader("X-Youtube-Client-Version", client.clientVersion)
+            .addHeader("X-YouTube-Client-Name", client.clientId)
+            .addHeader("X-YouTube-Client-Version", client.clientVersion)
+            .apply {
+                if (client.usePoTokenInBody) {
+                    addHeader("Origin", "https://www.youtube.com")
+                    addHeader("Referer", "https://www.youtube.com/")
+                }
+                visitorData?.let { addHeader("X-Visitor-Data", it) }
+            }
             .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
 
-        val response = ytMusicClient.newCall(request).execute()
+        val response = httpClient.newCall(request).execute()
         val text = response.body?.string() ?: return null
         val json = JSONObject(text)
 
         val status = json.optJSONObject("playabilityStatus")?.optString("status")
         if (status != "OK") {
-            Timber.w("${client.clientName} rejected: playabilityStatus=$status")
+            Timber.w("${client.clientName}: playabilityStatus=$status")
             return null
         }
 
-        val streamingData = json.optJSONObject("streamingData") ?: return null
-        val adaptiveFormats = streamingData.optJSONArray("adaptiveFormats")
-        if (adaptiveFormats == null || adaptiveFormats.length() == 0) return null
+        val adaptiveFormats = json.optJSONObject("streamingData")
+            ?.optJSONArray("adaptiveFormats") ?: return null
+        if (adaptiveFormats.length() == 0) return null
 
-        // Pre-resolve all URLs here in suspend context before passing to pure selectBestAudioFormat().
-        // Cipher resolution (deobfuscateStreamUrl) is suspend, so it must happen here.
+        // Pre-resolve all URLs in suspend context (cipher deobfuscation is suspend)
         val resolvedFormats = mutableListOf<ResolvedFormat>()
         for (i in 0 until adaptiveFormats.length()) {
             val f = adaptiveFormats.getJSONObject(i)
             val mimeType = f.optString("mimeType", "")
-
-            // Audio-only formats only
             if (!mimeType.startsWith("audio/")) continue
-
-            // Skip formats with no contentLength — often broken/incomplete
             val contentLength = f.optString("contentLength", "")
             if (contentLength.isBlank() || contentLength == "0") continue
 
-            // Resolve URL — direct or cipher
             var url = f.optString("url", "")
             if (url.isEmpty()) {
-                val signatureCipher = f.optString("signatureCipher", "")
-                    .ifEmpty { f.optString("cipher", "") }
-                if (signatureCipher.isNotEmpty()) {
-                    // deobfuscateStreamUrl is suspend — safe to call here
-                    url = CipherDeobfuscator.deobfuscateStreamUrl(signatureCipher, videoId) ?: ""
-                }
+                val cipher = f.optString("signatureCipher", "").ifEmpty { f.optString("cipher", "") }
+                if (cipher.isNotEmpty()) url = CipherDeobfuscator.deobfuscateStreamUrl(cipher, videoId) ?: ""
             }
             if (url.isEmpty()) continue
 
@@ -604,65 +603,89 @@ object Innertube {
 
         if (resolvedFormats.isEmpty()) return null
 
-        // Now select the best — pure function, no suspend needed
         val best = selectBestAudioFormat(resolvedFormats, client) ?: return null
 
-        // Clean up alr=yes
+        // Remove alr=yes — ExoPlayer can't handle YouTube's adaptive loading protocol
         var finalUrl = best.url
-            .replace("&alr=yes", "")
-            .replace("alr=yes&", "")
-            .replace("alr=yes", "")
+            .replace("&alr=yes", "").replace("alr=yes&", "").replace("alr=yes", "")
 
-        // Web clients: apply n-param transform
+        // n-param transform for web clients (unlocks throttle-free URLs)
         if (client.usePoTokenInBody) {
             finalUrl = CipherDeobfuscator.transformNParamInUrl(finalUrl)
         }
 
         // Append pot= to stream URL
         if (client.appendPotToUrl && streamingDataPoToken != null) {
-            val separator = if ("?" in finalUrl) "&" else "?"
-            finalUrl = "${finalUrl}${separator}pot=${android.net.Uri.encode(streamingDataPoToken)}"
-            Timber.d("${client.clientName}: appended pot= to stream URL ✅")
+            val sep = if ("?" in finalUrl) "&" else "?"
+            finalUrl = "${finalUrl}${sep}pot=${android.net.Uri.encode(streamingDataPoToken)}"
+            Timber.d("${client.clientName}: appended pot= ✅")
         }
 
         return finalUrl
     }
 
+    // Returns Pair(streamUrl, expiryMs) or null.
+    // Tries WEB_REMIX first (no CDN chunk limit), falls back to IOS/ANDROID.
+    // Validates each URL with a HEAD request before returning.
     suspend fun getStreamUrl(
         context: Context,
         videoId: String,
         forceFallback: Boolean = false
     ): Pair<String, Long>? = withContext(Dispatchers.IO) {
-        val sharedPoToken = try {
-            val sessionId = UUID.randomUUID().toString()
+
+        // Ensure visitorData + signatureTimestamp are ready
+        if (visitorData == null) fetchVisitorData()
+        if (signatureTimestamp == null) fetchSignatureTimestamp()
+
+        val sigTimestamp = signatureTimestamp
+
+        // Generate poToken — use visitorData as session ID for consistent entropy
+        val sessionId = visitorData ?: java.util.UUID.randomUUID().toString()
+        val poToken = try {
             poTokenGenerator.getWebClientPoToken(videoId, sessionId)
         } catch (e: Exception) {
             Log.w("Innertube", "PoToken generation failed: ${e.message}")
             null
         }
 
-        sharedPoToken?.let {
-            NewPipeDownloader.poToken = it.playerRequestPoToken
-            Log.d("Innertube", "PoToken ready for both native and NewPipe")
-        }
+        poToken?.let { NewPipeDownloader.poToken = it.playerRequestPoToken }
 
         if (!forceFallback) {
-            val result = getInnerTubeStreamFast(context, videoId, sharedPoToken)
-            if (result != null) {
-                Log.d("Innertube", "Stream resolved via InnerTube natively ✅")
-                return@withContext result
+            for (client in STREAM_CLIENTS) {
+                try {
+                    Timber.d("Trying client: ${client.clientName} sigTs=$sigTimestamp poToken=${poToken?.playerRequestPoToken?.take(10)}...")
+                    val url = tryClientForStream(
+                        videoId, client,
+                        poToken?.playerRequestPoToken,
+                        poToken?.streamingDataPoToken,
+                        if (client.useSignatureTimestamp) sigTimestamp else null
+                    ) ?: continue
+
+                    // Validate stream URL before caching — skip validation for last client
+                    val isLastClient = client == STREAM_CLIENTS.last()
+                    if (!isLastClient && !validateStreamUrl(url, client.clientName)) {
+                        Timber.w("${client.clientName}: stream validation failed, trying next")
+                        continue
+                    }
+
+                    Timber.d("Stream resolved via ${client.clientName} ✅")
+                    return@withContext url to parseExpiry(url)
+                } catch (e: Exception) {
+                    Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
+                }
             }
+            Timber.e("All native clients FAILED for videoId=$videoId ❌")
         }
 
+        // NewPipe fallback
         Timber.w("Falling to NewPipe (forceFallback=$forceFallback)")
         initNewPipe()
-
         try {
             val extractor = ServiceList.YouTube
                 .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
-            val streams: List<AudioStream> = extractor.audioStreams
-            val url = streams.filter { it.content != null && it.content.isNotEmpty() }
+            val url = extractor.audioStreams
+                .filter { it.content != null && it.content.isNotEmpty() }
                 .maxByOrNull { it.averageBitrate }?.content
             if (url != null) url to parseExpiry(url) else null
         } catch (e: Exception) {
@@ -679,33 +702,24 @@ object Innertube {
                 val extractor = ServiceList.YouTube
                     .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
                 extractor.fetchPage()
-                val related = extractor.relatedItems?.items ?: return@withContext results
-                for (item in related) {
+                for (item in extractor.relatedItems?.items ?: emptyList()) {
                     if (results.size >= limit) break
                     try {
                         if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
-                            val dur = item.duration
-                            if (dur < 60 || dur > 900) continue
+                            val dur = item.duration; if (dur < 60 || dur > 900) continue
                             val id = extractIdFromUrl(item.url)
-                            val title = item.name ?: continue
-                            results.add(Song(
-                                id = id, title = title, artist = item.uploaderName ?: "",
-                                thumbnail = ytThumbnail(id), duration = dur * 1000
-                            ))
+                            results.add(Song(id = id, title = item.name ?: continue,
+                                artist = item.uploaderName ?: "", thumbnail = ytThumbnail(id),
+                                duration = dur * 1000))
                         }
                     } catch (_: Exception) {}
                 }
-            } catch (e: Exception) {
-                Log.e("Innertube", "Related songs error: ${e.message}")
-            }
+            } catch (e: Exception) { Log.e("Innertube", "Related songs error: ${e.message}") }
             results
         }
 
     private fun initNewPipe() {
-        if (!initialized) {
-            NewPipe.init(NewPipeDownloader)
-            initialized = true
-        }
+        if (!newPipeInitialized) { NewPipe.init(NewPipeDownloader); newPipeInitialized = true }
     }
 
     private fun extractIdFromUrl(url: String): String {
@@ -716,6 +730,8 @@ object Innertube {
     }
 }
 
+// NewPipe downloader
+
 object NewPipeDownloader : Downloader() {
 
     private val client = OkHttpClient.Builder()
@@ -723,42 +739,32 @@ object NewPipeDownloader : Downloader() {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private const val FIREFOX_USER_AGENT =
+    private const val FIREFOX_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 
     @Volatile var visitorData: String? = null
     @Volatile var poToken: String? = null
 
     override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): Response {
-        val rb = Request.Builder().url(request.url())
-        rb.header("User-Agent", FIREFOX_USER_AGENT)
-        val requestedHeaders = request.headers() ?: emptyMap()
-        requestedHeaders.forEach { (k, v) ->
-            if (!k.equals("User-Agent", ignoreCase = true)) v.forEach { rb.addHeader(k, it) }
-        }
-        if (!requestedHeaders.containsKey("Accept-Language"))
-            rb.addHeader("Accept-Language", "en-US,en;q=0.9")
-        if (!requestedHeaders.containsKey("Cookie"))
+        val rb = Request.Builder().url(request.url()).header("User-Agent", FIREFOX_UA)
+        val hdrs = request.headers() ?: emptyMap()
+        hdrs.forEach { (k, v) -> if (!k.equals("User-Agent", ignoreCase = true)) v.forEach { rb.addHeader(k, it) } }
+        if (!hdrs.containsKey("Accept-Language")) rb.addHeader("Accept-Language", "en-US,en;q=0.9")
+        if (!hdrs.containsKey("Cookie"))
             rb.addHeader("Cookie", "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
         visitorData?.let { rb.addHeader("X-Visitor-Data", it) }
-        if (request.url().contains("/youtubei/v1/player") ||
-            request.url().contains("/youtubei/v1/next")) {
+        if (request.url().contains("/youtubei/v1/player") || request.url().contains("/youtubei/v1/next"))
             poToken?.let { rb.addHeader("X-Goog-Visitor-Id", it) }
-        }
         when (request.httpMethod()) {
-            "POST" -> {
-                val body = request.dataToSend() ?: ByteArray(0)
-                rb.post(body.toRequestBody("application/json".toMediaTypeOrNull()))
-            }
+            "POST" -> rb.post((request.dataToSend() ?: ByteArray(0))
+                .toRequestBody("application/json".toMediaTypeOrNull()))
             else -> rb.get()
         }
         val response = client.newCall(rb.build()).execute()
         response.header("X-Visitor-Data")?.let { visitorData = it }
-        val responseBody = response.body?.string() ?: ""
+        val body = response.body?.string() ?: ""
         val headers = mutableMapOf<String, MutableList<String>>()
-        response.headers.names().forEach { name ->
-            headers[name] = response.headers(name).toMutableList()
-        }
-        return Response(response.code, response.message, headers, responseBody, request.url())
+        response.headers.names().forEach { name -> headers[name] = response.headers(name).toMutableList() }
+        return Response(response.code, response.message, headers, body, request.url())
     }
 }
