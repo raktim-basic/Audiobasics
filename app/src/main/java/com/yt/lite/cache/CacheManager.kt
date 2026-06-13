@@ -23,6 +23,10 @@ object CacheManager {
     private const val LYRICS_DIR = "audiobasics_lyrics"
     private const val MIN_STORAGE_BYTES = 512L * 1024 * 1024
 
+    // IOS UA matches MusicService — needed so CDN accepts our download requests
+    private const val IOS_USER_AGENT =
+        "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
+
     private val downloadClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -88,11 +92,9 @@ object CacheManager {
         return if (f.exists() && f.length() > 0) f.absolutePath else null
     }
 
-    // Save lyrics as JSON: { synced: "[...]", plain: "...", hasSynced: bool }
     fun saveLyrics(context: Context, songId: String, lyricsJson: String) {
         try {
-            val f = getLyricsFile(context, songId)
-            f.writeText(lyricsJson)
+            getLyricsFile(context, songId).writeText(lyricsJson)
         } catch (e: Exception) {
             Log.e("CacheManager", "Failed to save lyrics for $songId: ${e.message}")
         }
@@ -127,10 +129,8 @@ object CacheManager {
         return when {
             bytes <= 0 -> ""
             bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-            bytes < 1024L * 1024 * 1024 ->
-                "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
-            else ->
-                "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
+            bytes < 1024L * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+            else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
         }
     }
 
@@ -140,15 +140,12 @@ object CacheManager {
                 val thumbFile = getThumbFile(context, songId)
                 if (thumbFile.exists() && thumbFile.length() > 0) return@withContext true
                 if (url.isBlank()) return@withContext false
-
                 val request = Request.Builder().url(url).build()
                 val response = thumbClient.newCall(request).execute()
                 if (!response.isSuccessful) return@withContext false
-
                 val bytes = response.body?.bytes() ?: return@withContext false
                 val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     ?: return@withContext false
-
                 FileOutputStream(thumbFile).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                 }
@@ -164,7 +161,6 @@ object CacheManager {
             if (!hasEnoughStorage(context)) return@withContext CacheResult.StorageLow
 
             val cacheFile = getCacheFile(context, song.id)
-
             if (cacheFile.exists() && cacheFile.length() > 0) {
                 if (!isThumbCached(context, song.id) && song.thumbnail.isNotBlank()) {
                     cacheThumbnail(context, song.id, song.thumbnail)
@@ -173,19 +169,22 @@ object CacheManager {
             }
 
             val tempFile = File(getCacheDir(context), "${song.id}.tmp")
-
             var lastError = ""
+
             repeat(3) { attempt ->
                 try {
-                    val streamUrl = Innertube.getStreamUrl(context, song.id)
+                    // getStreamUrl returns Pair(url, expiryMs) — we only need the URL for download
+                    val streamUrl = Innertube.getStreamUrl(context, song.id)?.first
                         ?: run {
                             lastError = "Could not get stream URL"
                             return@repeat
                         }
 
+                    // Use IOS UA + open-ended Range for full file download
+                    // No chunk limit needed here — we want the whole file in one stream
                     val request = Request.Builder()
                         .url(streamUrl)
-                        .addHeader("User-Agent", "Mozilla/5.0")
+                        .addHeader("User-Agent", IOS_USER_AGENT)
                         .addHeader("Accept", "*/*")
                         .addHeader("Accept-Encoding", "identity")
                         .addHeader("Range", "bytes=0-")
@@ -223,18 +222,14 @@ object CacheManager {
                     }
 
                     if (tempFile.renameTo(cacheFile)) {
-                        if (song.thumbnail.isNotBlank()) {
-                            cacheThumbnail(context, song.id, song.thumbnail)
-                        }
+                        if (song.thumbnail.isNotBlank()) cacheThumbnail(context, song.id, song.thumbnail)
                         Log.d("CacheManager", "Cached ${song.title} — $bytesWritten bytes")
                         return@withContext CacheResult.Success
                     } else {
                         tempFile.copyTo(cacheFile, overwrite = true)
                         tempFile.delete()
                         if (cacheFile.exists() && cacheFile.length() > 0) {
-                            if (song.thumbnail.isNotBlank()) {
-                                cacheThumbnail(context, song.id, song.thumbnail)
-                            }
+                            if (song.thumbnail.isNotBlank()) cacheThumbnail(context, song.id, song.thumbnail)
                             return@withContext CacheResult.Success
                         }
                         lastError = "Failed to save file"
