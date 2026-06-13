@@ -49,6 +49,11 @@ class MusicService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
+        // Fetch visitorData + signatureTimestamp on startup so they're ready before first play.
+        // visitorData gives BotGuard a real session context → valid poTokens.
+        // signatureTimestamp is required for WEB_REMIX to return playabilityStatus=OK.
+        serviceScope.launch { Innertube.init() }
+
         val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
 
         val okHttpClient = OkHttpClient.Builder()
