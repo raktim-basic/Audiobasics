@@ -640,7 +640,9 @@ object Innertube {
         val sigTimestamp = signatureTimestamp
 
         // Generate poToken — use visitorData as session ID for consistent entropy
-        val sessionId = visitorData ?: java.util.UUID.randomUUID().toString()
+        // Use first 36 chars of visitorData as session ID — full string causes 598-byte tokens
+        // 36 chars gives same entropy as a UUID while staying within BotGuard expected range
+        val sessionId = visitorData?.take(36) ?: java.util.UUID.randomUUID().toString()
         val poToken = try {
             poTokenGenerator.getWebClientPoToken(videoId, sessionId)
         } catch (e: Exception) {
