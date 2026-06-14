@@ -1,5 +1,8 @@
 package com.yt.lite.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
@@ -17,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,6 +34,9 @@ object DebugLogCollector {
     private val _logs = mutableStateListOf<LogEntry>()
     val logs: List<LogEntry> get() = _logs
 
+    // Max log lines — bumped from 200 to 1000
+    private const val MAX_LOGS = 1000
+
     data class LogEntry(
         val tag: String,
         val message: String,
@@ -37,21 +44,25 @@ object DebugLogCollector {
         val time: String
     )
 
-    // Call this from AudiobasicsApp.onCreate() to intercept logs
-    fun install() {
-        val origHandler = Thread.getDefaultUncaughtExceptionHandler()
-        // We hook into Timber via a custom tree - see AudiobasicsApp
-    }
-
     fun add(level: Int, tag: String?, message: String) {
         val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
             .format(java.util.Date())
         _logs.add(LogEntry(tag ?: "?", message, level, time))
-        // Keep max 200 lines to avoid memory issues
-        if (_logs.size > 200) _logs.removeAt(0)
+        if (_logs.size > MAX_LOGS) _logs.removeAt(0)
     }
 
     fun clear() = _logs.clear()
+
+    // Returns all logs as a plain text string for clipboard copy
+    fun exportText(): String = _logs.joinToString("\n") { entry ->
+        val levelChar = when (entry.level) {
+            Log.ERROR -> "E"
+            Log.WARN  -> "W"
+            Log.DEBUG -> "D"
+            else      -> "I"
+        }
+        "${entry.time} $levelChar [${entry.tag}] ${entry.message}"
+    }
 }
 
 // ── Composable Overlay ───────────────────────────────────────────────────────
@@ -59,14 +70,21 @@ object DebugLogCollector {
 @Composable
 fun DebugLogOverlay() {
     var visible by remember { mutableStateOf(false) }
-    val logs = DebugLogCollector.logs
+    var paused by remember { mutableStateOf(false) }
+
+    // Snapshot of logs taken when paused — so display freezes while paused
+    val liveLogs = DebugLogCollector.logs
+    var pausedSnapshot by remember { mutableStateOf<List<DebugLogCollector.LogEntry>>(emptyList()) }
+    val displayLogs = if (paused) pausedSnapshot else liveLogs
+
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
-    // Auto-scroll to bottom when new logs arrive
-    LaunchedEffect(logs.size) {
-        if (logs.isNotEmpty()) {
-            listState.animateScrollToItem(logs.size - 1)
+    // Auto-scroll to bottom when new logs arrive (only when not paused)
+    LaunchedEffect(liveLogs.size, paused) {
+        if (!paused && displayLogs.isNotEmpty()) {
+            listState.animateScrollToItem(displayLogs.size - 1)
         }
     }
 
@@ -108,11 +126,11 @@ fun DebugLogOverlay() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.5f)
+                    .fillMaxHeight(0.6f)
                     .background(Color(0xEE111111))
                     .border(1.dp, Color(0xFF444444), RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
             ) {
-                // Header
+                // Header row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -121,35 +139,82 @@ fun DebugLogOverlay() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Log count + pause indicator
                     Text(
-                        "Debug Logs (${logs.size})",
-                        color = Color(0xFFAAAAAA),
+                        text = buildString {
+                            append("Logs (${displayLogs.size}/1000)")
+                            if (paused) append("  ⏸ PAUSED")
+                        },
+                        color = if (paused) Color(0xFFFFD740) else Color(0xFFAAAAAA),
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Scroll to bottom
                         Text(
-                            "↓ scroll",
+                            "↓",
                             color = Color(0xFF4CAF50),
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
                             modifier = Modifier.clickable {
                                 scope.launch {
-                                    if (logs.isNotEmpty())
-                                        listState.animateScrollToItem(logs.size - 1)
+                                    if (displayLogs.isNotEmpty())
+                                        listState.animateScrollToItem(displayLogs.size - 1)
                                 }
                             }
                         )
+
+                        // Pause / Resume
+                        Text(
+                            text = if (paused) "▶ RUN" else "⏸ PAUSE",
+                            color = if (paused) Color(0xFF4CAF50) else Color(0xFFFFD740),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.clickable {
+                                if (!paused) {
+                                    // Take snapshot of current logs when pausing
+                                    pausedSnapshot = liveLogs.toList()
+                                }
+                                paused = !paused
+                            }
+                        )
+
+                        // Copy to clipboard
+                        Text(
+                            "COPY",
+                            color = Color(0xFF64B5F6),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.clickable {
+                                val text = if (paused)
+                                    pausedSnapshot.joinToString("\n") { e ->
+                                        val l = when (e.level) { Log.ERROR -> "E"; Log.WARN -> "W"; Log.DEBUG -> "D"; else -> "I" }
+                                        "${e.time} $l [${e.tag}] ${e.message}"
+                                    }
+                                else DebugLogCollector.exportText()
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("AudiobasicsLogs", text))
+                            }
+                        )
+
+                        // Clear
                         Text(
                             "CLEAR",
                             color = Color(0xFFFF5722),
                             fontSize = 10.sp,
-                            modifier = Modifier.clickable { DebugLogCollector.clear() }
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.clickable {
+                                DebugLogCollector.clear()
+                                pausedSnapshot = emptyList()
+                                paused = false
+                            }
                         )
                     }
                 }
 
                 // Log lines
-                if (logs.isEmpty()) {
+                if (displayLogs.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -162,7 +227,7 @@ fun DebugLogOverlay() {
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(4.dp)
                     ) {
-                        items(logs) { entry ->
+                        items(displayLogs) { entry ->
                             val color = when (entry.level) {
                                 Log.ERROR -> Color(0xFFFF5252)
                                 Log.WARN  -> Color(0xFFFFD740)
