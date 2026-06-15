@@ -8,7 +8,6 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSourceException
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.ResolvingDataSource
@@ -21,6 +20,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.yt.lite.MainActivity
 import com.yt.lite.api.Innertube
+import com.yt.lite.api.cipher.CipherDeobfuscator
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,22 +37,27 @@ class MusicService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Cache: videoId -> Pair(streamUrl, expiryTimeMs)
-    // Expiry comes from the `expire=` param in the YouTube URL itself — no hardcoded TTL.
     private val songUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
 
     companion object {
         // 512KB chunks — same as Metrolist. Keeps each Range request small so we
-        // don't exhaust the CDN's per-URL request limit (~7-8 requests per URL).
+        // don't exhaust the CDN's per-URL request limit.
         private const val CHUNK_LENGTH = 512 * 1024L
     }
 
     override fun onCreate() {
         super.onCreate()
 
-        // Fetch visitorData + signatureTimestamp on startup so they're ready before first play.
-        // visitorData gives BotGuard a real session context → valid poTokens.
-        // signatureTimestamp is required for WEB_REMIX to return playabilityStatus=OK.
-        serviceScope.launch { Innertube.init() }
+        // Startup sequence — runs in parallel on IO:
+        // 1. Innertube.init() — fetches visitorData + signatureTimestamp
+        // 2. CipherDeobfuscator.warmUp() — pre-creates CipherWebView so it's ready
+        //    before the first song plays. Without warmup, CipherWebView creation
+        //    takes ~8-10s and causes the resolver to time out.
+        serviceScope.launch {
+            Innertube.init()
+            // warmUp after init so signatureTimestamp is available for player JS analysis
+            CipherDeobfuscator.warmUp()
+        }
 
         val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
 
@@ -65,7 +70,6 @@ class MusicService : MediaSessionService() {
         val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
             .setUserAgent(iosUserAgent)
 
-        // Wrap with DefaultDataSource to handle file:// URIs automatically
         val finalFactory = DefaultDataSource.Factory(this, okHttpDataSourceFactory)
 
         val finalResolvingFactory = ResolvingDataSource.Factory(finalFactory) { dataSpec ->
@@ -88,14 +92,16 @@ class MusicService : MediaSessionService() {
                         val cached = songUrlCache[videoId]
                         if (cached != null && cached.second > System.currentTimeMillis()) {
                             Timber.d("Resolver: cache hit for $videoId ✅")
-                            // Apply 512KB chunk limit so ExoPlayer doesn't make huge Range requests
                             dataSpec.withUri(Uri.parse(cached.first))
                                 .subrange(dataSpec.uriPositionOffset, CHUNK_LENGTH)
                         } else {
                             Timber.d("Resolver: waiting for pre-resolve of $videoId (forceFallback=$forceFallback)...")
                             preResolveUrl(videoId, force = forceFallback)
                             var waited = 0
-                            while (waited < 15000) {
+                            // 30s timeout — enough for cold CipherWebView + poToken + API call
+                            // In practice warmUp() means WebView is already ready, so this
+                            // resolves in ~5-7 seconds (poToken + player API only)
+                            while (waited < 30000) {
                                 val ready = songUrlCache[videoId]
                                 if (ready != null && ready.second > System.currentTimeMillis()) {
                                     Timber.d("Resolver: pre-resolve ready for $videoId ✅")
@@ -135,7 +141,6 @@ class MusicService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        // Pre-resolve next song's URL on track transition
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(
                 mediaItem: androidx.media3.common.MediaItem?,
@@ -145,7 +150,7 @@ class MusicService : MediaSessionService() {
                 val videoId = extractVideoId(uri) ?: return
                 preResolveUrl(videoId, force = false)
 
-                // Also pre-resolve next item in queue
+                // Pre-resolve next item in queue
                 val nextIndex = player.currentMediaItemIndex + 1
                 if (nextIndex < player.mediaItemCount) {
                     val nextUri = player.getMediaItemAt(nextIndex)
@@ -167,8 +172,6 @@ class MusicService : MediaSessionService() {
             .build()
     }
 
-    // Pre-resolve stream URL on IO coroutine — no blocking, no thread starvation.
-    // Stores Pair(url, expiryMs) where expiry comes from the URL's `expire=` param.
     fun preResolveUrl(videoId: String, force: Boolean = false) {
         val cached = songUrlCache[videoId]
         if (!force && cached != null && cached.second > System.currentTimeMillis()) {
@@ -183,7 +186,7 @@ class MusicService : MediaSessionService() {
                 songUrlCache[videoId] = url to expiryMs
                 Timber.d("preResolve: cached stream for $videoId ✅ (expires in ${(expiryMs - System.currentTimeMillis()) / 60000}min)")
 
-                // Probe with a tiny Range request to confirm URL is alive
+                // Probe URL to confirm it's alive
                 try {
                     val probeClient = okhttp3.OkHttpClient.Builder()
                         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
