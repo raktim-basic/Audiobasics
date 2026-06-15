@@ -23,9 +23,32 @@ object CipherDeobfuscator {
     private var cipherWebView: CipherWebView? = null
     private var currentPlayerHash: String? = null
 
-    // Prevents two coroutines from creating a CipherWebView simultaneously,
-    // which caused the "Failed to get/create CipherWebView" race condition.
+    // Prevents two coroutines from creating a CipherWebView simultaneously.
     private val deobfuscateMutex = Mutex()
+
+    // Pre-warm the CipherWebView at startup so it's ready before the first song plays.
+    // Without this, the first deobfuscation call bears the full ~8-10s WebView init cost,
+    // causing the resolver to time out before the stream URL is ready.
+    suspend fun warmUp() {
+        Timber.tag(TAG).d("warmUp: pre-creating CipherWebView...")
+        deobfuscateMutex.withLock {
+            if (cipherWebView != null) {
+                Timber.tag(TAG).d("warmUp: CipherWebView already exists, skipping")
+                return
+            }
+            try {
+                val webView = getOrCreateWebView(forceRefresh = false)
+                if (webView != null) {
+                    Timber.tag(TAG).d("warmUp: CipherWebView ready ✅ " +
+                            "(sig=${webView.sigFunctionAvailable} n=${webView.nFunctionAvailable})")
+                } else {
+                    Timber.tag(TAG).w("warmUp: CipherWebView creation returned null")
+                }
+            } catch (e: Exception) {
+                Timber.tag(TAG).w("warmUp failed (non-fatal, will retry on first use): ${e.message}")
+            }
+        }
+    }
 
     suspend fun deobfuscateStreamUrl(signatureCipher: String, videoId: String): String? =
         deobfuscateMutex.withLock {
@@ -105,10 +128,20 @@ object CipherDeobfuscator {
         val nValueEncoded = nMatch.groupValues[1]
         val nValue = Uri.decode(nValueEncoded)
 
-        val webView = getOrCreateWebView(forceRefresh = false)
-        if (webView == null) {
-            Timber.tag(TAG).e("Failed to get CipherWebView for n-transform")
-            return url
+        // N-transform uses the existing WebView — no new lock needed since
+        // transformNParamInUrl is called after deobfuscateStreamUrl in the same flow
+        val webView = cipherWebView ?: run {
+            Timber.tag(TAG).w("No CipherWebView for n-transform, acquiring lock...")
+            return deobfuscateMutex.withLock {
+                val wv = getOrCreateWebView(forceRefresh = false)
+                if (wv == null || !wv.nFunctionAvailable) {
+                    Timber.tag(TAG).e("N-transform function not available")
+                    return url
+                }
+                val transformed = wv.transformN(nValue)
+                Timber.tag(TAG).d("N-param: $nValue -> $transformed")
+                url.replaceFirst(Regex("([?&])n=[^&]+"), "$1n=${Uri.encode(transformed)}")
+            }
         }
 
         if (!webView.nFunctionAvailable) {
