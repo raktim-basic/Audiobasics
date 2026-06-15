@@ -144,6 +144,17 @@ object FunctionNameExtractor {
             signatureTimestamp = 20612
         ),
 
+        // 445213fb — the actual URL hash YouTube is currently serving (June 2026).
+        // Same player generation as 16ee6936/ca366632: STS 20613, length 2785264.
+        // Verified: Metrolist plays songs with this player using mP(4,155,INPUT)/Yx.
+        "445213fb" to HardcodedPlayerConfig(
+            sigFuncName = "_expr_sig", sigConstantArg = null,
+            sigJsExpression = "mP(4,155,INPUT)",
+            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
+            nJsExpression = "(function(n){try{var u=new g.Yx('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
+            signatureTimestamp = 20613
+        ),
+
         // 2026-06-10 — mP/Yx generation under new URL hash. STS 20613.
         "6b8eecd5" to HardcodedPlayerConfig(
             sigFuncName = "_expr_sig", sigConstantArg = null,
