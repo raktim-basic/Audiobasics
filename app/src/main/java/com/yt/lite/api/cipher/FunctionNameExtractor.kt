@@ -23,7 +23,6 @@ object FunctionNameExtractor {
         val arrayIndex: Int?,
         val constantArgs: List<Int>? = null,
         // Expression-based n-transform (modern players, 2026+)
-        // e.g. "(function(n){try{var u=new g.Yx(...)}catch(e){return n;}})(INPUT)"
         val jsExpression: String? = null,
         val isHardcoded: Boolean = false
     )
@@ -34,143 +33,12 @@ object FunctionNameExtractor {
         val sigConstantArgs: List<Int>? = null,
         val sigPreprocessFunc: String? = null,
         val sigPreprocessArgs: List<Int>? = null,
-        // JS expression for modern VM-dispatch players (replaces sigFuncName)
         val sigJsExpression: String? = null,
         val nFuncName: String,
         val nArrayIndex: Int?,
         val nConstantArgs: List<Int>?,
-        // JS expression for modern n-transform (replaces nFuncName)
         val nJsExpression: String? = null,
         val signatureTimestamp: Int
-    )
-
-    // ── Known player configs ──────────────────────────────────────────────────
-    // Each entry covers a specific player.js hash (real URL hash + MD5 fallback).
-    // Modern players (2026+) use VM-dispatch expressions instead of named functions.
-    // When regex extraction fails (Q-array obfuscation), we fall back to these.
-
-    private val KNOWN_PLAYER_CONFIGS = mapOf(
-
-        // March 2026
-        "74edf1a3" to HardcodedPlayerConfig(
-            sigFuncName = "JI", sigConstantArg = 48,
-            sigConstantArgs = listOf(48, 1918),
-            sigPreprocessFunc = "f1", sigPreprocessArgs = listOf(1, 6528),
-            nFuncName = "GU", nArrayIndex = null,
-            nConstantArgs = listOf(6, 6010),
-            signatureTimestamp = 20522
-        ),
-
-        // April 2026
-        "f4c47414" to HardcodedPlayerConfig(
-            sigFuncName = "hJ", sigConstantArg = 6,
-            sigConstantArgs = listOf(6),
-            nFuncName = "", nArrayIndex = null, nConstantArgs = null,
-            signatureTimestamp = 20543
-        ),
-
-        // May 2026 — direct URLs, no cipher or n-transform needed
-        "57f5d44f" to HardcodedPlayerConfig(
-            sigFuncName = "", sigConstantArg = null,
-            nFuncName = "", nArrayIndex = null, nConstantArgs = null,
-            signatureTimestamp = 20591
-        ),
-
-        // 2026-06-08 — VM-dispatch via Jf/C6/iE. STS 20611.
-        "69e2a55d" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "Jf(20,3699,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.iE('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20611
-        ),
-        // MD5 fallback for 69e2a55d
-        "70d8066f" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "Jf(20,3699,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.iE('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20611
-        ),
-
-        // 2026-06-08 — VM-dispatch via v0/n7/uY. STS 20607.
-        "9d2ef9ef" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "v0(35,4499,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.uY('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20607
-        ),
-        // MD5 fallback for 9d2ef9ef
-        "6fb43da5" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "v0(35,4499,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.uY('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20607
-        ),
-
-        // 2026-06-09 — VM-dispatch via mP/Yx. STS 20613. ← CURRENT hash 445213fb maps here
-        "16ee6936" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "mP(4,155,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.Yx('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20613
-        ),
-        // MD5 fallback for 16ee6936 — this is what hash 445213fb computes to
-        "ca366632" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "mP(4,155,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.Yx('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20613
-        ),
-
-        // 2026-06-09 — VM-dispatch via $9/cV. STS 20612.
-        "ce74690f" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "\$9(2,6487,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.cV('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20612
-        ),
-        // MD5 fallback for ce74690f
-        "a5669e32" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "\$9(2,6487,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.cV('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20612
-        ),
-
-        // 445213fb — the actual URL hash YouTube is currently serving (June 2026).
-        // Same player generation as 16ee6936/ca366632: STS 20613, length 2785264.
-        // Verified: Metrolist plays songs with this player using mP(4,155,INPUT)/Yx.
-        "445213fb" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "mP(4,155,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.Yx('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20613
-        ),
-
-        // 2026-06-10 — mP/Yx generation under new URL hash. STS 20613.
-        "6b8eecd5" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "mP(4,155,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.Yx('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20613
-        ),
-        // MD5 fallback for 6b8eecd5
-        "6ea478fa" to HardcodedPlayerConfig(
-            sigFuncName = "_expr_sig", sigConstantArg = null,
-            sigJsExpression = "mP(4,155,INPUT)",
-            nFuncName = "_expr_n", nArrayIndex = null, nConstantArgs = null,
-            nJsExpression = "(function(n){try{var u=new g.Yx('https://x.googlevideo.com/videoplayback?n='+n,true);var t=u.get('n');return(t&&t!==n)?t:n;}catch(e){return n;}})(INPUT)",
-            signatureTimestamp = 20613
-        ),
     )
 
     // ── Detection patterns ────────────────────────────────────────────────────
@@ -184,8 +52,11 @@ object FunctionNameExtractor {
     )
 
     private val SIG_FUNCTION_PATTERNS = listOf(
+        // Pattern 1 (2025+): &&(VAR=FUNC(NUM,decodeURIComponent(VAR))
         Regex("""&&\s*\(\s*[a-zA-Z0-9$]+\s*=\s*([a-zA-Z0-9$]+)\s*\(\s*(\d+)\s*,\s*decodeURIComponent\s*\(\s*[a-zA-Z0-9$]+\s*\)"""),
+        // Pattern 1a (April 2026): &&(z=hJ(6,decodeURIComponent(h.s))
         Regex("""&&\s*\(\s*[a-zA-Z0-9$]+\s*=\s*([a-zA-Z0-9$]+)\s*\(\s*(\d+)\s*,\s*decodeURIComponent\s*\(\s*[a-zA-Z0-9$]+\s*\.\s*[a-z]\s*\)"""),
+        // Classic patterns (pre-2025, kept as fallback)
         Regex("""\b[cs]\s*&&\s*[adf]\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\("""),
         Regex("""\b[a-zA-Z0-9]+\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\("""),
         Regex("""\bm=([a-zA-Z0-9${'$'}]{2,})\(decodeURIComponent\(h\.s\)\)"""),
@@ -205,7 +76,6 @@ object FunctionNameExtractor {
 
     fun hasQArrayObfuscation(playerJs: String): Boolean {
         val hasQArray = Q_ARRAY_PATTERN.containsMatchIn(playerJs)
-        // Fixed: was "hasQArray=\$hasQArray" (literal) — now correctly interpolates
         Timber.tag(TAG).d("Q-array obfuscation check: hasQArray=$hasQArray")
         if (hasQArray) {
             val match = Q_ARRAY_PATTERN.find(playerJs)
@@ -234,31 +104,32 @@ object FunctionNameExtractor {
     }
 
     fun getHardcodedConfig(playerHash: String): HardcodedPlayerConfig? {
-        val config = KNOWN_PLAYER_CONFIGS[playerHash]
+        // Delegate entirely to PlayerConfigStore — no local map needed
+        val config = PlayerConfigStore.get(playerHash)
         if (config == null) {
             Timber.tag(TAG).w("No hardcoded config for hash: $playerHash")
-            Timber.tag(TAG).w("Known hashes: ${KNOWN_PLAYER_CONFIGS.keys.joinToString()}")
+            Timber.tag(TAG).w("Known hashes: ${PlayerConfigStore.knownHashes().sorted().joinToString()}")
         }
         return config
     }
 
+    /**
+     * Extract signature function info.
+     * Validated config FIRST (via PlayerConfigStore), regex heuristics only as fallback.
+     */
     fun extractSigFunctionInfo(playerJs: String, knownHash: String? = null): SigFunctionInfo? {
-        // Try regex patterns first
-        for ((index, pattern) in SIG_FUNCTION_PATTERNS.withIndex()) {
-            val match = pattern.find(playerJs) ?: continue
-            val name = match.groupValues[1]
-            val constArg = if (match.groupValues.size > 2) match.groupValues[2].toIntOrNull() else null
-            Timber.tag(TAG).d("SIG FUNCTION found via pattern $index: name=$name constantArg=$constArg")
-            return SigFunctionInfo(name, constArg, isHardcoded = false)
-        }
-
-        // Fall back to hardcoded config (Q-array obfuscation or unknown pattern)
         val hashToUse = knownHash ?: extractPlayerHash(playerJs)
-        Timber.tag(TAG).w("No sig pattern matched, trying hardcoded config for hash=$hashToUse")
+        Timber.tag(TAG).d("Extracting sig info, hash=$hashToUse")
+
+        // Config store first — prevents regex false-positives shadowing a known config
         if (hashToUse != null) {
             val config = getHardcodedConfig(hashToUse)
             if (config != null) {
-                Timber.tag(TAG).d("Using hardcoded sig: func=${config.sigFuncName} expr=${config.sigJsExpression}")
+                if (config.sigJsExpression != null) {
+                    Timber.tag(TAG).d("USING EXPRESSION-BASED SIG: ${config.sigJsExpression}")
+                } else {
+                    Timber.tag(TAG).d("USING HARDCODED SIG FUNCTION: ${config.sigFuncName}")
+                }
                 return SigFunctionInfo(
                     name = config.sigFuncName,
                     constantArg = config.sigConstantArg,
@@ -271,12 +142,49 @@ object FunctionNameExtractor {
             }
         }
 
+        // Regex fallback for unknown players
+        Timber.tag(TAG).w("No config for hash $hashToUse, trying sig regex patterns...")
+        for ((index, pattern) in SIG_FUNCTION_PATTERNS.withIndex()) {
+            val match = pattern.find(playerJs) ?: continue
+            val name = match.groupValues[1]
+            val constArg = if (match.groupValues.size > 2) match.groupValues[2].toIntOrNull() else null
+            Timber.tag(TAG).d("SIG FUNCTION found via pattern $index: name=$name constantArg=$constArg")
+            return SigFunctionInfo(name, constArg, isHardcoded = false)
+        }
+
         Timber.tag(TAG).e("Could not extract signature function info from player JS")
         return null
     }
 
+    /**
+     * Extract N-transform function info.
+     * Validated config FIRST (via PlayerConfigStore), regex heuristics only as fallback.
+     */
     fun extractNFunctionInfo(playerJs: String, knownHash: String? = null): NFunctionInfo? {
-        // Try regex patterns first
+        val hashToUse = knownHash ?: extractPlayerHash(playerJs)
+        Timber.tag(TAG).d("Extracting n-func info, hash=$hashToUse")
+
+        // Config store first
+        if (hashToUse != null) {
+            val config = getHardcodedConfig(hashToUse)
+            if (config != null) {
+                if (config.nJsExpression != null) {
+                    Timber.tag(TAG).d("USING EXPRESSION-BASED N-FUNCTION: ${config.nJsExpression.take(60)}")
+                } else {
+                    Timber.tag(TAG).d("USING HARDCODED N-FUNCTION: ${config.nFuncName}[${config.nArrayIndex}]")
+                }
+                return NFunctionInfo(
+                    name = config.nFuncName,
+                    arrayIndex = config.nArrayIndex,
+                    constantArgs = config.nConstantArgs,
+                    jsExpression = config.nJsExpression,
+                    isHardcoded = true
+                )
+            }
+        }
+
+        // Regex fallback for unknown players
+        Timber.tag(TAG).w("No config for hash $hashToUse, trying n-func regex patterns...")
         for ((index, pattern) in N_FUNCTION_PATTERNS.withIndex()) {
             val match = pattern.find(playerJs) ?: continue
             when (index) {
@@ -296,23 +204,6 @@ object FunctionNameExtractor {
             }
         }
 
-        // Fall back to hardcoded config
-        val hashToUse = knownHash ?: extractPlayerHash(playerJs)
-        Timber.tag(TAG).w("No n-func pattern matched, trying hardcoded config for hash=$hashToUse")
-        if (hashToUse != null) {
-            val config = getHardcodedConfig(hashToUse)
-            if (config != null) {
-                Timber.tag(TAG).d("Using hardcoded n-func: func=${config.nFuncName} expr=${config.nJsExpression?.take(60)}")
-                return NFunctionInfo(
-                    name = config.nFuncName,
-                    arrayIndex = config.nArrayIndex,
-                    constantArgs = config.nConstantArgs,
-                    jsExpression = config.nJsExpression,
-                    isHardcoded = true
-                )
-            }
-        }
-
         Timber.tag(TAG).e("Could not extract n-function info from player JS")
         return null
     }
@@ -327,7 +218,7 @@ object FunctionNameExtractor {
             val sts = pattern.find(playerJs)?.groupValues?.get(1)?.toIntOrNull()
             if (sts != null) return sts
         }
-        // Fallback to hardcoded config
+        // Fallback to config store
         val hash = extractPlayerHash(playerJs)
         if (hash != null) {
             val config = getHardcodedConfig(hash)
