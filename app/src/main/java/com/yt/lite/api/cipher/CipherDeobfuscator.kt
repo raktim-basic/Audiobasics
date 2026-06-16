@@ -17,6 +17,10 @@ object CipherDeobfuscator {
     fun initialize(context: Context) {
         Timber.tag(TAG).d("CipherDeobfuscator initializing...")
         appContext = context.applicationContext
+        // Load bundled player_configs.json and last-good cached remote copy synchronously,
+        // then kick a background TTL-gated refresh from zemer-cipher.
+        PlayerConfigStore.initialize(context)
+        PlayerConfigStore.scheduleStartupRefresh()
         Timber.tag(TAG).d("CipherDeobfuscator initialized")
     }
 
@@ -181,7 +185,21 @@ object CipherDeobfuscator {
         Timber.tag(TAG).d("Got player JS: hash=$hash, length=${playerJs.length}")
 
         Timber.tag(TAG).d("Analyzing player JS for cipher functions (knownHash=$hash)...")
-        val analysis = FunctionNameExtractor.analyzePlayerJs(playerJs, knownHash = hash)
+        var analysis = FunctionNameExtractor.analyzePlayerJs(playerJs, knownHash = hash)
+
+        if (analysis.sigInfo == null && hash != null) {
+            // Config for this hash isn't in the bundled asset — try pulling the latest
+            // player_configs.json from zemer-cipher. Handles new player rotations
+            // without requiring an APK update.
+            Timber.tag(TAG).w("Sig info missing for hash=$hash, attempting PlayerConfigStore.forceRefresh...")
+            val found = PlayerConfigStore.forceRefresh(hash)
+            if (found) {
+                Timber.tag(TAG).d("forceRefresh succeeded, re-analyzing player JS...")
+                analysis = FunctionNameExtractor.analyzePlayerJs(playerJs, knownHash = hash)
+            } else {
+                Timber.tag(TAG).w("forceRefresh did not find config for hash=$hash")
+            }
+        }
 
         if (analysis.sigInfo == null) {
             Timber.tag(TAG).e("Could not extract signature function info from player JS")
