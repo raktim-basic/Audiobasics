@@ -65,13 +65,14 @@ fun stringToU8(identifier: String): String {
     return newUint8Array(identifier.toByteArray())
 }
 
-// FIXED: standard base64 – NO .replace("+", "-").replace("/", "_")
 fun u8ToBase64(poToken: String): String {
     return poToken.split(",")
         .map { it.toUByte().toByte() }
         .toByteArray()
         .toByteString()
         .base64()
+        .replace("+", "-")
+        .replace("/", "_")
 }
 
 private fun descramble(scrambledChallenge: String): String {
