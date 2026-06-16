@@ -21,7 +21,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.Base64
 import java.util.Collections
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
@@ -198,20 +197,6 @@ class PoTokenWebView private constructor(
             popPoTokenContinuation(identifier)?.resumeWithException(t)
             return
         }
-
-        // --- ADDED: Verify token size (critical for debugging) ---
-        val decodedBytes = try {
-            Base64.getDecoder().decode(poToken)
-        } catch (e: IllegalArgumentException) {
-            Timber.tag(TAG).e(e, "Failed to decode base64 poToken")
-            popPoTokenContinuation(identifier)?.resumeWithException(e)
-            return
-        }
-        Timber.tag(TAG).d("Decoded poToken byte length: ${decodedBytes.size} (expected 110-128)")
-        if (decodedBytes.size < 110) {
-            Timber.tag(TAG).w("Token too short (${decodedBytes.size} bytes) – will likely cause 403 after first chunk")
-        }
-        // -------------------------------------------------------
 
         Timber.tag(TAG).d("Generated poToken: identifier=$identifier poToken=$poToken")
         popPoTokenContinuation(identifier)?.resume(poToken)
