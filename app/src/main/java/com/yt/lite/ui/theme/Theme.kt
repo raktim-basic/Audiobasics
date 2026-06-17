@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import android.os.Build
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
@@ -48,8 +49,20 @@ fun AppTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as android.app.Activity).window
-            WindowCompat.getInsetsController(window, view)
-                .isAppearanceLightStatusBars = !darkTheme
+            val controller = WindowCompat.getInsetsController(window, view)
+
+            // Status bar icon color — dark icons on light, light icons on dark
+            controller.isAppearanceLightStatusBars = !darkTheme
+
+            // On Android 14 and below, set bar colors manually.
+            // Android 15+ enforces edge-to-edge and handles this automatically.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                @Suppress("DEPRECATION")
+                window.statusBarColor = if (darkTheme) 0xFF121212.toInt() else 0xFFF5F5F5.toInt()
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = if (darkTheme) 0xFF1E1E1E.toInt() else 0xFFE8E8E8.toInt()
+                controller.isAppearanceLightNavigationBars = !darkTheme
+            }
         }
     }
 
