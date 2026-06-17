@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Download
@@ -50,6 +51,7 @@ sealed class SettingsPage {
     object Appearance : SettingsPage()
     object Cache : SettingsPage()
     object Library : SettingsPage()
+    object DevTools : SettingsPage()
 }
 
 @Composable
@@ -91,7 +93,8 @@ fun SettingsScreen(
                 onNavigateUpdater = onNavigateUpdater,
                 onNavigateAppearance = { currentPage = SettingsPage.Appearance },
                 onNavigateCache = { currentPage = SettingsPage.Cache },
-                onNavigateLibrary = { currentPage = SettingsPage.Library }
+                onNavigateLibrary = { currentPage = SettingsPage.Library },
+                onNavigateDevTools = { currentPage = SettingsPage.DevTools }
             )
             is SettingsPage.Appearance -> AppearancePage(
                 vm = vm,
@@ -108,6 +111,11 @@ fun SettingsScreen(
                 isDarkMode = isDarkMode,
                 onBack = { currentPage = SettingsPage.Main }
             )
+            is SettingsPage.DevTools -> DevToolsPage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = { currentPage = SettingsPage.Main }
+            )
         }
     }
 }
@@ -120,7 +128,8 @@ private fun SettingsMainPage(
     onNavigateUpdater: () -> Unit,
     onNavigateAppearance: () -> Unit,
     onNavigateCache: () -> Unit,
-    onNavigateLibrary: () -> Unit
+    onNavigateLibrary: () -> Unit,
+    onNavigateDevTools: () -> Unit
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -140,8 +149,19 @@ private fun SettingsMainPage(
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 24.sp,
-                color = textColor
+                color = textColor,
+                modifier = Modifier.weight(1f)
             )
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onNavigateDevTools()
+            }) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Dev tools",
+                    tint = textColor
+                )
+            }
         }
 
         DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
@@ -231,7 +251,7 @@ private fun SettingsMainPage(
                     },
                     onClick = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Desk connect dropping after all the patch ups", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -675,7 +695,7 @@ private fun LibraryPage(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever              :(  Are you sure?",
+                        text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever     :(  Are you sure?",
                         fontFamily = NothingFont,
                         fontSize = 14.sp,
                         color = subTextColor
@@ -864,4 +884,95 @@ fun SettingsDivider(isDarkMode: Boolean) {
             .height(1.dp)
             .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFEEEEEE))
     )
+}
+
+
+@Composable
+private fun DevToolsPage(
+    vm: MusicViewModel,
+    isDarkMode: Boolean,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val logsEnabled by vm.logsEnabled.collectAsState()
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+
+    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Dev tools",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                color = textColor
+            )
+        }
+
+        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "The LOGS",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = textColor,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = logsEnabled,
+                onCheckedChange = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    vm.toggleLogs()
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color.Red,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.Gray
+                )
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Box(
+            modifier = Modifier.fillMaxWidth().height(1.dp)
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(barColor)
+                .padding(vertical = 12.dp, horizontal = 20.dp)
+        ) {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onBack()
+            }) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = textColor,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+    }
 }
