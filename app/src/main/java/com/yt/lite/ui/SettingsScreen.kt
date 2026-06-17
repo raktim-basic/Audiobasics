@@ -133,6 +133,7 @@ private fun SettingsMainPage(
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val logsEnabled by vm.logsEnabled.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -152,10 +153,13 @@ private fun SettingsMainPage(
                 color = textColor,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onNavigateDevTools()
-            }) {
+            IconButton(
+                onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onNavigateDevTools()
+                },
+                modifier = if (logsEnabled) Modifier.padding(end = 80.dp) else Modifier
+            ) {
                 Icon(
                     Icons.Default.MoreVert,
                     contentDescription = "Dev tools",
@@ -251,7 +255,7 @@ private fun SettingsMainPage(
                     },
                     onClick = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        Toast.makeText(context, "Desk connect dropping after all the patch ups", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -695,7 +699,7 @@ private fun LibraryPage(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever     :(  Are you sure?",
+                        text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever              :(  Are you sure?",
                         fontFamily = NothingFont,
                         fontSize = 14.sp,
                         color = subTextColor
