@@ -102,6 +102,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _hapticsEnabled = MutableStateFlow(prefs.getBoolean("haptics_enabled", true))
     val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled
 
+    private val _logsEnabled = MutableStateFlow(prefs.getBoolean("logs_enabled", false))
+    val logsEnabled: StateFlow<Boolean> = _logsEnabled
+
     private val _navigateToUpdater = MutableStateFlow(false)
     val navigateToUpdater: StateFlow<Boolean> = _navigateToUpdater
 
@@ -703,6 +706,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleHaptics() {
         _hapticsEnabled.value = !_hapticsEnabled.value
         prefs.edit().putBoolean("haptics_enabled", _hapticsEnabled.value).apply()
+    }
+
+    fun toggleLogs() {
+        _logsEnabled.value = !_logsEnabled.value
+        prefs.edit().putBoolean("logs_enabled", _logsEnabled.value).apply()
     }
 
     fun triggerUpdater() { _navigateToUpdater.value = true }
