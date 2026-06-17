@@ -68,7 +68,7 @@ object DebugLogCollector {
 // ── Composable Overlay ───────────────────────────────────────────────────────
 
 @Composable
-fun DebugLogOverlay() {
+fun DebugLogOverlay(logsEnabled: Boolean) {
     var visible by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(false) }
 
@@ -88,12 +88,14 @@ fun DebugLogOverlay() {
         }
     }
 
+    if (!logsEnabled) return
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(999f)
     ) {
-        // Toggle button — always visible in top-right corner
+        // Toggle button — visible in top-right corner when logs are enabled in Dev tools
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
