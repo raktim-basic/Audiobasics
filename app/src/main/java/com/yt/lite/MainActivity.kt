@@ -109,9 +109,10 @@ class MainActivity : ComponentActivity() {
             }
 
             AppTheme(darkTheme = isDarkMode) {
+                val logsEnabled by vm.logsEnabled.collectAsState()
                 Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
                     AudiobasicsApp(vm = vm, isDarkMode = isDarkMode)
-                    DebugLogOverlay()
+                    DebugLogOverlay(logsEnabled = logsEnabled)
                 }
             }
         }
