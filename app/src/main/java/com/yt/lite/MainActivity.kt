@@ -154,7 +154,7 @@ class MainActivity : ComponentActivity() {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
             val pi = PendingIntent.getActivity(
-                this@MainActivity, 0, intent,
+                this@MainActivity, 1, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
