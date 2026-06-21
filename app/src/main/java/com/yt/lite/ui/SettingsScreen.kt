@@ -59,12 +59,19 @@ fun SettingsScreen(
     vm: MusicViewModel,
     isDarkMode: Boolean,
     openCache: Boolean = false,
+    openLibrary: Boolean = false,
     onBack: () -> Unit,
     onNavigateUpdater: () -> Unit
 ) {
     val context = LocalContext.current
     var currentPage by remember { 
-        mutableStateOf<SettingsPage>(if (openCache) SettingsPage.Cache else SettingsPage.Main) 
+        mutableStateOf<SettingsPage>(
+            when {
+                openCache -> SettingsPage.Cache
+                openLibrary -> SettingsPage.Library
+                else -> SettingsPage.Main
+            }
+        ) 
     }
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
