@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
+import com.yt.lite.utils.MigrationMessageProvider
 
 @Composable
 fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
@@ -82,19 +83,32 @@ fun HomeScreen(
                     color = textColor
                 )
             } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "⚠️ ",
+                        fontSize = 22.sp
+                    )
+                    Text(
+                        text = MigrationMessageProvider.sloganTitle(),
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = textColor
+                    )
+                }
                 Text(
-                    text = "No recommendation bs",
+                    text = MigrationMessageProvider.sloganSubtitle(),
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
                     color = textColor
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Own your taste",
+                    text = MigrationMessageProvider.sloganFooter(),
                     fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
-                    color = textColor
+                    fontSize = 13.sp,
+                    color = if (isDarkMode) Color(0xFF888888) else Color(0xFF999999)
                 )
             }
         }
