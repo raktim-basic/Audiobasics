@@ -31,8 +31,9 @@ import okhttp3.Request
 import org.json.JSONArray
 import com.yt.lite.ui.theme.NothingFont
 import com.yt.lite.utils.HapticUtils
+import com.yt.lite.utils.MigrationMessageProvider
 
-const val APP_CURRENT_VERSION = "2.3"
+const val APP_CURRENT_VERSION = "2.3.1"
 const val APP_GITHUB_RELEASES_API =
     "https://api.github.com/repos/raktim-basic/Audiobasics/releases?per_page=5"
 const val APP_GITHUB_RELEASES_URL =
@@ -59,7 +60,8 @@ fun UpdaterScreen(
     vm: MusicViewModel,
     isDarkMode: Boolean,
     onBack: () -> Unit,
-    onEngineInfo: () -> Unit
+    onEngineInfo: () -> Unit,
+    onNavigateLibrary: () -> Unit
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -68,6 +70,7 @@ fun UpdaterScreen(
     var isChecking by remember { mutableStateOf(false) }
     var latestVersion by remember { mutableStateOf<String?>(null) }
     var checked by remember { mutableStateOf(false) }
+    var showMigrationDialog by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -149,6 +152,39 @@ fun UpdaterScreen(
             )
         }
 
+        Spacer(Modifier.height(28.dp))
+
+        Column(modifier = Modifier.padding(horizontal = 28.dp)) {
+            Row {
+                Text(text = "⚠️", fontSize = 16.sp)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = MigrationMessageProvider.updaterWarning(),
+                    fontFamily = NothingFont,
+                    fontSize = 14.sp,
+                    color = textColor,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "export library",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = Color.Red,
+                textDecoration = TextDecoration.Underline,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onNavigateLibrary()
+                    }
+            )
+        }
+
         Spacer(Modifier.weight(1f))
 
         Column(modifier = Modifier.padding(horizontal = 28.dp)) {
@@ -195,12 +231,7 @@ fun UpdaterScreen(
                         .background(Color.Red)
                         .clickable {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            val intent = Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse(APP_GITHUB_RELEASES_URL)
-                            )
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            context.startActivity(intent)
+                            showMigrationDialog = true
                         }
                         .padding(vertical = 16.dp),
                     contentAlignment = Alignment.Center
@@ -242,5 +273,26 @@ fun UpdaterScreen(
         )
 
         Spacer(Modifier.height(32.dp))
+    }
+
+    if (showMigrationDialog) {
+        MigrationConfirmDialog(
+            onDismiss = { showMigrationDialog = false },
+            onExportLibrary = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                showMigrationDialog = false
+                onNavigateLibrary()
+            },
+            onProceed = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                showMigrationDialog = false
+                val intent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse(APP_GITHUB_RELEASES_URL)
+                )
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+        )
     }
 }
