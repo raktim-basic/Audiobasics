@@ -5,7 +5,9 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,7 +84,8 @@ fun UpdaterScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor),
+            .background(bgColor)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -185,7 +188,7 @@ fun UpdaterScreen(
             )
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(36.dp))
 
         Column(modifier = Modifier.padding(horizontal = 28.dp)) {
             Box(
