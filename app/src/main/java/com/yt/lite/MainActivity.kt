@@ -176,7 +176,7 @@ sealed class Screen {
     object Home : Screen()
     object Search : Screen()
     object Queue : Screen()
-    data class Settings(val openCache: Boolean = false) : Screen()
+    data class Settings(val openCache: Boolean = false, val openLibrary: Boolean = false) : Screen()
     object Liked : Screen()
     object Albums : Screen()
     object Updater : Screen()
@@ -296,6 +296,7 @@ fun AudiobasicsApp(
                         vm = vm,
                         isDarkMode = isDarkMode,
                         openCache = screen.openCache,
+                        openLibrary = screen.openLibrary,
                         onBack = { navigateBack() },
                         onNavigateUpdater = { navigate(Screen.Updater) }
                     )
@@ -317,7 +318,8 @@ fun AudiobasicsApp(
                         vm = vm,
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
-                        onEngineInfo = { navigate(Screen.EngineInfo) }
+                        onEngineInfo = { navigate(Screen.EngineInfo) },
+                        onNavigateLibrary = { navigate(Screen.Settings(openLibrary = true)) }
                     )
                     is Screen.EngineInfo -> EngineInfoScreen(
                         isDarkMode = isDarkMode,
