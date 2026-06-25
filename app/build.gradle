@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace 'com.yt.lite'
+    namespace 'com.rkd.audiobasics'
     compileSdk 36
 
     defaultConfig {
-        applicationId 'com.yt.lite'
+        applicationId 'com.rkd.audiobasics'
         minSdk 26
         targetSdk 36
         versionCode 10

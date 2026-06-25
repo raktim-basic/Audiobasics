@@ -1,0 +1,237 @@
+package com.rkd.audiobasics.player
+
+import android.app.PendingIntent
+import android.content.Intent
+import android.net.Uri
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSourceException
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import okhttp3.OkHttpClient
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSessionService
+import com.rkd.audiobasics.MainActivity
+import com.rkd.audiobasics.api.Innertube
+import com.rkd.audiobasics.api.cipher.CipherDeobfuscator
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
+
+@UnstableApi
+@AndroidEntryPoint
+class MusicService : MediaSessionService() {
+
+    private var mediaSession: MediaSession? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Cache: videoId -> Pair(streamUrl, expiryTimeMs)
+    private val songUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
+
+    companion object {
+        // 512KB chunks — same as Metrolist. Keeps each Range request small so we
+        // don't exhaust the CDN's per-URL request limit.
+        private const val CHUNK_LENGTH = 512 * 1024L
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+
+        // Startup sequence — runs in parallel on IO:
+        // 1. Innertube.init() — fetches visitorData + signatureTimestamp
+        // 2. CipherDeobfuscator.warmUp() — pre-creates CipherWebView so it's ready
+        //    before the first song plays. Without warmup, CipherWebView creation
+        //    takes ~8-10s and causes the resolver to time out.
+        serviceScope.launch {
+            Innertube.init()
+            // warmUp after init so signatureTimestamp is available for player JS analysis
+            CipherDeobfuscator.warmUp()
+        }
+
+        val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
+
+        val okHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+            .build()
+
+        val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
+            .setUserAgent(iosUserAgent)
+
+        val finalFactory = DefaultDataSource.Factory(this, okHttpDataSourceFactory)
+
+        val finalResolvingFactory = ResolvingDataSource.Factory(finalFactory) { dataSpec ->
+            val uriString = dataSpec.uri.toString()
+            when {
+                uriString.startsWith("file://") -> dataSpec
+
+                uriString.contains("youtube.com") || uriString.contains("youtu.be") -> {
+                    val forceFallback = uriString.contains("fallback=true")
+                    val videoId = extractVideoId(uriString)
+                    if (videoId == null) {
+                        Timber.e("Could not extract videoId from URI")
+                        dataSpec
+                    } else {
+                        if (forceFallback) {
+                            Timber.w("Resolver: forceFallback=true, clearing cache for $videoId")
+                            songUrlCache.remove(videoId)
+                        }
+
+                        val cached = songUrlCache[videoId]
+                        if (cached != null && cached.second > System.currentTimeMillis()) {
+                            Timber.d("Resolver: cache hit for $videoId ✅")
+                            dataSpec.withUri(Uri.parse(cached.first))
+                                .subrange(dataSpec.uriPositionOffset, CHUNK_LENGTH)
+                        } else {
+                            Timber.d("Resolver: waiting for pre-resolve of $videoId (forceFallback=$forceFallback)...")
+                            preResolveUrl(videoId, force = forceFallback)
+                            var waited = 0
+                            // 30s timeout — enough for cold CipherWebView + poToken + API call
+                            // In practice warmUp() means WebView is already ready, so this
+                            // resolves in ~5-7 seconds (poToken + player API only)
+                            while (waited < 30000) {
+                                val ready = songUrlCache[videoId]
+                                if (ready != null && ready.second > System.currentTimeMillis()) {
+                                    Timber.d("Resolver: pre-resolve ready for $videoId ✅")
+                                    return@Factory dataSpec.withUri(Uri.parse(ready.first))
+                                        .subrange(dataSpec.uriPositionOffset, CHUNK_LENGTH)
+                                }
+                                Thread.sleep(200)
+                                waited += 200
+                            }
+                            Timber.e("Resolver: timed out waiting for $videoId ❌")
+                            throw DataSourceException(
+                                "Stream URL timed out for $videoId",
+                                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+                            )
+                        }
+                    }
+                }
+
+                else -> dataSpec
+            }
+        }
+
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(15_000, 10 * 60_000, 1_500, 3_000)
+            .build()
+
+        val player = ExoPlayer.Builder(this)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .setUsage(C.USAGE_MEDIA)
+                    .build(),
+                true
+            )
+            .setLoadControl(loadControl)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(finalResolvingFactory))
+            .setHandleAudioBecomingNoisy(true)
+            .build()
+
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(
+                mediaItem: androidx.media3.common.MediaItem?,
+                reason: Int
+            ) {
+                val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
+                val videoId = extractVideoId(uri) ?: return
+                preResolveUrl(videoId, force = false)
+
+                // Pre-resolve next item in queue
+                val nextIndex = player.currentMediaItemIndex + 1
+                if (nextIndex < player.mediaItemCount) {
+                    val nextUri = player.getMediaItemAt(nextIndex)
+                        .localConfiguration?.uri?.toString() ?: return
+                    val nextVideoId = extractVideoId(nextUri) ?: return
+                    preResolveUrl(nextVideoId, force = false)
+                }
+            }
+        })
+
+        val intent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        mediaSession = MediaSession.Builder(this, player)
+            .setSessionActivity(pendingIntent)
+            .build()
+    }
+
+    fun preResolveUrl(videoId: String, force: Boolean = false) {
+        val cached = songUrlCache[videoId]
+        if (!force && cached != null && cached.second > System.currentTimeMillis()) {
+            Timber.d("preResolve: already cached for $videoId ✅")
+            return
+        }
+        serviceScope.launch {
+            Timber.d("preResolve: fetching stream for $videoId...")
+            val result = Innertube.getStreamUrl(this@MusicService, videoId)
+            if (result != null) {
+                val (url, expiryMs) = result
+                songUrlCache[videoId] = url to expiryMs
+                Timber.d("preResolve: cached stream for $videoId ✅ (expires in ${(expiryMs - System.currentTimeMillis()) / 60000}min)")
+
+                // Probe URL to confirm it's alive
+                try {
+                    val probeClient = okhttp3.OkHttpClient.Builder()
+                        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                        .build()
+                    val probeReq = okhttp3.Request.Builder()
+                        .url(url)
+                        .get()
+                        .addHeader("User-Agent", "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)")
+                        .addHeader("Range", "bytes=0-1")
+                        .build()
+                    val probe = probeClient.newCall(probeReq).execute()
+                    Timber.d("Stream probe $videoId: HTTP ${probe.code} | type=${probe.header("Content-Type")} | len=${probe.header("Content-Length")} | range=${probe.header("Content-Range")}")
+                    probe.close()
+                } catch (e: Exception) {
+                    Timber.w("Stream probe failed $videoId: ${e.message}")
+                }
+            } else {
+                Timber.e("preResolve: failed for $videoId ❌")
+            }
+        }
+    }
+
+    private fun extractVideoId(url: String): String? {
+        val cleanUrl = url.substringBefore("&fallback=true")
+        val patterns = listOf(
+            Regex("v=([a-zA-Z0-9_-]{11})"),
+            Regex("youtu\\.be/([a-zA-Z0-9_-]{11})"),
+            Regex("embed/([a-zA-Z0-9_-]{11})")
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(cleanUrl)
+            if (match != null) return match.groupValues[1]
+        }
+        return null
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
+
+    override fun onDestroy() {
+        mediaSession?.run {
+            player.release()
+            release()
+            mediaSession = null
+        }
+        songUrlCache.clear()
+        super.onDestroy()
+    }
+}

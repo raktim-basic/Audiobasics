@@ -1,0 +1,206 @@
+package com.rkd.audiobasics.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import com.rkd.audiobasics.ui.theme.NothingFont
+
+private const val NEWPIPE_CURRENT = "v0.26.3"
+private const val YTM_CURRENT = "1.20260520.01.00"
+
+private suspend fun fetchLatestNewPipeVersion(): String? = withContext(Dispatchers.IO) {
+    try {
+        val client = OkHttpClient()
+        val req = Request.Builder()
+            .url("https://api.github.com/repos/TeamNewPipe/NewPipeExtractor/releases?per_page=5")
+            .header("Accept", "application/vnd.github.v3+json")
+            .build()
+        val resp = client.newCall(req).execute()
+        val body = resp.body?.string() ?: return@withContext null
+        val arr = JSONArray(body)
+        if (arr.length() > 0) arr.getJSONObject(0).optString("tag_name") else null
+    } catch (_: Exception) { null }
+}
+
+@Composable
+fun EngineInfoScreen(
+    isDarkMode: Boolean,
+    onBack: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+
+    var isChecking by remember { mutableStateOf(false) }
+    var latestNewPipe by remember { mutableStateOf<String?>(null) }
+    var checked by remember { mutableStateOf(false) }
+
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val cardColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
+    val subTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF444444)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, start = 4.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            text = "Engine info.",
+            fontFamily = NothingFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 32.sp,
+            color = Color.Red
+        )
+
+        Spacer(Modifier.height(40.dp))
+
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(cardColor)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Newpipe extractor",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Current version : $NEWPIPE_CURRENT",
+                    fontFamily = NothingFont,
+                    fontSize = 13.sp,
+                    color = subTextColor
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Latest version : ${
+                        when {
+                            !checked -> "—"
+                            latestNewPipe != null -> latestNewPipe!!
+                            else -> "Unknown"
+                        }
+                    }",
+                    fontFamily = NothingFont,
+                    fontSize = 13.sp,
+                    color = subTextColor
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(cardColor)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Innertube version",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Current version : $YTM_CURRENT",
+                    fontFamily = NothingFont,
+                    fontSize = 13.sp,
+                    color = subTextColor
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = "YTM web remix by Innertube :)",
+                fontFamily = NothingFont,
+                fontSize = 12.sp,
+                color = subTextColor,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color.Red)
+                .clickable(enabled = !isChecking) {
+                    scope.launch {
+                        isChecking = true
+                        latestNewPipe = fetchLatestNewPipeVersion()
+                        checked = true
+                        isChecking = false
+                    }
+                }
+                .padding(vertical = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isChecking) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                    color = Color.White
+                )
+            } else {
+                Text(
+                    text = "check latest version",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color.White
+                )
+            }
+        }
+
+        Spacer(Modifier.height(40.dp))
+    }
+}
