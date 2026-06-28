@@ -24,6 +24,9 @@ import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.cache.CacheResult
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
+import com.rkd.audiobasics.data.db.AppDatabase
+import com.rkd.audiobasics.data.db.PlaylistEntity
+import com.rkd.audiobasics.data.db.PlaylistSongEntity
 import com.rkd.audiobasics.player.MusicService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -35,9 +38,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import org.json.JSONArray
 import timber.log.Timber
 import org.json.JSONObject
+import java.util.UUID
 
 @UnstableApi
 class MusicViewModel(app: Application) : AndroidViewModel(app) {
@@ -51,6 +57,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private val cacheSemaphore = Semaphore(3)
 
+    // ── Room DB ───────────────────────────────────────────────────────────────
+    private val db = AppDatabase.getInstance(app)
+    private val playlistDao = db.playlistDao()
+
+    // ── Player state ──────────────────────────────────────────────────────────
     private val _currentSong = MutableStateFlow<Song?>(null)
     val currentSong: StateFlow<Song?> = _currentSong
 
@@ -75,15 +86,30 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _repeatMode = MutableStateFlow(prefs.getInt("repeat_mode", 0))
     val repeatMode: StateFlow<Int> = _repeatMode
 
+    // ── Search ────────────────────────────────────────────────────────────────
     private val _searchResults = MutableStateFlow<List<Song>>(emptyList())
     val searchResults: StateFlow<List<Song>> = _searchResults
 
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
 
+    // ── Liked songs (SharedPrefs) ─────────────────────────────────────────────
     private val _likedSongs = MutableStateFlow<List<Song>>(loadLikedSongs())
     val likedSongs: StateFlow<List<Song>> = _likedSongs
 
+    // ── Custom playlists (Room) ───────────────────────────────────────────────
+    val customPlaylists: StateFlow<List<PlaylistEntity>> = playlistDao
+        .observePlaylists()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // songs loaded for a specific custom playlist (set when user opens it)
+    private val _openPlaylistSongs = MutableStateFlow<List<PlaylistSongEntity>>(emptyList())
+    val openPlaylistSongs: StateFlow<List<PlaylistSongEntity>> = _openPlaylistSongs
+
+    private val _openPlaylistId = MutableStateFlow<String?>(null)
+    val openPlaylistId: StateFlow<String?> = _openPlaylistId
+
+    // ── Cache / Storage ───────────────────────────────────────────────────────
     private val _cacheSize = MutableStateFlow("")
     val cacheSize: StateFlow<String> = _cacheSize
 
@@ -93,9 +119,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _cacheProgress = MutableStateFlow<Pair<Int, Int>?>(null)
     val cacheProgress: StateFlow<Pair<Int, Int>?> = _cacheProgress
 
+    // ── Saved albums ──────────────────────────────────────────────────────────
     private val _savedAlbums = MutableStateFlow<List<Album>>(loadSavedAlbums())
     val savedAlbums: StateFlow<List<Album>> = _savedAlbums
 
+    // ── Settings ──────────────────────────────────────────────────────────────
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
 
@@ -111,7 +139,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _updateAvailable = MutableStateFlow(false)
     val updateAvailable: StateFlow<Boolean> = _updateAvailable
 
+    // ── "Add to..." sheet ─────────────────────────────────────────────────────
+    private val _addToSheetSong = MutableStateFlow<Song?>(null)
+    val addToSheetSong: StateFlow<Song?> = _addToSheetSong
+
     private var fallbackRetryCount = 0
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Player listener
+    // ─────────────────────────────────────────────────────────────────────────
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(playing: Boolean) {
@@ -223,6 +259,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         refreshCacheSize()
         checkForUpdate()
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Player controls
+    // ─────────────────────────────────────────────────────────────────────────
 
     fun syncState() { syncStateFromController() }
 
@@ -417,8 +457,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _queue.value = listOf(placeholder)
             try {
                 val metadata = Innertube.getVideoMetadata(videoId)
-                // getStreamUrl returns Pair(url, expiryMs) — we only need the URL here.
-                // MusicService handles caching with the real expiry internally.
                 val streamUrl = Innertube.getStreamUrl(getApplication(), videoId)?.first
                 if (streamUrl == null) {
                     Toast.makeText(getApplication(), "Could not load song", Toast.LENGTH_LONG).show()
@@ -539,8 +577,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Liked Songs (SharedPrefs — unchanged from v2.3.x)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fun isLiked(songId: String) = _likedSongs.value.any { it.id == songId }
+
     fun toggleLike(song: Song) {
-        if (_likedSongs.value.any { it.id == song.id }) unlike(song) else like(song)
+        if (isLiked(song.id)) unlike(song) else like(song)
     }
 
     private fun like(song: Song) {
@@ -554,44 +598,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun unlike(song: Song) {
         _likedSongs.value = _likedSongs.value.filter { it.id != song.id }
-        CacheManager.removeCachedSong(getApplication(), song.id)
         saveLikedSongs()
-        refreshCacheSize()
-    }
-
-    private suspend fun cacheSongSilently(song: Song): Boolean {
-        return try {
-            when (val result = CacheManager.cacheSong(getApplication(), song)) {
-                is CacheResult.Success -> {
-                    updateLikedSongCacheStatus(song.id, isCached = true, cacheFailed = false)
-                    refreshCacheSize()
-                    true
-                }
-                is CacheResult.StorageLow -> {
-                    _showStorageLow.value = true
-                    updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
-                    false
-                }
-                is CacheResult.Failed -> {
-                    updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
-                    Log.e("YTLite", "Cache failed ${song.title}: ${result.reason}")
-                    false
-                }
+        // Only remove cache if not in any custom playlist
+        viewModelScope.launch(Dispatchers.IO) {
+            val inCustomPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
+            if (!inCustomPlaylist) {
+                CacheManager.removeCachedSong(getApplication(), song.id)
             }
-        } catch (e: Exception) {
-            updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
-            Log.e("YTLite", "Cache exception ${song.title}: ${e.message}")
-            false
+            refreshCacheSize()
         }
-    }
-
-    fun dismissStorageLow() { _showStorageLow.value = false }
-
-    private fun updateLikedSongCacheStatus(id: String, isCached: Boolean, cacheFailed: Boolean) {
-        _likedSongs.value = _likedSongs.value.map { s ->
-            if (s.id == id) s.copy(isCached = isCached, cacheFailed = cacheFailed) else s
-        }
-        saveLikedSongs()
     }
 
     fun retryCache(song: Song) {
@@ -642,6 +657,260 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun shuffleLiked() {
+        val shuffled = _likedSongs.value.shuffled()
+        if (shuffled.isEmpty()) return
+        playWithQueue(shuffled.first(), shuffled)
+    }
+
+    private fun updateLikedSongCacheStatus(id: String, isCached: Boolean, cacheFailed: Boolean) {
+        _likedSongs.value = _likedSongs.value.map { s ->
+            if (s.id == id) s.copy(isCached = isCached, cacheFailed = cacheFailed) else s
+        }
+        saveLikedSongs()
+    }
+
+    private suspend fun cacheSongSilently(song: Song): Boolean {
+        return try {
+            when (val result = CacheManager.cacheSong(getApplication(), song)) {
+                is CacheResult.Success -> {
+                    updateLikedSongCacheStatus(song.id, isCached = true, cacheFailed = false)
+                    refreshCacheSize()
+                    true
+                }
+                is CacheResult.StorageLow -> {
+                    _showStorageLow.value = true
+                    updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
+                    false
+                }
+                is CacheResult.Failed -> {
+                    updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
+                    Log.e("YTLite", "Cache failed ${song.title}: ${result.reason}")
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
+            Log.e("YTLite", "Cache exception ${song.title}: ${e.message}")
+            false
+        }
+    }
+
+    fun dismissStorageLow() { _showStorageLow.value = false }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Custom Playlists (Room)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fun createPlaylist(name: String, emoji: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val entity = PlaylistEntity(
+                id = UUID.randomUUID().toString(),
+                name = name.trim(),
+                emoji = emoji
+            )
+            playlistDao.insertPlaylist(entity)
+        }
+    }
+
+    fun deletePlaylist(playlistId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Get songs before deletion to check cache cleanup
+            val songs = playlistDao.getPlaylistSongs(playlistId)
+            playlistDao.clearPlaylist(playlistId)
+            playlistDao.deletePlaylist(playlistId)
+            // For each song, remove cache only if it's not liked and not in other playlists
+            songs.forEach { entity ->
+                val liked = isLiked(entity.songId)
+                val inOther = playlistDao.countPlaylistsContainingSong(entity.songId) > 0
+                if (!liked && !inOther) {
+                    CacheManager.removeCachedSong(getApplication(), entity.songId)
+                }
+            }
+            refreshCacheSize()
+        }
+    }
+
+    fun renamePlaylist(playlistId: String, name: String, emoji: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            playlistDao.renamePlaylist(playlistId, name.trim(), emoji)
+        }
+    }
+
+    fun loadPlaylistSongs(playlistId: String) {
+        _openPlaylistId.value = playlistId
+        viewModelScope.launch(Dispatchers.IO) {
+            _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+        }
+    }
+
+    fun isSongInPlaylist(songId: String, playlistId: String): Boolean {
+        // Optimistic check from loaded songs if this is the open playlist
+        if (_openPlaylistId.value == playlistId) {
+            return _openPlaylistSongs.value.any { it.songId == songId }
+        }
+        return false
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // "Add to..." bottom sheet
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fun openAddToSheet(song: Song) { _addToSheetSong.value = song }
+    fun closeAddToSheet() { _addToSheetSong.value = null }
+
+    /**
+     * Toggle song in a playlist.
+     * If playlistId == LIKED_PLAYLIST_ID → toggleLike
+     * Otherwise → custom playlist in Room
+     * Returns true if added, false if removed.
+     */
+    fun toggleSongInPlaylist(song: Song, playlistId: String): Boolean {
+        return if (playlistId == LIKED_PLAYLIST_ID) {
+            val wasLiked = isLiked(song.id)
+            toggleLike(song)
+            !wasLiked
+        } else {
+            var added = false
+            viewModelScope.launch(Dispatchers.IO) {
+                val already = playlistDao.isSongInPlaylist(playlistId, song.id)
+                if (already) {
+                    playlistDao.removeSong(playlistId, song.id)
+                    // Remove cache if not liked and not in other playlists
+                    val liked = isLiked(song.id)
+                    val inOther = playlistDao.countPlaylistsContainingSong(song.id) > 0
+                    if (!liked && !inOther) {
+                        CacheManager.removeCachedSong(getApplication(), song.id)
+                        refreshCacheSize()
+                    }
+                    added = false
+                } else {
+                    playlistDao.insertSong(
+                        PlaylistSongEntity(
+                            playlistId = playlistId,
+                            songId = song.id,
+                            title = song.title,
+                            artist = song.artist,
+                            thumbnail = song.thumbnail,
+                            isExplicit = song.isExplicit,
+                            albumId = song.albumId
+                        )
+                    )
+                    // Trigger cache for this song
+                    cacheSemaphore.withPermit { cacheSongSilently(song) }
+                    added = true
+                }
+                // Refresh open playlist if it's this one
+                if (_openPlaylistId.value == playlistId) {
+                    _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+                }
+            }
+            added
+        }
+    }
+
+    suspend fun isSongInPlaylistAsync(songId: String, playlistId: String): Boolean {
+        if (playlistId == LIKED_PLAYLIST_ID) return isLiked(songId)
+        return playlistDao.isSongInPlaylist(playlistId, songId)
+    }
+
+    fun removeSongFromCustomPlaylist(playlistId: String, song: Song) {
+        viewModelScope.launch(Dispatchers.IO) {
+            playlistDao.removeSong(playlistId, song.id)
+            val liked = isLiked(song.id)
+            val inOther = playlistDao.countPlaylistsContainingSong(song.id) > 0
+            if (!liked && !inOther) {
+                CacheManager.removeCachedSong(getApplication(), song.id)
+                refreshCacheSize()
+            }
+            if (_openPlaylistId.value == playlistId) {
+                _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+            }
+        }
+    }
+
+    fun playCustomPlaylist(playlistId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val songs = playlistDao.getPlaylistSongs(playlistId).map { it.toSong() }
+            if (songs.isEmpty()) return@launch
+            viewModelScope.launch(Dispatchers.Main) {
+                playWithQueue(songs.first(), songs)
+            }
+        }
+    }
+
+    fun shuffleCustomPlaylist(playlistId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val songs = playlistDao.getPlaylistSongs(playlistId).map { it.toSong() }.shuffled()
+            if (songs.isEmpty()) return@launch
+            viewModelScope.launch(Dispatchers.Main) {
+                playWithQueue(songs.first(), songs)
+            }
+        }
+    }
+
+    private fun PlaylistSongEntity.toSong() = Song(
+        id = songId, title = title, artist = artist,
+        thumbnail = thumbnail, isExplicit = isExplicit, albumId = albumId,
+        isCached = CacheManager.isCached(getApplication(), songId)
+    )
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Saved Albums
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fun saveAlbum(album: Album) {
+        if (_savedAlbums.value.none { it.id == album.id }) {
+            _savedAlbums.value = listOf(album) + _savedAlbums.value
+            saveSavedAlbums()
+            Toast.makeText(getApplication(), "Album saved", Toast.LENGTH_SHORT).show()
+            // Cache all songs of this album
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val (_, songs) = Innertube.getAlbumSongs(album.id, album.artist)
+                    songs.forEach { song ->
+                        cacheSemaphore.withPermit { cacheSongSilently(song) }
+                    }
+                    refreshCacheSize()
+                } catch (e: Exception) {
+                    Log.e("YTLite", "Failed to cache album songs: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun unsaveAlbum(album: Album) {
+        _savedAlbums.value = _savedAlbums.value.filter { it.id != album.id }
+        saveSavedAlbums()
+        Toast.makeText(getApplication(), "Album removed", Toast.LENGTH_SHORT).show()
+        // Remove cached songs that aren't liked or in custom playlists
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val (_, songs) = Innertube.getAlbumSongs(album.id, album.artist)
+                songs.forEach { song ->
+                    val liked = isLiked(song.id)
+                    val inPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
+                    if (!liked && !inPlaylist) {
+                        CacheManager.removeCachedSong(getApplication(), song.id)
+                    }
+                }
+                refreshCacheSize()
+            } catch (e: Exception) {
+                Log.e("YTLite", "Failed to clean album cache: ${e.message}")
+            }
+        }
+    }
+
+    fun isAlbumSaved(albumId: String) = _savedAlbums.value.any { it.id == albumId }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Cache helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fun refreshCacheSize() {
+        _cacheSize.value = CacheManager.getCacheSizeString(getApplication())
+    }
+
     private fun createCacheNotificationChannel() {
         val channel = NotificationChannel(
             "cache_channel", "Cache Progress", NotificationManager.IMPORTANCE_LOW
@@ -672,31 +941,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             .cancel(1001)
     }
 
-    fun shuffleLiked() {
-        val shuffled = _likedSongs.value.shuffled()
-        if (shuffled.isEmpty()) return
-        playWithQueue(shuffled.first(), shuffled)
-    }
-
-    fun refreshCacheSize() {
-        _cacheSize.value = CacheManager.getCacheSizeString(getApplication())
-    }
-
-    fun saveAlbum(album: Album) {
-        if (_savedAlbums.value.none { it.id == album.id }) {
-            _savedAlbums.value = listOf(album) + _savedAlbums.value
-            saveSavedAlbums()
-            Toast.makeText(getApplication(), "Album saved", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun unsaveAlbum(album: Album) {
-        _savedAlbums.value = _savedAlbums.value.filter { it.id != album.id }
-        saveSavedAlbums()
-        Toast.makeText(getApplication(), "Album removed", Toast.LENGTH_SHORT).show()
-    }
-
-    fun isAlbumSaved(albumId: String) = _savedAlbums.value.any { it.id == albumId }
+    // ─────────────────────────────────────────────────────────────────────────
+    // Settings
+    // ─────────────────────────────────────────────────────────────────────────
 
     fun toggleDarkMode() {
         _isDarkMode.value = !_isDarkMode.value
@@ -722,6 +969,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _updateAvailable.value = latest != null && latest != APP_CURRENT_VERSION
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Persistence helpers
+    // ─────────────────────────────────────────────────────────────────────────
 
     private fun saveLikedSongs() {
         val arr = JSONArray()
@@ -867,5 +1118,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         controller?.removeListener(listener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
+    }
+
+    companion object {
+        const val LIKED_PLAYLIST_ID = "__liked__"
     }
 }
