@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,12 +12,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -24,10 +28,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.lyrics.LyricsRepository
+import com.rkd.audiobasics.lyrics.LyricsResult
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 @Composable
 fun LyricsScreen(
@@ -43,9 +51,10 @@ fun LyricsScreen(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     var isRealTime by remember { mutableStateOf(true) }
-    var lyricsResult by remember { mutableStateOf<com.rkd.audiobasics.lyrics.LyricsResult?>(null) }
+    var lyricsResult by remember { mutableStateOf<LyricsResult?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
+    var forceRefresh by remember { mutableStateOf(0) }
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -54,12 +63,25 @@ fun LyricsScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
-    LaunchedEffect(currentSong?.id) {
+    // Load lyrics — check cache first, fetch from network if needed
+    LaunchedEffect(currentSong?.id, forceRefresh) {
         val song = currentSong ?: return@LaunchedEffect
         isLoading = true
         hasError = false
         lyricsResult = null
+
         try {
+            // If not a forced refresh, check cache first
+            if (forceRefresh == 0) {
+                val cached = CacheManager.loadLyrics(context, song.id)
+                if (cached != null) {
+                    lyricsResult = deserializeLyrics(cached)
+                    isLoading = false
+                    return@LaunchedEffect
+                }
+            }
+
+            // Fetch from network
             val result = LyricsRepository.getLyrics(
                 title = song.title,
                 artist = song.artist,
@@ -67,6 +89,12 @@ fun LyricsScreen(
             )
             lyricsResult = result
             hasError = result == null
+
+            // Cache the result if found
+            if (result != null) {
+                val json = serializeLyrics(result)
+                CacheManager.saveLyrics(context, song.id, json)
+            }
         } catch (_: Exception) {
             hasError = true
         } finally {
@@ -95,9 +123,7 @@ fun LyricsScreen(
     }
 
     Dialog(
-        onDismissRequest = {
-            onBack()
-        },
+        onDismissRequest = { onBack() },
         properties = DialogProperties(
             dismissOnBackPress = true,
             dismissOnClickOutside = true,
@@ -108,9 +134,7 @@ fun LyricsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
-                .clickable {
-                    onBack()
-                },
+                .clickable { onBack() },
             contentAlignment = Alignment.Center
         ) {
             Box(
@@ -123,6 +147,7 @@ fun LyricsScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
 
+                    // ── Tabs + Refresh ──────────────────────────────────
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -152,24 +177,37 @@ fun LyricsScreen(
                                 isRealTime = false
                             }
                         )
+                        Spacer(Modifier.weight(1f))
+                        // Refresh button
+                        IconButton(onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            // Delete cached lyrics and re-fetch
+                            currentSong?.let { song ->
+                                CacheManager.getLyricsFile(context, song.id).delete()
+                            }
+                            forceRefresh++
+                        }) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh lyrics",
+                                tint = textColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
 
-                    androidx.compose.foundation.Canvas(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                    ) {
+                    // Dashed divider
+                    Canvas(modifier = Modifier.fillMaxWidth().height(8.dp)) {
                         drawLine(
                             color = Color.Gray,
-                            start = androidx.compose.ui.geometry.Offset(0f, size.height / 2),
-                            end = androidx.compose.ui.geometry.Offset(size.width, size.height / 2),
+                            start = Offset(0f, size.height / 2),
+                            end = Offset(size.width, size.height / 2),
                             strokeWidth = 2f,
-                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
-                                floatArrayOf(12f, 8f), 0f
-                            )
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
                         )
                     }
 
+                    // ── Lyrics content ──────────────────────────────────
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -178,18 +216,12 @@ fun LyricsScreen(
                     ) {
                         when {
                             isLoading -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator(color = Color.Red)
                                 }
                             }
                             hasError || lyricsResult == null -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     Text(
                                         text = "Lyrics not found",
                                         fontFamily = NothingFont,
@@ -199,8 +231,8 @@ fun LyricsScreen(
                                     )
                                 }
                             }
-                            isRealTime && (lyricsResult?.hasSynced == true) -> {
-                                val syncedLines = lyricsResult?.syncedLines ?: emptyList()
+                            isRealTime && lyricsResult!!.hasSynced -> {
+                                val syncedLines = lyricsResult!!.syncedLines
                                 LazyColumn(
                                     state = listState,
                                     modifier = Modifier.fillMaxSize(),
@@ -212,9 +244,8 @@ fun LyricsScreen(
                                         Text(
                                             text = line.text.ifBlank { " " },
                                             fontFamily = NothingFont,
-                                            fontWeight = if (isCurrent) FontWeight.Bold
-                                            else FontWeight.Normal,
-                                            fontSize = 18.sp, 
+                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 18.sp,
                                             color = if (isCurrent) Color.Red else Color.Gray,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.fillMaxWidth()
@@ -223,8 +254,7 @@ fun LyricsScreen(
                                 }
                             }
                             else -> {
-                                val plainText = lyricsResult?.plainText ?: ""
-                                val lines = plainText.lines()
+                                val lines = lyricsResult!!.plainText.lines()
                                 LazyColumn(
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(vertical = 16.dp),
@@ -234,7 +264,7 @@ fun LyricsScreen(
                                         Text(
                                             text = line.ifBlank { " " },
                                             fontFamily = NothingFont,
-                                            fontSize = 17.sp, 
+                                            fontSize = 17.sp,
                                             color = Color.Gray,
                                             textAlign = TextAlign.Center,
                                             modifier = Modifier.fillMaxWidth()
@@ -245,6 +275,7 @@ fun LyricsScreen(
                         }
                     }
 
+                    // ── Bottom bar ──────────────────────────────────────
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -257,27 +288,20 @@ fun LyricsScreen(
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             onBack()
                         }) {
-                            Icon(
-                                Icons.Default.ArrowBack,
-                                contentDescription = "Back",
-                                tint = textColor
-                            )
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
                         }
-
                         Text(
                             text = "Powered by LRCLIB",
                             fontFamily = NothingFont,
                             fontSize = 12.sp,
                             color = Color.Gray
                         )
-
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             vm.togglePlayPause()
                         }) {
                             Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause
-                                else Icons.Default.PlayArrow,
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (isPlaying) "Pause" else "Play",
                                 tint = textColor,
                                 modifier = Modifier.size(26.dp)
@@ -288,4 +312,38 @@ fun LyricsScreen(
             }
         }
     }
+}
+
+// ── Lyrics serialization for cache ────────────────────────────────────────
+
+private fun serializeLyrics(result: LyricsResult): String {
+    val obj = JSONObject()
+    obj.put("hasSynced", result.hasSynced)
+    obj.put("plainText", result.plainText)
+    val arr = JSONArray()
+    result.syncedLines.forEach { line ->
+        arr.put(JSONObject().apply {
+            put("timeMs", line.timeMs)
+            put("text", line.text)
+        })
+    }
+    obj.put("syncedLines", arr)
+    return obj.toString()
+}
+
+private fun deserializeLyrics(json: String): LyricsResult? {
+    return try {
+        val obj = JSONObject(json)
+        val hasSynced = obj.optBoolean("hasSynced", false)
+        val plainText = obj.optString("plainText", "")
+        val arr = obj.optJSONArray("syncedLines") ?: JSONArray()
+        val lines = (0 until arr.length()).map { i ->
+            val l = arr.getJSONObject(i)
+            com.rkd.audiobasics.lyrics.LyricLine(
+                timeMs = l.getLong("timeMs"),
+                text = l.getString("text")
+            )
+        }
+        LyricsResult(syncedLines = lines, plainText = plainText, hasSynced = hasSynced)
+    } catch (_: Exception) { null }
 }
