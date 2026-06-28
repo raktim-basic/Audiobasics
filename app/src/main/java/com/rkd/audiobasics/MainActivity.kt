@@ -40,16 +40,25 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 import com.rkd.audiobasics.data.Album
+import com.rkd.audiobasics.data.Artist
+import com.rkd.audiobasics.data.db.PlaylistEntity
+import com.rkd.audiobasics.ui.AddToPlaylistSheet
 import com.rkd.audiobasics.ui.AlbumScreen
 import com.rkd.audiobasics.ui.APP_CURRENT_VERSION
+import com.rkd.audiobasics.ui.ArtistScreen
+import com.rkd.audiobasics.ui.CreatePlaylistDialog
+import com.rkd.audiobasics.ui.CustomPlaylistScreen
 import com.rkd.audiobasics.ui.EngineInfoScreen
 import com.rkd.audiobasics.ui.HomeScreen
+import com.rkd.audiobasics.ui.LibraryScreen
 import com.rkd.audiobasics.ui.LikedScreen
 import com.rkd.audiobasics.ui.MusicViewModel
 import com.rkd.audiobasics.ui.PlayerBar
 import com.rkd.audiobasics.ui.PlayerDialog
 import com.rkd.audiobasics.ui.QueueScreen
 import com.rkd.audiobasics.ui.SavedAlbumsScreen
+import com.rkd.audiobasics.ui.SearchAlbumsScreen
+import com.rkd.audiobasics.ui.SearchArtistsScreen
 import com.rkd.audiobasics.ui.SearchScreen
 import com.rkd.audiobasics.ui.SettingsScreen
 import com.rkd.audiobasics.ui.UpdaterScreen
@@ -110,7 +119,7 @@ class MainActivity : ComponentActivity() {
 
             AppTheme(darkTheme = isDarkMode) {
                 val logsEnabled by vm.logsEnabled.collectAsState()
-                Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                Box(modifier = Modifier.fillMaxSize()) {
                     AudiobasicsApp(vm = vm, isDarkMode = isDarkMode)
                     DebugLogOverlay(logsEnabled = logsEnabled)
                 }
@@ -121,13 +130,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         intent?.let { setIntent(it) }
-  
         if (intent?.getBooleanExtra("OPEN_UPDATER", false) == true) {
             val vm = ViewModelProvider(
-                this, 
+                this,
                 ViewModelProvider.AndroidViewModelFactory.getInstance(application)
             )[MusicViewModel::class.java]
-            
             vm.triggerUpdater()
         }
     }
@@ -139,8 +146,7 @@ class MainActivity : ComponentActivity() {
                 "App Updates",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply { description = "Notifications for new Audiobasics updates" }
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
@@ -148,7 +154,6 @@ class MainActivity : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             val latest = fetchLatestAppVersion() ?: return@launch
             if (latest == APP_CURRENT_VERSION) return@launch
-
             val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
                 putExtra("OPEN_UPDATER", true)
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -157,7 +162,6 @@ class MainActivity : ComponentActivity() {
                 this@MainActivity, 1, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-
             val notif = NotificationCompat.Builder(this@MainActivity, NOTIF_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("Audiobasics update available")
@@ -165,9 +169,7 @@ class MainActivity : ComponentActivity() {
                 .setAutoCancel(true)
                 .setContentIntent(pi)
                 .build()
-
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.notify(NOTIF_ID, notif)
+            getSystemService(NotificationManager::class.java).notify(NOTIF_ID, notif)
         }
     }
 }
@@ -179,9 +181,14 @@ sealed class Screen {
     data class Settings(val openCache: Boolean = false, val openLibrary: Boolean = false) : Screen()
     object Liked : Screen()
     object Albums : Screen()
+    object Library : Screen()
     object Updater : Screen()
     object EngineInfo : Screen()
     data class AlbumDetail(val album: Album) : Screen()
+    data class ArtistDetail(val artistName: String, val artistBrowseId: String = "") : Screen()
+    data class SearchAlbums(val query: String) : Screen()
+    data class SearchArtists(val query: String) : Screen()
+    data class CustomPlaylist(val playlist: PlaylistEntity) : Screen()
 }
 
 @UnstableApi
@@ -193,15 +200,14 @@ fun AudiobasicsApp(
     val currentSong by vm.currentSong.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
-    val likedSongs by vm.likedSongs.collectAsState()
     val showStorageLow by vm.showStorageLow.collectAsState()
     val navigateToUpdater by vm.navigateToUpdater.collectAsState()
 
-    var screenStack by remember {
-        mutableStateOf(listOf<Screen>(Screen.Home))
-    }
+    var screenStack by remember { mutableStateOf(listOf<Screen>(Screen.Home)) }
     val currentScreen = screenStack.last()
     var showPlayerDialog by remember { mutableStateOf(false) }
+    var addToSheetSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
+    var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(navigateToUpdater) {
         if (navigateToUpdater) {
@@ -213,9 +219,7 @@ fun AudiobasicsApp(
     fun navigate(screen: Screen) { screenStack = screenStack + screen }
     fun navigateBack() {
         if (screenStack.size > 1) {
-            if (screenStack.last() is Screen.Search) {
-                vm.clearSearch()
-            }
+            if (screenStack.last() is Screen.Search) vm.clearSearch()
             screenStack = screenStack.dropLast(1)
         }
     }
@@ -226,12 +230,7 @@ fun AudiobasicsApp(
         AlertDialog(
             onDismissRequest = { vm.dismissStorageLow() },
             title = { Text("Storage Low", fontFamily = NothingFont) },
-            text = {
-                Text(
-                    "Cannot cache song — less than 1GB storage available.",
-                    fontFamily = NothingFont
-                )
-            },
+            text = { Text("Cannot cache song — less than 1GB storage available.", fontFamily = NothingFont) },
             confirmButton = {
                 TextButton(onClick = { vm.dismissStorageLow() }) {
                     Text("OK", fontFamily = NothingFont, color = Color.Red)
@@ -244,7 +243,37 @@ fun AudiobasicsApp(
         PlayerDialog(
             vm = vm,
             isDarkMode = isDarkMode,
-            onDismiss = { showPlayerDialog = false }
+            onDismiss = { showPlayerDialog = false },
+            onNavigateQueue = { showPlayerDialog = false; navigate(Screen.Queue) },
+            onNavigateArtist = { name -> showPlayerDialog = false; navigate(Screen.ArtistDetail(name)) },
+            onNavigateAlbum = { albumId ->
+                showPlayerDialog = false
+                // Navigate to album by id — look up from saved albums or play queue
+                val album = vm.savedAlbums.value.firstOrNull { it.id == albumId }
+                    ?: Album(id = albumId, title = albumId, artist = "", thumbnail = "")
+                navigate(Screen.AlbumDetail(album))
+            }
+        )
+    }
+
+    // Global Add-to-playlist sheet
+    addToSheetSong?.let { song ->
+        AddToPlaylistSheet(
+            song = song,
+            vm = vm,
+            isDarkMode = isDarkMode,
+            onDismiss = { addToSheetSong = null },
+            onCreateNew = { addToSheetSong = null; showCreatePlaylistFromSheet = true }
+        )
+    }
+    if (showCreatePlaylistFromSheet) {
+        CreatePlaylistDialog(
+            isDarkMode = isDarkMode,
+            onDismiss = { showCreatePlaylistFromSheet = false },
+            onCreate = { name, emoji ->
+                vm.createPlaylist(name, emoji)
+                showCreatePlaylistFromSheet = false
+            }
         )
     }
 
@@ -278,14 +307,18 @@ fun AudiobasicsApp(
                         onNavigateQueue = { navigate(Screen.Queue) },
                         onNavigateSettings = { navigate(Screen.Settings()) },
                         onNavigateLiked = { navigate(Screen.Liked) },
-                        onNavigateAlbums = { navigate(Screen.Albums) }
+                        onNavigateAlbums = { navigate(Screen.Albums) },
+                        onNavigateLibrary = { navigate(Screen.Library) }
                     )
                     is Screen.Search -> SearchScreen(
                         vm = vm,
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
                         onNavigateQueue = { navigate(Screen.Queue) },
-                        onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) }
+                        onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) },
+                        onNavigateAlbums = { q -> navigate(Screen.SearchAlbums(q)) },
+                        onNavigateArtists = { q -> navigate(Screen.SearchArtists(q)) },
+                        onAddTo = { song -> addToSheetSong = song }
                     )
                     is Screen.Queue -> QueueScreen(
                         vm = vm,
@@ -314,6 +347,13 @@ fun AudiobasicsApp(
                         onNavigateQueue = { navigate(Screen.Queue) },
                         onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) }
                     )
+                    is Screen.Library -> LibraryScreen(
+                        vm = vm,
+                        onBack = { navigateBack() },
+                        onNavigateLiked = { navigate(Screen.Liked) },
+                        onNavigateAlbums = { navigate(Screen.Albums) },
+                        onNavigatePlaylist = { playlist -> navigate(Screen.CustomPlaylist(playlist)) }
+                    )
                     is Screen.Updater -> UpdaterScreen(
                         vm = vm,
                         isDarkMode = isDarkMode,
@@ -330,22 +370,52 @@ fun AudiobasicsApp(
                         album = screen.album,
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
-                        onNavigateQueue = { navigate(Screen.Queue) }
+                        onNavigateQueue = { navigate(Screen.Queue) },
+                        onNavigateArtist = { name -> navigate(Screen.ArtistDetail(name)) },
+                        onAddTo = { song -> addToSheetSong = song }
+                    )
+                    is Screen.ArtistDetail -> ArtistScreen(
+                        vm = vm,
+                        artistName = screen.artistName,
+                        artistBrowseId = screen.artistBrowseId,
+                        isDarkMode = isDarkMode,
+                        onBack = { navigateBack() },
+                        onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) },
+                        onAddTo = { song -> addToSheetSong = song }
+                    )
+                    is Screen.SearchAlbums -> SearchAlbumsScreen(
+                        vm = vm,
+                        query = screen.query,
+                        isDarkMode = isDarkMode,
+                        onBack = { navigateBack() },
+                        onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) }
+                    )
+                    is Screen.SearchArtists -> SearchArtistsScreen(
+                        vm = vm,
+                        query = screen.query,
+                        isDarkMode = isDarkMode,
+                        onBack = { navigateBack() },
+                        onArtistClick = { artist -> navigate(Screen.ArtistDetail(artist.name, artist.id)) }
+                    )
+                    is Screen.CustomPlaylist -> CustomPlaylistScreen(
+                        vm = vm,
+                        playlist = screen.playlist,
+                        isDarkMode = isDarkMode,
+                        onBack = { navigateBack() },
+                        onAddTo = { song -> addToSheetSong = song }
                     )
                 }
             }
         }
 
-        val isLiked = currentSong?.let { song -> likedSongs.any { it.id == song.id } } ?: false
         PlayerBar(
             vm = vm,
             song = currentSong,
             isPlaying = isPlaying,
             isLoading = isLoading,
-            isLiked = isLiked,
             isDarkMode = isDarkMode,
             onToggle = vm::togglePlayPause,
-            onLike = { currentSong?.let { vm.toggleLike(it) } },
+            onAddTo = { currentSong?.let { addToSheetSong = it } },
             onTap = { showPlayerDialog = true }
         )
     }
