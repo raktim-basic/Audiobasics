@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -7,8 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -44,24 +45,25 @@ fun HomeScreen(
     onNavigateQueue: () -> Unit,
     onNavigateSettings: () -> Unit,
     onNavigateLiked: () -> Unit,
-    onNavigateAlbums: () -> Unit
+    onNavigateAlbums: () -> Unit,
+    onNavigateLibrary: () -> Unit
 ) {
     val context = LocalContext.current
-    val likedSongs by vm.likedSongs.collectAsState()
-    val savedAlbums by vm.savedAlbums.collectAsState()
-    val cacheSize by vm.cacheSize.collectAsState()
     val isDarkMode by vm.isDarkMode.collectAsState()
     val updateAvailable by vm.updateAvailable.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
+    val subTextColor = if (isDarkMode) Color(0xFF888888) else Color(0xFF999999)
+    val cardBg = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
+        // ── Header / slogan ────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -84,10 +86,7 @@ fun HomeScreen(
                 )
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "⚠️ ",
-                        fontSize = 22.sp
-                    )
+                    Text(text = "⚠️ ", fontSize = 22.sp)
                     Text(
                         text = MigrationMessageProvider.sloganTitle(),
                         fontFamily = NothingFont,
@@ -108,44 +107,90 @@ fun HomeScreen(
                     text = MigrationMessageProvider.sloganFooter(),
                     fontFamily = NothingFont,
                     fontSize = 13.sp,
-                    color = if (isDarkMode) Color(0xFF888888) else Color(0xFF999999)
+                    color = subTextColor
                 )
             }
         }
 
-        DashedDivider(
-            modifier = Modifier.fillMaxWidth(),
-            isDarkMode = isDarkMode
-        )
+        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         Spacer(Modifier.weight(1f))
 
-        // Saved Albums button
+        // ── Discover Music (disabled placeholder) ──────────────────────────
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 6.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFFFF8A80))
+                .background(cardBg)
                 .clickable {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onNavigateAlbums()
+                    Toast
+                        .makeText(context, "Being developed rn 🔥", Toast.LENGTH_SHORT)
+                        .show()
                 }
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Default.Bookmark,
+                    Icons.Default.MusicNote,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = subTextColor,
                     modifier = Modifier.size(28.dp)
                 )
                 Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Discover Music",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = subTextColor
+                    )
+                    Text(
+                        text = "Coming soon",
+                        fontFamily = NothingFont,
+                        fontSize = 12.sp,
+                        color = subTextColor.copy(alpha = 0.6f)
+                    )
+                }
+                Spacer(Modifier.weight(1f))
                 Text(
-                    text = "Saved Albums (${savedAlbums.size})",
+                    text = ">",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = 18.sp,
+                    color = subTextColor
+                )
+            }
+        }
+
+        // ── Your Library ───────────────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 6.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFFFF0000))
+                .clickable {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onNavigateLibrary()
+                }
+                .padding(horizontal = 16.dp, vertical = 24.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.LibraryMusic,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(64.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = "Your Library",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
                     color = Color.White
                 )
                 Spacer(Modifier.weight(1f))
@@ -156,49 +201,6 @@ fun HomeScreen(
                     fontSize = 18.sp,
                     color = Color.White
                 )
-            }
-        }
-
-        // Liked Songs button
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 6.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFFFF0000))
-                .clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onNavigateLiked()
-                }
-                .padding(horizontal = 16.dp, vertical = 24.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.Favorite,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(64.dp)
-                )
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Text(
-                        text = "Liked Songs (${likedSongs.size})",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
-                        color = Color.White
-                    )
-                    if (cacheSize.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = cacheSize,
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 14.sp,
-                            color = Color.White.copy(alpha = 0.85f)
-                        )
-                    }
-                }
             }
         }
 
@@ -246,39 +248,23 @@ fun HomeBottomBar(
             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onSettings()
         }) {
-            Icon(
-                Icons.Default.Settings,
-                contentDescription = "Settings",
-                tint = iconColor,
-                modifier = Modifier.size(28.dp)
-            )
+            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = iconColor, modifier = Modifier.size(28.dp))
         }
         IconButton(onClick = {
             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onSearch()
         }) {
-            Icon(
-                Icons.Default.Search,
-                contentDescription = "Search",
-                tint = iconColor,
-                modifier = Modifier.size(28.dp)
-            )
+            Icon(Icons.Default.Search, contentDescription = "Search", tint = iconColor, modifier = Modifier.size(28.dp))
         }
         IconButton(onClick = {
             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onQueue()
         }) {
-            Icon(
-                Icons.Default.QueueMusic,
-                contentDescription = "Queue",
-                tint = iconColor,
-                modifier = Modifier.size(28.dp)
-            )
+            Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = iconColor, modifier = Modifier.size(28.dp))
         }
     }
 }
 
-// scrollProgress: null = static (Home/Settings), 0f..1f = scroll indicator
 @Composable
 fun DashedDivider(
     modifier: Modifier = Modifier,
@@ -296,15 +282,13 @@ fun DashedDivider(
         if (scrollProgress == null) {
             drawLine(
                 color = Color.Red,
-                start = Offset(0f, y),
-                end = Offset(totalWidth / 2f, y),
+                start = Offset(0f, y), end = Offset(totalWidth / 2f, y),
                 strokeWidth = 3f,
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
             )
             drawLine(
                 color = secondColor,
-                start = Offset(totalWidth / 2f, y),
-                end = Offset(totalWidth, y),
+                start = Offset(totalWidth / 2f, y), end = Offset(totalWidth, y),
                 strokeWidth = 3f,
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
             )
@@ -313,8 +297,7 @@ fun DashedDivider(
             if (redEnd > 0f) {
                 drawLine(
                     color = Color.Red,
-                    start = Offset(0f, y),
-                    end = Offset(redEnd, y),
+                    start = Offset(0f, y), end = Offset(redEnd, y),
                     strokeWidth = 3f,
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
                 )
@@ -322,8 +305,7 @@ fun DashedDivider(
             if (redEnd < totalWidth) {
                 drawLine(
                     color = secondColor.copy(alpha = 0.3f),
-                    start = Offset(redEnd, y),
-                    end = Offset(totalWidth, y),
+                    start = Offset(redEnd, y), end = Offset(totalWidth, y),
                     strokeWidth = 3f,
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashWidth, dashGap), 0f)
                 )
