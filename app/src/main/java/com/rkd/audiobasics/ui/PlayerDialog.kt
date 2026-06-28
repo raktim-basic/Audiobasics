@@ -9,16 +9,19 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -43,7 +47,10 @@ import com.rkd.audiobasics.utils.HapticUtils
 fun PlayerDialog(
     vm: MusicViewModel,
     isDarkMode: Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onNavigateQueue: () -> Unit,
+    onNavigateArtist: (String) -> Unit,
+    onNavigateAlbum: (String) -> Unit
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -52,11 +59,12 @@ fun PlayerDialog(
     val isLoading by vm.isLoading.collectAsState()
     val position by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
-    val likedSongs by vm.likedSongs.collectAsState()
-    val isLiked = likedSongs.any { it.id == song?.id }
 
     var showLyrics by remember { mutableStateOf(false) }
-    var showInfo by remember { mutableStateOf(false) }
+    var showSongInfo by remember { mutableStateOf(false) }
+    var showAddToSheet by remember { mutableStateOf(false) }
+    var showCreatePlaylist by remember { mutableStateOf(false) }
+    var showThreeDotMenu by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableStateOf<Long?>(null) }
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
@@ -65,19 +73,12 @@ fun PlayerDialog(
     val subTextColor = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
 
     if (showLyrics) {
-        LyricsScreen(
-            vm = vm,
-            isDarkMode = isDarkMode,
-            onBack = { showLyrics = false }
-        )
+        LyricsScreen(vm = vm, isDarkMode = isDarkMode, onBack = { showLyrics = false })
         return
     }
 
     Dialog(
-        onDismissRequest = {
-            // No haptic on outside tap or back button
-            onDismiss()
-        },
+        onDismissRequest = { onDismiss() },
         properties = DialogProperties(
             dismissOnBackPress = true,
             dismissOnClickOutside = true,
@@ -88,10 +89,7 @@ fun PlayerDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
-                .clickable {
-                    // No haptic on background tap
-                    onDismiss()
-                },
+                .clickable { onDismiss() },
             contentAlignment = Alignment.Center
         ) {
             Box(
@@ -102,7 +100,7 @@ fun PlayerDialog(
                     .clickable(enabled = false) {}
             ) {
                 Column {
-                    // Top bar
+                    // ── Top bar ─────────────────────────────────────────
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -110,70 +108,32 @@ fun PlayerDialog(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Speaker/cast (placeholder)
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                         }) {
-                            Icon(
-                                Icons.Default.SpeakerGroup,
-                                contentDescription = "Desk connect",
-                                tint = textColor,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
                         }
+
+                        // Song info
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showInfo = !showInfo
+                            showSongInfo = true
                         }) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = "Song info",
-                                tint = if (showInfo) Color.Red else textColor,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Icon(Icons.Default.Info, contentDescription = "Song info", tint = textColor, modifier = Modifier.size(20.dp))
                         }
+
+                        // Close
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             onDismiss()
                         }) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Close",
-                                tint = textColor,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor, modifier = Modifier.size(20.dp))
                         }
                     }
 
-                    // Info panel
-                    if (showInfo) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(surfaceColor)
-                                .padding(horizontal = 20.dp, vertical = 14.dp)
-                        ) {
-                            Text(
-                                text = "Song info",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color.Red
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            InfoRow("Title", song?.title ?: "—", textColor, subTextColor)
-                            InfoRow("Artist", song?.artist ?: "—", textColor, subTextColor)
-                            InfoRow("Duration", formatTime(duration), textColor, subTextColor)
-                            InfoRow(
-                                "Explicit",
-                                if (song?.isExplicit == true) "Yes" else "No",
-                                textColor, subTextColor
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                    }
-
-                    // Artwork + info
+                    // ── Artwork + title ──────────────────────────────────
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -201,7 +161,7 @@ fun PlayerDialog(
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                text = song?.artist ?: "Artist Name",
+                                text = song?.artist ?: "Artist",
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Normal,
                                 fontSize = 13.sp,
@@ -214,9 +174,8 @@ fun PlayerDialog(
 
                     Spacer(Modifier.height(20.dp))
 
-                    // Progress bar with scrubbing preview
+                    // ── Progress bar ─────────────────────────────────────
                     val displayPosition = dragPosition ?: position
-                    val progress = if (duration > 0) displayPosition.toFloat() / duration.toFloat() else 0f
 
                     Row(
                         modifier = Modifier
@@ -265,7 +224,7 @@ fun PlayerDialog(
 
                     Spacer(Modifier.height(20.dp))
 
-                    // Playback controls
+                    // ── Playback controls ────────────────────────────────
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -277,13 +236,9 @@ fun PlayerDialog(
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             vm.skipToPrevious()
                         }) {
-                            Icon(
-                                Icons.Default.ArrowBack,
-                                contentDescription = "Previous",
-                                tint = textColor,
-                                modifier = Modifier.size(36.dp)
-                            )
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = textColor, modifier = Modifier.size(36.dp))
                         }
+
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
@@ -296,16 +251,11 @@ fun PlayerDialog(
                             contentAlignment = Alignment.Center
                         ) {
                             if (isLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = textColor
-                                )
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = textColor)
                             } else {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        imageVector = if (isPlaying) Icons.Default.Pause
-                                        else Icons.Default.PlayArrow,
+                                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                         contentDescription = if (isPlaying) "Pause" else "Play",
                                         tint = textColor,
                                         modifier = Modifier.size(20.dp)
@@ -321,22 +271,18 @@ fun PlayerDialog(
                                 }
                             }
                         }
+
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             vm.skipToNext()
                         }) {
-                            Icon(
-                                Icons.Default.ArrowForward,
-                                contentDescription = "Next",
-                                tint = textColor,
-                                modifier = Modifier.size(36.dp)
-                            )
+                            Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = textColor, modifier = Modifier.size(36.dp))
                         }
                     }
 
                     Spacer(Modifier.height(8.dp))
 
-                    // Bottom bar
+                    // ── Bottom bar ───────────────────────────────────────
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -345,18 +291,15 @@ fun PlayerDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // + Add to playlist
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            song?.let { vm.toggleLike(it) }
+                            showAddToSheet = true
                         }) {
-                            Icon(
-                                imageVector = if (isLiked) Icons.Default.Favorite
-                                else Icons.Default.FavoriteBorder,
-                                contentDescription = "Like",
-                                tint = if (isLiked) Color.Red else textColor,
-                                modifier = Modifier.size(26.dp)
-                            )
+                            Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = textColor, modifier = Modifier.size(26.dp))
                         }
+
+                        // Lyrics
                         Text(
                             text = "LYRICS",
                             fontFamily = NothingFont,
@@ -368,50 +311,109 @@ fun PlayerDialog(
                                 showLyrics = true
                             }
                         )
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            song?.let { s ->
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${s.id}")
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share song"))
+
+                        // 3-dot dropdown
+                        Box {
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                showThreeDotMenu = true
+                            }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor, modifier = Modifier.size(26.dp))
                             }
-                        }) {
-                            Icon(
-                                Icons.Default.Share,
-                                contentDescription = "Share",
-                                tint = textColor,
-                                modifier = Modifier.size(26.dp)
-                            )
+
+                            DropdownMenu(
+                                expanded = showThreeDotMenu,
+                                onDismissRequest = { showThreeDotMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                                    text = { Text("Share", fontFamily = NothingFont) },
+                                    onClick = {
+                                        showThreeDotMenu = false
+                                        song?.let { s ->
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${s.id}")
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Share song"))
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
+                                    text = { Text("Queue", fontFamily = NothingFont) },
+                                    onClick = {
+                                        showThreeDotMenu = false
+                                        onDismiss()
+                                        onNavigateQueue()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null) },
+                                    text = { Text("Sleep timer", fontFamily = NothingFont) },
+                                    onClick = {
+                                        showThreeDotMenu = false
+                                        onDismiss()
+                                        onNavigateQueue()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    leadingIcon = { Icon(Icons.Default.Repeat, contentDescription = null) },
+                                    text = { Text("Repeat", fontFamily = NothingFont) },
+                                    onClick = {
+                                        showThreeDotMenu = false
+                                        onDismiss()
+                                        onNavigateQueue()
+                                    }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
-}
 
-@Composable
-private fun InfoRow(
-    label: String,
-    value: String,
-    textColor: Color,
-    subTextColor: Color
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(text = label, fontFamily = NothingFont, fontSize = 12.sp, color = subTextColor)
-        Text(
-            text = value,
-            fontFamily = NothingFont,
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp,
-            color = textColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+    // ── Add to playlist sheet ──────────────────────────────────────────────
+    if (showAddToSheet && song != null) {
+        AddToPlaylistSheet(
+            song = song!!,
+            vm = vm,
+            isDarkMode = isDarkMode,
+            onDismiss = { showAddToSheet = false },
+            onCreateNew = { showCreatePlaylist = true }
+        )
+    }
+
+    // ── Create playlist dialog ─────────────────────────────────────────────
+    if (showCreatePlaylist) {
+        CreatePlaylistDialog(
+            isDarkMode = isDarkMode,
+            onDismiss = { showCreatePlaylist = false },
+            onCreate = { name, emoji ->
+                vm.createPlaylist(name, emoji)
+                showCreatePlaylist = false
+            }
+        )
+    }
+
+    // ── Song info screen ───────────────────────────────────────────────────
+    if (showSongInfo && song != null) {
+        SongInfoScreen(
+            song = song!!,
+            isDarkMode = isDarkMode,
+            context = context,
+            onDismiss = { showSongInfo = false },
+            onArtistClick = { artistName ->
+                showSongInfo = false
+                onDismiss()
+                onNavigateArtist(artistName)
+            },
+            onAlbumClick = { albumId ->
+                showSongInfo = false
+                onDismiss()
+                onNavigateAlbum(albumId)
+            }
         )
     }
 }
