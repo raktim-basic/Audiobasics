@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.data.Album
+import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +71,7 @@ private suspend fun fetchSuggestions(query: String): List<String> = withContext(
             )
             .addHeader("Content-Type", "application/json")
             .addHeader("User-Agent", "Mozilla/5.0")
-            .addHeader("Origin", "https://music.youtube")
+            .addHeader("Origin", "https://music.youtube.com")
             .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
         val resp = client.newCall(req).execute()
@@ -105,7 +106,10 @@ fun SearchScreen(
     isDarkMode: Boolean,
     onBack: () -> Unit,
     onNavigateQueue: () -> Unit,
-    onAlbumClick: (Album) -> Unit
+    onAlbumClick: (Album) -> Unit,
+    onNavigateAlbums: (String) -> Unit = {},
+    onNavigateArtists: (String) -> Unit = {},
+    onAddTo: (Song) -> Unit = {}
 ) {
     val context = LocalContext.current
     val results by vm.searchResults.collectAsState()
@@ -130,9 +134,7 @@ fun SearchScreen(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
     LaunchedEffect(Unit) {
-        if (results.isEmpty()) {
-            focusRequester.requestFocus()
-        }
+        if (results.isEmpty()) focusRequester.requestFocus()
     }
 
     LaunchedEffect(query, results) {
@@ -180,10 +182,7 @@ fun SearchScreen(
         Box(modifier = Modifier.weight(1f)) {
             when {
                 isSearching -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color.Red)
                     }
                 }
@@ -246,8 +245,7 @@ fun SearchScreen(
                                             Album(
                                                 id = song.id,
                                                 title = song.title,
-                                                artist = song.artist
-                                                    .removePrefix("(Album) "),
+                                                artist = song.artist.removePrefix("(Album) "),
                                                 thumbnail = song.thumbnail
                                             )
                                         )
@@ -260,9 +258,54 @@ fun SearchScreen(
                                 onLike = { vm.toggleLike(song) },
                                 onShare = {},
                                 onRetryCache = { vm.retryCache(song) },
-                                onRemoveLike = { vm.toggleLike(song) }
+                                onRemoveLike = { vm.toggleLike(song) },
+                                onAddTo = if (!song.isAlbum) { { onAddTo(song) } } else null
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // View Albums / View Artists card
+        if (results.isNotEmpty()) {
+            val cardBg = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(cardBg)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                onNavigateAlbums(query)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("View Albums", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = textColor)
+                        Text(">", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
+                    }
+                    HorizontalDivider(color = if (isDarkMode) Color(0xFF3A3A3A) else Color(0xFFCCCCCC))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                onNavigateArtists(query)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("View Artists", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = textColor)
+                        Text(">", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
                     }
                 }
             }
@@ -298,9 +341,7 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(
-                    if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD)
-                )
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
         Row(
@@ -314,12 +355,7 @@ fun SearchScreen(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onBack()
             }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(26.dp)
-                )
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor, modifier = Modifier.size(26.dp))
             }
 
             OutlinedTextField(
@@ -327,9 +363,7 @@ fun SearchScreen(
                 onValueChange = {
                     query = it
                     if (it.isNotBlank()) {
-                        if (results.isNotEmpty()) {
-                            vm.clearSearch()
-                        }
+                        if (results.isNotEmpty()) vm.clearSearch()
                         showSuggestions = true
                     } else {
                         showSuggestions = false
@@ -337,18 +371,9 @@ fun SearchScreen(
                 },
                 modifier = Modifier.weight(1f).focusRequester(focusRequester),
                 placeholder = {
-                    Text(
-                        "Search...",
-                        fontFamily = NothingFont,
-                        color = Color.Gray,
-                        fontSize = 14.sp
-                    )
+                    Text("Search...", fontFamily = NothingFont, color = Color.Gray, fontSize = 14.sp)
                 },
-                textStyle = TextStyle(
-                    fontFamily = NothingFont,
-                    color = textColor,
-                    fontSize = 14.sp
-                ),
+                textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 14.sp),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color.Red,
@@ -374,12 +399,7 @@ fun SearchScreen(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onNavigateQueue()
             }) {
-                Icon(
-                    Icons.Default.QueueMusic,
-                    contentDescription = "Queue",
-                    tint = textColor,
-                    modifier = Modifier.size(26.dp)
-                )
+                Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = textColor, modifier = Modifier.size(26.dp))
             }
         }
     }
@@ -422,16 +442,9 @@ fun PlayByLinkDialog(
                     onValueChange = { link = it },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {
-                        Text(
-                            "Paste YouTube link...",
-                            fontFamily = NothingFont,
-                            color = Color.Gray
-                        )
+                        Text("Paste YouTube link...", fontFamily = NothingFont, color = Color.Gray)
                     },
-                    textStyle = TextStyle(
-                        fontFamily = NothingFont,
-                        color = textColor
-                    ),
+                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Red,
@@ -460,12 +473,7 @@ fun PlayByLinkDialog(
                             }
                             .padding(horizontal = 20.dp, vertical = 10.dp)
                     ) {
-                        Text(
-                            "Play",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                        Text("Play", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
