@@ -5,8 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
@@ -29,13 +28,12 @@ import com.rkd.audiobasics.utils.HapticUtils
 @Composable
 fun PlayerBar(
     vm: MusicViewModel,
-    song: Song?,                     // now nullable
+    song: Song?,
     isPlaying: Boolean,
     isLoading: Boolean,
-    isLiked: Boolean,
     isDarkMode: Boolean,
     onToggle: () -> Unit,
-    onLike: () -> Unit,
+    onAddTo: () -> Unit,
     onTap: () -> Unit
 ) {
     val context = LocalContext.current
@@ -45,17 +43,15 @@ fun PlayerBar(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
 
-    // Placeholder when no song is playing
     if (song == null) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(bgColor)
-                .clickable(enabled = false) { }   // no action on tap
+                .clickable(enabled = false) { }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Empty thumbnail placeholder
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -81,14 +77,12 @@ fun PlayerBar(
                     maxLines = 1
                 )
             }
-            // Invisible placeholders to keep layout stable (same width as icons)
             Spacer(modifier = Modifier.width(48.dp))
             Spacer(modifier = Modifier.width(48.dp))
         }
         return
     }
 
-    // Normal UI when a song is present
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -132,18 +126,19 @@ fun PlayerBar(
             )
         }
 
+        // + button (Add to playlist)
         IconButton(onClick = {
             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-            onLike()
+            onAddTo()
         }) {
             Icon(
-                imageVector = if (isLiked) Icons.Default.Favorite
-                else Icons.Default.FavoriteBorder,
-                contentDescription = "Like",
-                tint = if (isLiked) Color.Red else subTextColor
+                imageVector = Icons.Default.Add,
+                contentDescription = "Add to playlist",
+                tint = textColor
             )
         }
 
+        // Play/Pause
         IconButton(onClick = {
             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onToggle()
@@ -156,8 +151,7 @@ fun PlayerBar(
                 )
             } else {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause
-                    else Icons.Default.PlayArrow,
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = textColor
                 )
