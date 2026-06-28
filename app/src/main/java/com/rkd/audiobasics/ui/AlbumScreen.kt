@@ -32,11 +32,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -62,7 +66,9 @@ fun AlbumScreen(
     album: Album,
     isDarkMode: Boolean,
     onBack: () -> Unit,
-    onNavigateQueue: () -> Unit
+    onNavigateQueue: () -> Unit,
+    onNavigateArtist: (String) -> Unit = {},
+    onAddTo: (Song) -> Unit = {}
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -82,9 +88,7 @@ fun AlbumScreen(
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isSearching) {
-        if (isSearching) {
-            focusRequester.requestFocus()
-        }
+        if (isSearching) focusRequester.requestFocus()
     }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
@@ -162,18 +166,41 @@ fun AlbumScreen(
                             contentScale = ContentScale.Crop
                         )
                         Spacer(Modifier.height(12.dp))
-                        
+
+                        // Clickable artists (red, underlined)
                         val displayedArtist = album.artist.substringBeforeLast("•").trim()
-                        Text(
-                            text = "(Album) $displayedArtist",
-                            fontFamily = NothingFont,
-                            fontSize = 14.sp,
-                            color = subTextColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 20.dp)
-                        )
+                        val artistList = displayedArtist
+                            .split(Regex(",\\s*|\\s*&\\s*"))
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+
+                        Row(
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "(Album) ",
+                                fontFamily = NothingFont,
+                                fontSize = 14.sp,
+                                color = subTextColor
+                            )
+                            artistList.forEachIndexed { i, artist ->
+                                Text(
+                                    text = buildAnnotatedString {
+                                        withStyle(SpanStyle(
+                                            color = Color.Red,
+                                            textDecoration = TextDecoration.Underline
+                                        )) { append(artist) }
+                                    },
+                                    fontFamily = NothingFont,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.clickable { onNavigateArtist(artist) }
+                                )
+                                if (i < artistList.lastIndex) {
+                                    Text(", ", fontFamily = NothingFont, fontSize = 14.sp, color = subTextColor)
+                                }
+                            }
+                        }
 
                         if (albumSongs.isNotEmpty()) {
                             val totalDuration = albumSongs.sumOf { it.duration }
@@ -221,6 +248,7 @@ fun AlbumScreen(
                             )
                             Spacer(Modifier.width(8.dp))
 
+                            // Share
                             IconButton(onClick = {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -232,43 +260,69 @@ fun AlbumScreen(
                                         }
                                     )
                                 }
-                                context.startActivity(
-                                    Intent.createChooser(shareIntent, "Share album")
-                                )
+                                context.startActivity(Intent.createChooser(shareIntent, "Share album"))
                             }) {
-                                Icon(
-                                    Icons.Default.Share,
-                                    contentDescription = "Share",
-                                    tint = textColor,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                                Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor, modifier = Modifier.size(22.dp))
                             }
 
+                            // Save/unsave
                             IconButton(onClick = {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                if (isSaved) vm.unsaveAlbum(album)
-                                else vm.saveAlbum(album)
+                                if (isSaved) vm.unsaveAlbum(album) else vm.saveAlbum(album)
                             }) {
                                 Icon(
-                                    imageVector = if (isSaved) Icons.Default.Bookmark
-                                    else Icons.Default.BookmarkBorder,
+                                    imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                                     contentDescription = "Save",
                                     tint = textColor,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
 
-                            IconButton(onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                if (albumSongs.isNotEmpty())
-                                    vm.playWithQueue(albumSongs.first(), albumSongs)
-                            }) {
-                                Icon(
-                                    Icons.Default.PlayArrow,
-                                    contentDescription = "Play",
-                                    tint = textColor,
-                                    modifier = Modifier.size(26.dp)
-                                )
+                            // Play dropdown
+                            var showPlayMenu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    showPlayMenu = true
+                                }) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = textColor, modifier = Modifier.size(26.dp))
+                                }
+                                DropdownMenu(
+                                    expanded = showPlayMenu,
+                                    onDismissRequest = { showPlayMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Play all", fontFamily = NothingFont) },
+                                        onClick = {
+                                            showPlayMenu = false
+                                            if (albumSongs.isNotEmpty()) vm.playWithQueue(albumSongs.first(), albumSongs)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Shuffle", fontFamily = NothingFont) },
+                                        onClick = {
+                                            showPlayMenu = false
+                                            if (albumSongs.isNotEmpty()) {
+                                                val shuffled = albumSongs.shuffled()
+                                                vm.playWithQueue(shuffled.first(), shuffled)
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Play next", fontFamily = NothingFont) },
+                                        onClick = {
+                                            showPlayMenu = false
+                                            albumSongs.forEach { vm.playNext(it) }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Add to queue", fontFamily = NothingFont) },
+                                        onClick = {
+                                            showPlayMenu = false
+                                            albumSongs.forEach { vm.addToQueue(it) }
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -283,14 +337,11 @@ fun AlbumScreen(
                 if (filteredSongs.isEmpty()) {
                     item {
                         Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 80.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (searchQuery.isBlank()) "No songs found"
-                                else "No results",
+                                text = if (searchQuery.isBlank()) "No songs found" else "No results",
                                 fontFamily = NothingFont,
                                 color = Color.Gray,
                                 textAlign = TextAlign.Center
@@ -312,7 +363,8 @@ fun AlbumScreen(
                             onClick = { vm.playWithQueue(song, albumSongs) },
                             onAddToQueue = { vm.addToQueue(song) },
                             onPlayNext = { vm.playNext(song) },
-                            onLike = { vm.toggleLike(song) }
+                            onLike = { vm.toggleLike(song) },
+                            onAddTo = { onAddTo(song) }
                         )
                     }
                 }
@@ -339,18 +391,9 @@ fun AlbumScreen(
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.weight(1f).focusRequester(focusRequester),
                     placeholder = {
-                        Text(
-                            "Search in album...",
-                            fontFamily = NothingFont,
-                            color = Color.Gray,
-                            fontSize = 14.sp
-                        )
+                        Text("Search in album...", fontFamily = NothingFont, color = Color.Gray, fontSize = 14.sp)
                     },
-                    textStyle = TextStyle(
-                        fontFamily = NothingFont,
-                        color = textColor,
-                        fontSize = 14.sp
-                    ),
+                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 14.sp),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Red,
@@ -360,9 +403,7 @@ fun AlbumScreen(
                     ),
                     shape = RoundedCornerShape(8.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
-                        focusManager.clearFocus()
-                    })
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(onClick = {
@@ -371,12 +412,7 @@ fun AlbumScreen(
                     searchQuery = ""
                     focusManager.clearFocus()
                 }) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Cancel",
-                        tint = textColor,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Icon(Icons.Default.Close, contentDescription = "Cancel", tint = textColor, modifier = Modifier.size(24.dp))
                 }
             }
         } else {
@@ -392,12 +428,7 @@ fun AlbumScreen(
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onBack()
                 }) {
-                    Icon(
-                        Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = textColor,
-                        modifier = Modifier.size(26.dp)
-                    )
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor, modifier = Modifier.size(26.dp))
                 }
                 Row(
                     modifier = Modifier
@@ -408,31 +439,15 @@ fun AlbumScreen(
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = textColor,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Icon(Icons.Default.Search, contentDescription = "Search", tint = textColor, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(
-                        "(ALBUM)",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = textColor
-                    )
+                    Text("(ALBUM)", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
                 }
                 IconButton(onClick = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onNavigateQueue()
                 }) {
-                    Icon(
-                        Icons.Default.QueueMusic,
-                        contentDescription = "Queue",
-                        tint = textColor,
-                        modifier = Modifier.size(26.dp)
-                    )
+                    Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = textColor, modifier = Modifier.size(26.dp))
                 }
             }
         }
@@ -451,7 +466,8 @@ fun AlbumSongRow(
     onClick: () -> Unit,
     onAddToQueue: () -> Unit,
     onPlayNext: () -> Unit,
-    onLike: () -> Unit
+    onLike: () -> Unit,
+    onAddTo: (() -> Unit)? = null
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -508,24 +524,31 @@ fun AlbumSongRow(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 menuExpanded = true
             }) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "Options",
-                    tint = subTextColor
-                )
+                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = subTextColor)
             }
             DropdownMenu(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text(if (isLiked) "Unlike" else "Like", fontFamily = NothingFont) },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        menuExpanded = false
-                        onLike()
-                    }
-                )
+                if (onAddTo != null) {
+                    DropdownMenuItem(
+                        text = { Text("Add to playlist...", fontFamily = NothingFont) },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            menuExpanded = false
+                            onAddTo()
+                        }
+                    )
+                } else {
+                    DropdownMenuItem(
+                        text = { Text(if (isLiked) "Unlike" else "Like", fontFamily = NothingFont) },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            menuExpanded = false
+                            onLike()
+                        }
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Play next", fontFamily = NothingFont) },
                     onClick = {
