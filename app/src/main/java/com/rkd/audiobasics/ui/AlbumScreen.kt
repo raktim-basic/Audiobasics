@@ -97,14 +97,22 @@ fun AlbumScreen(
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
+    var enrichedAlbum by remember { mutableStateOf(album) }
+
     LaunchedEffect(album.id) {
         isLoading = true
         try {
-            val (_, songs) = com.rkd.audiobasics.api.Innertube.getAlbumSongs(
+            val (meta, songs) = com.rkd.audiobasics.api.Innertube.getAlbumSongs(
                 browseId = album.id,
                 fallbackArtist = album.artist
             )
             albumSongs = songs
+            if (meta != null) {
+                enrichedAlbum = album.copy(
+                    artist = meta.artist.ifBlank { album.artist },
+                    year = meta.year.ifBlank { album.year }
+                )
+            }
         } catch (e: Exception) {
             android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
         } finally {
@@ -168,7 +176,7 @@ fun AlbumScreen(
                         Spacer(Modifier.height(12.dp))
 
                         // Clickable artists (red, underlined)
-                        val displayedArtist = album.artist.substringBeforeLast("•").trim()
+                        val displayedArtist = enrichedAlbum.artist.substringBeforeLast("•").trim()
                         val artistList = displayedArtist
                             .split(Regex(",\\s*|\\s*&\\s*"))
                             .map { it.trim() }
@@ -205,10 +213,11 @@ fun AlbumScreen(
                         if (albumSongs.isNotEmpty()) {
                             val totalDuration = albumSongs.sumOf { it.duration }
                             val durationText = formatAlbumDuration(totalDuration)
-                            val detailsText = if (durationText.isNotBlank()) {
-                                "$durationText • ${albumSongs.size} tracks"
-                            } else {
-                                "${albumSongs.size} tracks"
+                            val yearStr = enrichedAlbum.year.ifBlank { "" }
+                            val detailsText = buildString {
+                                if (durationText.isNotBlank()) append("$durationText • ")
+                                append("${albumSongs.size} tracks")
+                                if (yearStr.isNotBlank()) append(" • $yearStr")
                             }
                             Spacer(Modifier.height(4.dp))
                             Text(
