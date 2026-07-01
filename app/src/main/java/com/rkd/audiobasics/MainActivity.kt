@@ -352,7 +352,8 @@ fun AudiobasicsApp(
                         onBack = { navigateBack() },
                         onNavigateLiked = { navigate(Screen.Liked) },
                         onNavigateAlbums = { navigate(Screen.Albums) },
-                        onNavigatePlaylist = { playlist -> navigate(Screen.CustomPlaylist(playlist)) }
+                        onNavigatePlaylist = { playlist -> navigate(Screen.CustomPlaylist(playlist)) },
+                        onNavigateQueue = { navigate(Screen.Queue) }
                     )
                     is Screen.Updater -> UpdaterScreen(
                         vm = vm,
@@ -381,7 +382,8 @@ fun AudiobasicsApp(
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
                         onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) },
-                        onAddTo = { song -> addToSheetSong = song }
+                        onAddTo = { song -> addToSheetSong = song },
+                        onNavigateQueue = { navigate(Screen.Queue) }
                     )
                     is Screen.SearchAlbums -> SearchAlbumsScreen(
                         vm = vm,
@@ -402,7 +404,8 @@ fun AudiobasicsApp(
                         playlist = screen.playlist,
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
-                        onAddTo = { song -> addToSheetSong = song }
+                        onAddTo = { song -> addToSheetSong = song },
+                        onNavigateQueue = { navigate(Screen.Queue) }
                     )
                 }
             }
