@@ -7,5 +7,6 @@ data class Album(
     val thumbnail: String,
     val duration: Long = 0L,
     val songCount: Int = 0,
-    val youtubeUrl: String = ""
+    val youtubeUrl: String = "",
+    val year: String = ""
 )
