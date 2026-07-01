@@ -6,19 +6,29 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.data.db.PlaylistEntity
@@ -31,7 +41,8 @@ fun LibraryScreen(
     onBack: () -> Unit,
     onNavigateLiked: () -> Unit,
     onNavigateAlbums: () -> Unit,
-    onNavigatePlaylist: (PlaylistEntity) -> Unit
+    onNavigatePlaylist: (PlaylistEntity) -> Unit,
+    onNavigateQueue: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isDarkMode by vm.isDarkMode.collectAsState()
@@ -45,85 +56,114 @@ fun LibraryScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<PlaylistEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<PlaylistEntity?>(null) }
+    var isSearching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(isSearching) {
+        if (isSearching) focusRequester.requestFocus()
+    }
+
+    // Filter: custom playlists by name; fixed rows always shown unless filtered out
+    val filteredCustom = remember(customPlaylists, searchQuery) {
+        if (searchQuery.isBlank()) customPlaylists
+        else customPlaylists.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+    val showLiked = searchQuery.isBlank() || "liked songs".contains(searchQuery, ignoreCase = true)
+    val showAlbums = searchQuery.isBlank() || "saved albums".contains(searchQuery, ignoreCase = true)
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor)
+        modifier = Modifier.fillMaxSize().background(bgColor)
     ) {
         // ── Header ─────────────────────────────────────────────────────────
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp)) {
-            val headerLabel = buildString {
-                append("Your Library")
-                if (cacheSize.isNotBlank()) append(" ($cacheSize)")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Your Library",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    color = textColor
+                )
+                if (cacheSize.isNotBlank()) {
+                    Text(
+                        text = cacheSize,
+                        fontFamily = NothingFont,
+                        fontSize = 14.sp,
+                        color = Color.Gray
+                    )
+                }
             }
-            Text(
-                text = headerLabel,
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                color = textColor
-            )
+            // + button in header
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                showCreateDialog = true
+            }) {
+                Text(
+                    text = "+",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 28.sp,
+                    color = textColor
+                )
+            }
         }
 
         DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         // ── List ───────────────────────────────────────────────────────────
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            // Fixed: Liked Songs
-            item {
-                LibraryRow(
-                    emoji = null,
-                    icon = {
-                        Icon(
-                            Icons.Default.Favorite,
-                            contentDescription = null,
-                            tint = Color.Red,
-                            modifier = Modifier.size(40.dp)
-                        )
-                    },
-                    label = "Liked songs (${likedSongs.size})",
-                    isDarkMode = isDarkMode,
-                    showMenu = false,
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateLiked()
-                    }
-                )
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            if (showLiked) {
+                item {
+                    LibraryRow(
+                        emoji = null,
+                        icon = {
+                            Icon(Icons.Default.Favorite, contentDescription = null,
+                                tint = Color.Red, modifier = Modifier.size(40.dp))
+                        },
+                        label = "Liked songs (${likedSongs.size})",
+                        isDarkMode = isDarkMode,
+                        showMenu = false,
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateLiked()
+                        }
+                    )
+                }
             }
 
-            // Fixed: Saved Albums
-            item {
-                LibraryRow(
-                    emoji = null,
-                    icon = {
-                        Icon(
-                            Icons.Default.Bookmark,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(40.dp)
-                        )
-                    },
-                    label = "Saved albums (${savedAlbums.size})",
-                    isDarkMode = isDarkMode,
-                    showMenu = false,
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateAlbums()
-                    }
-                )
+            if (showAlbums) {
+                item {
+                    LibraryRow(
+                        emoji = null,
+                        icon = {
+                            Icon(Icons.Default.Bookmark, contentDescription = null,
+                                tint = textColor, modifier = Modifier.size(40.dp))
+                        },
+                        label = "Saved albums (${savedAlbums.size})",
+                        isDarkMode = isDarkMode,
+                        showMenu = false,
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateAlbums()
+                        }
+                    )
+                }
             }
 
-            // Custom playlists
-            items(customPlaylists) { playlist ->
+            items(filteredCustom) { playlist ->
                 LibraryRow(
                     emoji = playlist.emoji,
                     icon = null,
@@ -140,10 +180,53 @@ fun LibraryScreen(
             }
         }
 
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp)
+            .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD)))
+
         // ── Bottom bar ─────────────────────────────────────────────────────
-        Box(modifier = Modifier.fillMaxWidth().background(barColor)) {
+        if (isSearching) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth().background(barColor)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                    placeholder = {
+                        Text("Search library...", fontFamily = NothingFont,
+                            color = Color.Gray, fontSize = 14.sp)
+                    },
+                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 14.sp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Red,
+                        unfocusedBorderColor = Color.Red,
+                        focusedContainerColor = surfaceColor,
+                        unfocusedContainerColor = surfaceColor
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    isSearching = false
+                    searchQuery = ""
+                    focusManager.clearFocus()
+                }) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel",
+                        tint = textColor, modifier = Modifier.size(24.dp))
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().background(barColor)
+                    .padding(vertical = 4.dp, horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -151,69 +234,52 @@ fun LibraryScreen(
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onBack()
                 }) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back",
+                        tint = textColor, modifier = Modifier.size(26.dp))
                 }
-                Text(
-                    text = "🔍 (Library)",
-                    fontFamily = NothingFont,
-                    fontSize = 13.sp,
-                    color = subTextColor
-                )
+                Row(
+                    modifier = Modifier
+                        .clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            isSearching = true
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "Search",
+                        tint = textColor, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("(Library)", fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
+                }
                 IconButton(onClick = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    showCreateDialog = true
+                    onNavigateQueue()
                 }) {
-                    Text(
-                        text = "+",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 24.sp,
-                        color = textColor
-                    )
+                    Icon(Icons.Default.QueueMusic, contentDescription = "Queue",
+                        tint = textColor, modifier = Modifier.size(26.dp))
                 }
             }
         }
     }
 
-    // ── Create playlist dialog ─────────────────────────────────────────────
     if (showCreateDialog) {
-        CreatePlaylistDialog(
-            isDarkMode = isDarkMode,
+        CreatePlaylistDialog(isDarkMode = isDarkMode,
             onDismiss = { showCreateDialog = false },
-            onCreate = { name, emoji ->
-                vm.createPlaylist(name, emoji)
-                showCreateDialog = false
-            }
-        )
+            onCreate = { name, emoji -> vm.createPlaylist(name, emoji); showCreateDialog = false })
     }
-
-    // ── Rename dialog ──────────────────────────────────────────────────────
     renameTarget?.let { target ->
-        CreatePlaylistDialog(
-            isDarkMode = isDarkMode,
-            initialName = target.name,
-            initialEmoji = target.emoji,
-            title = "Rename playlist",
-            confirmLabel = "Save",
+        CreatePlaylistDialog(isDarkMode = isDarkMode, initialName = target.name,
+            initialEmoji = target.emoji, title = "Rename playlist", confirmLabel = "Save",
             onDismiss = { renameTarget = null },
-            onCreate = { name, emoji ->
-                vm.renamePlaylist(target.id, name, emoji)
-                renameTarget = null
-            }
-        )
+            onCreate = { name, emoji -> vm.renamePlaylist(target.id, name, emoji); renameTarget = null })
     }
-
-    // ── Delete confirmation ────────────────────────────────────────────────
     deleteTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
+        AlertDialog(onDismissRequest = { deleteTarget = null },
             title = { Text("Delete \"${target.name}\"?", fontFamily = NothingFont) },
-            text = { Text("This will remove the playlist and uncache any songs not saved elsewhere.", fontFamily = NothingFont) },
+            text = { Text("Songs not saved elsewhere will be uncached.", fontFamily = NothingFont) },
             confirmButton = {
-                TextButton(onClick = {
-                    vm.deletePlaylist(target.id)
-                    deleteTarget = null
-                }) {
+                TextButton(onClick = { vm.deletePlaylist(target.id); deleteTarget = null }) {
                     Text("Delete", color = Color.Red, fontFamily = NothingFont)
                 }
             },
@@ -221,8 +287,7 @@ fun LibraryScreen(
                 TextButton(onClick = { deleteTarget = null }) {
                     Text("Cancel", fontFamily = NothingFont)
                 }
-            }
-        )
+            })
     }
 }
 
@@ -242,55 +307,32 @@ private fun LibraryRow(
     var menuExpanded by remember { mutableStateOf(false) }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Emoji or icon box
         Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(8.dp))
+            modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp))
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
             contentAlignment = Alignment.Center
         ) {
-            if (emoji != null) {
-                Text(text = emoji, fontSize = 28.sp)
-            } else {
-                icon?.invoke()
-            }
+            if (emoji != null) Text(text = emoji, fontSize = 28.sp)
+            else icon?.invoke()
         }
-
         Spacer(Modifier.width(16.dp))
-
-        Text(
-            text = label,
-            fontFamily = NothingFont,
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            color = textColor,
-            modifier = Modifier.weight(1f)
-        )
-
+        Text(text = label, fontFamily = NothingFont, fontWeight = FontWeight.Bold,
+            fontSize = 16.sp, color = textColor, modifier = Modifier.weight(1f))
         if (showMenu) {
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = subTextColor)
                 }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Rename", fontFamily = NothingFont) },
-                        onClick = { menuExpanded = false; onRename?.invoke() }
-                    )
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(text = { Text("Rename", fontFamily = NothingFont) },
+                        onClick = { menuExpanded = false; onRename?.invoke() })
                     DropdownMenuItem(
                         text = { Text("Delete", color = Color.Red, fontFamily = NothingFont) },
-                        onClick = { menuExpanded = false; onDelete?.invoke() }
-                    )
+                        onClick = { menuExpanded = false; onDelete?.invoke() })
                 }
             }
         }
