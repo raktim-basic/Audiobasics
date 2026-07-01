@@ -978,7 +978,7 @@ object Innertube {
     private fun buildYtmClientContext() = JSONObject().apply {
         put("client", JSONObject().apply {
             put("clientName", "WEB_REMIX")
-            put("clientVersion", "1.20240101.01.00")
+            put("clientVersion", "1.20260520.01.00")
             put("hl", "en")
             put("gl", "US")
         })
