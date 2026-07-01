@@ -1,20 +1,32 @@
 package com.rkd.audiobasics.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.data.Song
@@ -22,13 +34,15 @@ import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CustomPlaylistScreen(
     vm: MusicViewModel,
     playlist: PlaylistEntity,
     isDarkMode: Boolean,
     onBack: () -> Unit,
-    onAddTo: (Song) -> Unit
+    onAddTo: (Song) -> Unit,
+    onNavigateQueue: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -38,126 +52,221 @@ fun CustomPlaylistScreen(
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
-    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
     var removeConfirm by remember { mutableStateOf<Song?>(null) }
+    var isSearching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    LaunchedEffect(playlist.id) {
-        vm.loadPlaylistSongs(playlist.id)
+    val listState = rememberLazyListState()
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(isSearching) { if (isSearching) focusRequester.requestFocus() }
+    LaunchedEffect(playlist.id) { vm.loadPlaylistSongs(playlist.id) }
+
+    val filteredSongs = remember(playlistSongs, searchQuery) {
+        if (searchQuery.isBlank()) playlistSongs
+        else playlistSongs.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+            it.artist.contains(searchQuery, ignoreCase = true)
+        }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor)
-    ) {
-        // Header
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp)) {
-            Text(
-                text = "${playlist.emoji} ${playlist.name}",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                color = textColor
-            )
-            Text(
-                text = "${playlistSongs.size} songs",
-                fontFamily = NothingFont,
-                fontSize = 14.sp,
-                color = subTextColor
-            )
+    val totalItems = filteredSongs.size + 1
+    val scrollProgress = remember(listState, totalItems) {
+        derivedStateOf {
+            if (totalItems <= 1) return@derivedStateOf 0f
+            val max = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0
+            (max.toFloat() / totalItems).coerceIn(0f, 1f)
         }
+    }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
 
-        // Songs
-        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            if (playlistSongs.isEmpty()) {
+        LazyColumn(modifier = Modifier.weight(1f), state = listState) {
+
+            // ── Hero emoji (like LikedScreen) ──────────────────────────────
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Spacer(Modifier.height(32.dp))
+                    Text(text = playlist.emoji, fontSize = 100.sp)
+                    Spacer(Modifier.height(24.dp))
+                }
+            }
+
+            // ── Sticky header: name + count + shuffle ──────────────────────
+            stickyHeader {
+                Column(
+                    modifier = Modifier.fillMaxWidth().background(bgColor)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(start = 20.dp, top = 10.dp, end = 20.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${playlist.name} (${playlistSongs.size})",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = textColor
+                        )
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            vm.shuffleCustomPlaylist(playlist.id)
+                        }) {
+                            Icon(Icons.Default.Shuffle, contentDescription = "Shuffle",
+                                tint = textColor, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    DashedDivider(
+                        modifier = Modifier.fillMaxWidth(),
+                        isDarkMode = isDarkMode,
+                        scrollProgress = scrollProgress.value
+                    )
+                }
+            }
+
+            // ── Empty state ────────────────────────────────────────────────
+            if (filteredSongs.isEmpty()) {
                 item {
                     Box(
-                        modifier = Modifier.fillMaxWidth().padding(40.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 60.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No songs yet. Tap + on any song to add.", fontFamily = NothingFont, color = Color.Gray, fontSize = 15.sp)
+                        Text(
+                            text = if (searchQuery.isBlank()) "No songs yet. Tap + on any song to add."
+                                   else "No results for \"$searchQuery\"",
+                            fontFamily = NothingFont,
+                            color = Color.Gray,
+                            fontSize = 15.sp
+                        )
                     }
                 }
-            } else {
-                itemsIndexed(playlistSongs) { _, entity ->
-                    val song = Song(
-                        id = entity.songId,
-                        title = entity.title,
-                        artist = entity.artist,
-                        thumbnail = entity.thumbnail,
-                        isExplicit = entity.isExplicit
-                    )
-                    SongItem(
-                        song = song,
-                        isDarkMode = isDarkMode,
-                        isLiked = likedSongs.any { it.id == song.id },
-                        isPlaying = currentSong?.id == song.id,
-                        hapticsEnabled = hapticsEnabled,
-                        context = context,
-                        onClick = {
-                            val queue = playlistSongs.map {
-                                Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail)
-                            }
-                            vm.playWithQueue(song, queue)
-                        },
-                        onLike = { vm.toggleLike(song) },
-                        onShare = {},
-                        onAddToQueue = { vm.addToQueue(song) },
-                        onPlayNext = { vm.playNext(song) },
-                        onAddTo = { onAddTo(song) },
-                        onRemoveLike = { removeConfirm = song }
-                    )
-                }
+            }
+
+            // ── Songs ──────────────────────────────────────────────────────
+            items(filteredSongs, key = { it.songId }) { entity ->
+                val song = Song(
+                    id = entity.songId,
+                    title = entity.title,
+                    artist = entity.artist,
+                    thumbnail = entity.thumbnail,
+                    isExplicit = entity.isExplicit
+                )
+                SongItem(
+                    song = song,
+                    isDarkMode = isDarkMode,
+                    isLiked = likedSongs.any { it.id == song.id },
+                    isPlaying = currentSong?.id == song.id,
+                    hapticsEnabled = hapticsEnabled,
+                    context = context,
+                    onClick = {
+                        val queue = filteredSongs.map {
+                            Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail)
+                        }
+                        vm.playWithQueue(song, queue)
+                    },
+                    onLike = { vm.toggleLike(song) },
+                    onShare = {},
+                    onAddToQueue = { vm.addToQueue(song) },
+                    onPlayNext = { vm.playNext(song) },
+                    onAddTo = { onAddTo(song) },
+                    onRemoveLike = { removeConfirm = song }
+                )
             }
         }
 
-        // Bottom bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(barColor)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp)
+            .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD)))
+
+        // ── Bottom bar ─────────────────────────────────────────────────────
+        if (isSearching) {
+            Row(
+                modifier = Modifier.fillMaxWidth().background(barColor)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                    placeholder = {
+                        Text("Search in playlist...", fontFamily = NothingFont,
+                            color = Color.Gray, fontSize = 14.sp)
+                    },
+                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 14.sp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Red, unfocusedBorderColor = Color.Red,
+                        focusedContainerColor = surfaceColor, unfocusedContainerColor = surfaceColor
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    isSearching = false; searchQuery = ""; focusManager.clearFocus()
+                }) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel",
+                        tint = textColor, modifier = Modifier.size(24.dp))
+                }
             }
-            Text(
-                text = "🔍 (${playlist.name})",
-                fontFamily = NothingFont,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                vm.shuffleCustomPlaylist(playlist.id)
-            }) {
-                Icon(Icons.Default.Shuffle, contentDescription = "Shuffle", tint = textColor)
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().background(barColor)
+                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onBack()
+                }) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back",
+                        tint = textColor, modifier = Modifier.size(26.dp))
+                }
+                Row(
+                    modifier = Modifier
+                        .clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            isSearching = true
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "Search",
+                        tint = textColor, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("(${playlist.name})", fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
+                }
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onNavigateQueue()
+                }) {
+                    Icon(Icons.Default.QueueMusic, contentDescription = "Queue",
+                        tint = textColor, modifier = Modifier.size(26.dp))
+                }
             }
         }
     }
 
-    // Remove confirmation
+    // ── Remove confirmation ────────────────────────────────────────────────
     removeConfirm?.let { song ->
         AlertDialog(
             onDismissRequest = { removeConfirm = null },
-            title = {
-                Text("Are you sure?", fontFamily = NothingFont, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Text(
-                    "Remove \"${song.title}\" from \"${playlist.name}\"?",
-                    fontFamily = NothingFont
-                )
-            },
+            title = { Text("Are you sure?", fontFamily = NothingFont, fontWeight = FontWeight.Bold) },
+            text = { Text("Remove \"${song.title}\" from \"${playlist.name}\"?", fontFamily = NothingFont) },
             confirmButton = {
                 TextButton(onClick = {
                     vm.removeSongFromCustomPlaylist(playlist.id, song)
@@ -171,7 +280,7 @@ fun CustomPlaylistScreen(
                     Text("No", fontFamily = NothingFont, fontSize = 18.sp)
                 }
             },
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+            shape = RoundedCornerShape(20.dp)
         )
     }
 }
