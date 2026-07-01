@@ -21,6 +21,8 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.cache.CacheManager
+import com.rkd.audiobasics.lyrics.LyricsCache
+import com.rkd.audiobasics.lyrics.LyricsRepository
 import com.rkd.audiobasics.cache.CacheResult
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
@@ -676,6 +678,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 is CacheResult.Success -> {
                     updateLikedSongCacheStatus(song.id, isCached = true, cacheFailed = false)
                     refreshCacheSize()
+                    // Cache lyrics in background
+                    viewModelScope.launch(Dispatchers.IO) { cacheLyricsForSong(song) }
                     true
                 }
                 is CacheResult.StorageLow -> {
@@ -1109,6 +1113,18 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 Toast.makeText(context, "Import failed :( ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private suspend fun cacheLyricsForSong(song: Song) {
+        try {
+            if (CacheManager.isLyricsCached(getApplication(), song.id)) return
+            val result = LyricsRepository.getLyrics(
+                title = song.title,
+                artist = song.artist.split(Regex(",\s*|\s*feat\.\s*", RegexOption.IGNORE_CASE)).first().trim(),
+                duration = song.duration
+            ) ?: return
+            CacheManager.saveLyrics(getApplication(), song.id, LyricsCache.serialize(result))
+        } catch (_: Exception) {}
     }
 
     override fun onCleared() {
