@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.rkd.audiobasics.cache.CacheManager
+import com.rkd.audiobasics.lyrics.LyricsCache
 import com.rkd.audiobasics.lyrics.LyricsRepository
 import com.rkd.audiobasics.lyrics.LyricsResult
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -75,7 +76,7 @@ fun LyricsScreen(
             if (forceRefresh == 0) {
                 val cached = CacheManager.loadLyrics(context, song.id)
                 if (cached != null) {
-                    lyricsResult = deserializeLyrics(cached)
+                    lyricsResult = LyricsCache.deserialize(cached)
                     isLoading = false
                     return@LaunchedEffect
                 }
@@ -312,38 +313,4 @@ fun LyricsScreen(
             }
         }
     }
-}
-
-// ── Lyrics serialization for cache ────────────────────────────────────────
-
-private fun serializeLyrics(result: LyricsResult): String {
-    val obj = JSONObject()
-    obj.put("hasSynced", result.hasSynced)
-    obj.put("plainText", result.plainText)
-    val arr = JSONArray()
-    result.syncedLines.forEach { line ->
-        arr.put(JSONObject().apply {
-            put("timeMs", line.timeMs)
-            put("text", line.text)
-        })
-    }
-    obj.put("syncedLines", arr)
-    return obj.toString()
-}
-
-private fun deserializeLyrics(json: String): LyricsResult? {
-    return try {
-        val obj = JSONObject(json)
-        val hasSynced = obj.optBoolean("hasSynced", false)
-        val plainText = obj.optString("plainText", "")
-        val arr = obj.optJSONArray("syncedLines") ?: JSONArray()
-        val lines = (0 until arr.length()).map { i ->
-            val l = arr.getJSONObject(i)
-            com.rkd.audiobasics.lyrics.LyricLine(
-                timeMs = l.getLong("timeMs"),
-                text = l.getString("text")
-            )
-        }
-        LyricsResult(syncedLines = lines, plainText = plainText, hasSynced = hasSynced)
-    } catch (_: Exception) { null }
 }
