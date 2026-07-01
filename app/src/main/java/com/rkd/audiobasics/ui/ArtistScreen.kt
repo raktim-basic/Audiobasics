@@ -1,64 +1,86 @@
 package com.rkd.audiobasics.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.ArtistPage
-import com.rkd.audiobasics.api.Innertube
+import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
-import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ArtistScreen(
     vm: MusicViewModel,
     artistName: String,
-    artistBrowseId: String = "",   // if coming from YTM browse link
+    artistBrowseId: String = "",
     isDarkMode: Boolean,
     onBack: () -> Unit,
     onAlbumClick: (Album) -> Unit,
-    onAddTo: (com.rkd.audiobasics.data.Song) -> Unit
+    onAddTo: (Song) -> Unit,
+    onNavigateQueue: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
-    val scope = rememberCoroutineScope()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
     var artistPage by remember { mutableStateOf<ArtistPage?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var hasError by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
+    var isSearching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    val tabs = listOf("Popular songs", "Albums", "Singles & EPs")
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(isSearching) { if (isSearching) focusRequester.requestFocus() }
 
     LaunchedEffect(artistName, artistBrowseId) {
         isLoading = true
         hasError = false
+        searchQuery = ""
         try {
             val page = if (artistBrowseId.isNotBlank()) {
                 Innertube.getArtistPage(artistBrowseId)
@@ -74,108 +96,174 @@ fun ArtistScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor)
-    ) {
-        // ── Artist image ────────────────────────────────────────────────────
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(260.dp)
-        ) {
-            AsyncImage(
-                model = artistPage?.artist?.thumbnail,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
+    // Reset search when tab changes
+    LaunchedEffect(selectedTab) {
+        searchQuery = ""
+        isSearching = false
+    }
+
+    val tabs = listOf("Popular songs", "Albums", "Singles & EPs")
+
+    // Filtered content per tab
+    val filteredSongs = remember(artistPage, searchQuery, selectedTab) {
+        if (selectedTab != 0) return@remember emptyList()
+        val all = artistPage?.popularSongs ?: emptyList()
+        if (searchQuery.isBlank()) all
+        else all.filter { it.title.contains(searchQuery, ignoreCase = true) || it.artist.contains(searchQuery, ignoreCase = true) }
+    }
+    val filteredAlbums = remember(artistPage, searchQuery, selectedTab) {
+        if (selectedTab != 1) return@remember emptyList()
+        val all = artistPage?.albums ?: emptyList()
+        if (searchQuery.isBlank()) all
+        else all.filter { it.title.contains(searchQuery, ignoreCase = true) }
+    }
+    val filteredSingles = remember(artistPage, searchQuery, selectedTab) {
+        if (selectedTab != 2) return@remember emptyList()
+        val all = artistPage?.singles ?: emptyList()
+        if (searchQuery.isBlank()) all
+        else all.filter { it.title.contains(searchQuery, ignoreCase = true) }
+    }
+
+    val scrollProgress = remember(listState) {
+        derivedStateOf {
+            val total = when (selectedTab) {
+                0 -> filteredSongs.size + 2
+                1 -> filteredAlbums.size + 2
+                else -> filteredSingles.size + 2
+            }.coerceAtLeast(2)
+            val max = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0
+            (max.toFloat() / total).coerceIn(0f, 1f)
         }
+    }
 
-        // ── Artist name ─────────────────────────────────────────────────────
-        Text(
-            text = artistPage?.artist?.name ?: artistName,
-            fontFamily = NothingFont,
-            fontWeight = FontWeight.Bold,
-            fontSize = 22.sp,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-        )
+    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
 
-        // ── Tabs ────────────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            tabs.forEachIndexed { i, label ->
+        LazyColumn(modifier = Modifier.weight(1f), state = listState) {
+
+            // ── Hero image ─────────────────────────────────────────────────
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(260.dp)
+                ) {
+                    AsyncImage(
+                        model = artistPage?.artist?.thumbnail,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                // Artist name below image
                 Text(
-                    text = label,
+                    text = artistPage?.artist?.name ?: artistName,
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = if (selectedTab == i) Color.Red else subTextColor,
-                    modifier = Modifier.clickable {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        selectedTab = i
-                    }
+                    fontSize = 24.sp,
+                    color = textColor,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
                 )
             }
-        }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+            // ── Tabs (sticky) ──────────────────────────────────────────────
+            stickyHeader {
+                Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        tabs.forEachIndexed { i, label ->
+                            Text(
+                                text = label,
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = if (selectedTab == i) Color.Red else subTextColor,
+                                modifier = Modifier
+                                    .clickable {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        selectedTab = i
+                                    }
+                                    .padding(vertical = 8.dp)
+                            )
+                        }
+                    }
+                    DashedDivider(
+                        modifier = Modifier.fillMaxWidth(),
+                        isDarkMode = isDarkMode,
+                        scrollProgress = scrollProgress.value
+                    )
+                }
+            }
 
-        // ── Content ─────────────────────────────────────────────────────────
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            when {
-                isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color.Red)
+            // ── Loading / Error / Empty ────────────────────────────────────
+            if (isLoading) {
+                item {
+                    Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.Red)
+                    }
                 }
-                hasError || artistPage == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Artist not found", fontFamily = NothingFont, color = Color.Gray)
+            } else if (hasError || artistPage == null) {
+                item {
+                    Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        Text("Artist not found", fontFamily = NothingFont, color = Color.Gray)
+                    }
                 }
-                else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        when (selectedTab) {
-                            0 -> { // Popular songs
-                                items(artistPage!!.popularSongs.take(10)) { song ->
-                                    SongItem(
-                                        song = song,
-                                        isDarkMode = isDarkMode,
-                                        isLiked = likedSongs.any { it.id == song.id },
-                                        isPlaying = currentSong?.id == song.id,
-                                        hapticsEnabled = hapticsEnabled,
-                                        context = context,
-                                        onClick = { vm.play(song) },
-                                        onLike = { vm.toggleLike(song) },
-                                        onShare = {},
-                                        onAddToQueue = { vm.addToQueue(song) },
-                                        onPlayNext = { vm.playNext(song) },
-                                        onAddTo = { onAddTo(song) }
-                                    )
+            } else {
+                // ── Tab content ────────────────────────────────────────────
+                when (selectedTab) {
+                    0 -> {
+                        if (filteredSongs.isEmpty()) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                                    Text(if (searchQuery.isBlank()) "No songs found" else "No results",
+                                        fontFamily = NothingFont, color = Color.Gray)
                                 }
                             }
-                            1 -> { // Albums
-                                items(artistPage!!.albums) { album ->
-                                    AlbumRowItem(
-                                        album = album,
-                                        isDarkMode = isDarkMode,
-                                        showYear = true,
-                                        onClick = { onAlbumClick(album) }
-                                    )
+                        } else {
+                            items(filteredSongs) { song ->
+                                SongItem(
+                                    song = song,
+                                    isDarkMode = isDarkMode,
+                                    isLiked = likedSongs.any { it.id == song.id },
+                                    isPlaying = currentSong?.id == song.id,
+                                    hapticsEnabled = hapticsEnabled,
+                                    context = context,
+                                    onClick = { vm.play(song) },
+                                    onLike = { vm.toggleLike(song) },
+                                    onShare = {},
+                                    onAddToQueue = { vm.addToQueue(song) },
+                                    onPlayNext = { vm.playNext(song) },
+                                    onAddTo = { onAddTo(song) }
+                                )
+                            }
+                        }
+                    }
+                    1 -> {
+                        if (filteredAlbums.isEmpty()) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                                    Text(if (searchQuery.isBlank()) "No albums found" else "No results",
+                                        fontFamily = NothingFont, color = Color.Gray)
                                 }
                             }
-                            2 -> { // Singles & EPs
-                                items(artistPage!!.singles) { single ->
-                                    AlbumRowItem(
-                                        album = single,
-                                        isDarkMode = isDarkMode,
-                                        showYear = true,
-                                        onClick = { onAlbumClick(single) }
-                                    )
+                        } else {
+                            items(filteredAlbums) { album ->
+                                AlbumRowItem(album = album, isDarkMode = isDarkMode, showYear = true,
+                                    onClick = { onAlbumClick(album) })
+                            }
+                        }
+                    }
+                    2 -> {
+                        if (filteredSingles.isEmpty()) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                                    Text(if (searchQuery.isBlank()) "No singles/EPs found" else "No results",
+                                        fontFamily = NothingFont, color = Color.Gray)
                                 }
+                            }
+                        } else {
+                            items(filteredSingles) { single ->
+                                AlbumRowItem(album = single, isDarkMode = isDarkMode, showYear = true,
+                                    onClick = { onAlbumClick(single) })
                             }
                         }
                     }
@@ -183,29 +271,84 @@ fun ArtistScreen(
             }
         }
 
-        // ── Bottom bar ──────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(barColor)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp)
+            .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD)))
+
+        // ── Bottom bar ─────────────────────────────────────────────────────
+        if (isSearching) {
+            Row(
+                modifier = Modifier.fillMaxWidth().background(barColor)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                    placeholder = {
+                        val hint = when (selectedTab) {
+                            0 -> "Search songs..."
+                            1 -> "Search albums..."
+                            else -> "Search singles & EPs..."
+                        }
+                        Text(hint, fontFamily = NothingFont, color = Color.Gray, fontSize = 14.sp)
+                    },
+                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 14.sp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.Red, unfocusedBorderColor = Color.Red,
+                        focusedContainerColor = surfaceColor, unfocusedContainerColor = surfaceColor
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    isSearching = false; searchQuery = ""; focusManager.clearFocus()
+                }) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel",
+                        tint = textColor, modifier = Modifier.size(24.dp))
+                }
             }
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = "🔍 (Artist)",
-                fontFamily = NothingFont,
-                fontSize = 13.sp,
-                color = subTextColor
-            )
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.width(48.dp))
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().background(barColor)
+                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onBack()
+                }) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back",
+                        tint = textColor, modifier = Modifier.size(26.dp))
+                }
+                Row(
+                    modifier = Modifier
+                        .clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            isSearching = true
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "Search",
+                        tint = textColor, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("(Artist)", fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
+                }
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onNavigateQueue()
+                }) {
+                    Icon(Icons.Default.QueueMusic, contentDescription = "Queue",
+                        tint = textColor, modifier = Modifier.size(26.dp))
+                }
+            }
         }
     }
 }
@@ -221,45 +364,28 @@ fun AlbumRowItem(
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AsyncImage(
             model = album.thumbnail,
             contentDescription = null,
-            modifier = Modifier
-                .size(60.dp)
-                .clip(RoundedCornerShape(6.dp)),
+            modifier = Modifier.size(60.dp).clip(RoundedCornerShape(6.dp)),
             contentScale = ContentScale.Crop
         )
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = album.title,
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (showYear && album.youtubeUrl.isNotBlank()) {
-                Text(
-                    text = album.youtubeUrl, // youtubeUrl repurposed as year string for artist page
-                    fontFamily = NothingFont,
-                    fontSize = 14.sp,
-                    color = subTextColor
-                )
-            } else if (!showYear) {
-                Text(
-                    text = album.artist,
-                    fontFamily = NothingFont,
-                    fontSize = 13.sp,
-                    color = subTextColor
-                )
+            Text(text = album.title, fontFamily = NothingFont, fontWeight = FontWeight.Bold,
+                fontSize = 15.sp, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val sub = when {
+                showYear && album.year.isNotBlank() -> album.year
+                showYear && album.youtubeUrl.matches(Regex("\\d{4}")) -> album.youtubeUrl
+                else -> album.artist
+            }
+            if (sub.isNotBlank()) {
+                Text(text = sub, fontFamily = NothingFont, fontSize = 13.sp,
+                    color = subTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
