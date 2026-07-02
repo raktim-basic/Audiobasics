@@ -286,11 +286,8 @@ object Innertube {
                                     if (!hitDot) { hitDot = true; continue } else break
                                 }
                                 if (t.isBlank()) continue
-                                if (!hitDot) {
-                                    artistParts.add(t)
-                                } else {
-                                    if (t.contains(":") && t.length <= 7) durationMs = parseDurationString(t)
-                                }
+                                if (!hitDot) artistParts.add(t)
+                                else if (t.contains(":") && t.length <= 7) durationMs = parseDurationString(t)
                             }
                             artist = artistParts.joinToString("")
                         }
@@ -433,21 +430,18 @@ object Innertube {
                     }
                 }
             } catch (_: Exception) {}
-            } catch (_: Exception) {}
 
-            // Parse album metadata from step1 header
+            // Parse year + multi-artist from album header
             var albumArtist = fallbackArtist
             var albumYear = ""
             try {
-                val step1 = ytmPost("browse", JSONObject().put("browseId", browseId))
-                val header = step1?.optJSONObject("header")
+                val step1Meta = ytmPost("browse", JSONObject().put("browseId", browseId))
+                val header = step1Meta?.optJSONObject("header")
                 val detailHeader = header?.optJSONObject("musicDetailHeaderRenderer")
                     ?: header?.optJSONObject("musicImmersiveHeaderRenderer")
-
-                // Parse multi-artist from header
+                // Multi-artist
                 val artistRuns = detailHeader?.optJSONObject("artist")?.optJSONArray("runs")
-                    ?: detailHeader?.optJSONObject("title")?.optJSONArray("runs")
-                if (artistRuns != null) {
+                if (artistRuns != null && artistRuns.length() > 0) {
                     val parts = mutableListOf<String>()
                     for (r in 0 until artistRuns.length()) {
                         val t = artistRuns.optJSONObject(r)?.optString("text", "") ?: ""
@@ -455,35 +449,22 @@ object Innertube {
                     }
                     if (parts.isNotEmpty()) albumArtist = parts.joinToString("")
                 }
-
-                // Parse year from subtitle
+                // Year
                 val subtitleRuns = detailHeader?.optJSONObject("subtitle")?.optJSONArray("runs")
                 if (subtitleRuns != null) {
                     for (r in 0 until subtitleRuns.length()) {
                         val t = subtitleRuns.optJSONObject(r)?.optString("text", "") ?: ""
-                        if (t.length == 4 && t.all { it.isDigit() }) {
-                            albumYear = t
-                            break
-                        }
+                        if (t.length == 4 && t.all { c -> c.isDigit() }) { albumYear = t; break }
                     }
                 }
-
-                // Update songs with correct artist if we got better info
-                if (albumArtist != fallbackArtist && songs.isNotEmpty()) {
-                    for (i in songs.indices) {
-                        songs[i] = songs[i].copy(artist = albumArtist)
-                    }
+                // Update song artists if we got better info
+                if (albumArtist.isNotBlank() && albumArtist != fallbackArtist) {
+                    for (i in songs.indices) songs[i] = songs[i].copy(artist = albumArtist)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) { Log.e("Innertube", "Album meta error: ${e.message}") }
 
             Pair(
-                com.rkd.audiobasics.data.Album(
-                    id = browseId,
-                    title = "",
-                    artist = albumArtist,
-                    thumbnail = "",
-                    year = albumYear
-                ),
+                Album(id = browseId, title = "", artist = albumArtist, thumbnail = "", year = albumYear),
                 songs
             )
         }
@@ -851,13 +832,15 @@ object Innertube {
     suspend fun getArtistPage(browseId: String): com.rkd.audiobasics.data.ArtistPage? =
         withContext(Dispatchers.IO) {
             try {
-                val body = JSONObject().apply {
-                    put("browseId", browseId)
-                    put("context", buildYtmClientContext())
-                }.toString()
-                val json = JSONObject(postYtmRequest("browse", body))
+                val json = buildYtmClientContext().also {
+                    it.put("browseId", browseId)
+                }.let { body ->
+                    postYtmRequest("browse", JSONObject().apply {
+                        put("browseId", browseId)
+                        put("context", buildYtmClientContext())
+                    }.toString())
+                }.let { JSONObject(it) }
 
-                // Parse artist name + thumbnail from header
                 val header = json.optJSONObject("header")
                 val immersive = header?.optJSONObject("musicImmersiveHeaderRenderer")
                 val artistName = immersive?.optJSONObject("title")
@@ -868,7 +851,6 @@ object Innertube {
                 val artistThumb = thumbArr?.optJSONObject((thumbArr.length() - 1).coerceAtLeast(0))?.optString("url") ?: ""
                 val artist = com.rkd.audiobasics.data.Artist(id = browseId, name = artistName, thumbnail = artistThumb)
 
-                // Find sections
                 val sections = json.optJSONObject("contents")
                     ?.optJSONObject("singleColumnBrowseResultsRenderer")
                     ?.optJSONArray("tabs")?.optJSONObject(0)
@@ -877,51 +859,41 @@ object Innertube {
                     ?: return@withContext com.rkd.audiobasics.data.ArtistPage(artist, emptyList(), emptyList(), emptyList())
 
                 val popularSongs = mutableListOf<Song>()
-                val albums = mutableListOf<com.rkd.audiobasics.data.Album>()
-                val singles = mutableListOf<com.rkd.audiobasics.data.Album>()
+                val albums = mutableListOf<Album>()
+                val singles = mutableListOf<Album>()
 
                 for (i in 0 until sections.length()) {
                     val section = sections.optJSONObject(i) ?: continue
 
-                    // Songs — in musicShelfRenderer
                     section.optJSONObject("musicShelfRenderer")?.let { shelf ->
-                        val shelfTitle = shelf.optJSONObject("header")
-                            ?.optJSONObject("musicShelfHeaderRenderer")
-                            ?.optJSONObject("title")?.optJSONArray("runs")
-                            ?.optJSONObject(0)?.optString("text") ?: ""
-                        if (shelfTitle.contains("song", ignoreCase = true) || popularSongs.isEmpty()) {
-                            val items = shelf.optJSONArray("contents") ?: return@let
-                            for (j in 0 until minOf(items.length(), 10)) {
-                                try {
-                                    val r = items.optJSONObject(j)
-                                        ?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
-                                    // Try multiple paths to get videoId
-                                    val videoId = r.optJSONObject("playlistItemData")?.optString("videoId")?.takeIf { it.isNotBlank() }
-                                        ?: r.optJSONObject("overlay")
-                                            ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                                            ?.optJSONObject("content")?.optJSONObject("musicPlayButtonRenderer")
-                                            ?.optJSONObject("playNavigationEndpoint")
-                                            ?.optJSONObject("watchEndpoint")?.optString("videoId")?.takeIf { it.isNotBlank() }
-                                        ?: r.optJSONArray("flexColumns")?.optJSONObject(0)
-                                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                                            ?.optJSONObject("text")?.optJSONArray("runs")?.optJSONObject(0)
-                                            ?.optJSONObject("navigationEndpoint")?.optJSONObject("watchEndpoint")
-                                            ?.optString("videoId")?.takeIf { it.isNotBlank() }
-                                        ?: continue
-                                    val title = r.optJSONArray("flexColumns")?.optJSONObject(0)
+                        val items = shelf.optJSONArray("contents") ?: return@let
+                        for (j in 0 until minOf(items.length(), 10)) {
+                            try {
+                                val r = items.optJSONObject(j)?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
+                                val videoId = r.optJSONObject("playlistItemData")?.optString("videoId")?.takeIf { it.isNotBlank() }
+                                    ?: r.optJSONObject("overlay")?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                                        ?.optJSONObject("content")?.optJSONObject("musicPlayButtonRenderer")
+                                        ?.optJSONObject("playNavigationEndpoint")?.optJSONObject("watchEndpoint")
+                                        ?.optString("videoId")?.takeIf { it.isNotBlank() }
+                                    ?: r.optJSONArray("flexColumns")?.optJSONObject(0)
                                         ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                                        ?.optJSONObject("text")?.optJSONArray("runs")
-                                        ?.optJSONObject(0)?.optString("text") ?: continue
-                                    val thumb = r.optJSONObject("thumbnail")
-                                        ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
-                                        ?.optJSONArray("thumbnails")?.let { t -> t.optJSONObject(t.length() - 1)?.optString("url") } ?: ytThumbnail(videoId)
-                                    popularSongs.add(Song(id = videoId, title = title, artist = artistName, thumbnail = thumb))
-                                } catch (_: Exception) {}
-                            }
+                                        ?.optJSONObject("text")?.optJSONArray("runs")?.optJSONObject(0)
+                                        ?.optJSONObject("navigationEndpoint")?.optJSONObject("watchEndpoint")
+                                        ?.optString("videoId")?.takeIf { it.isNotBlank() }
+                                    ?: continue
+                                val title = r.optJSONArray("flexColumns")?.optJSONObject(0)
+                                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                                    ?.optJSONObject("text")?.optJSONArray("runs")
+                                    ?.optJSONObject(0)?.optString("text") ?: continue
+                                val thumb = r.optJSONObject("thumbnail")
+                                    ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
+                                    ?.optJSONArray("thumbnails")?.let { t -> t.optJSONObject(t.length() - 1)?.optString("url") }
+                                    ?: ytThumbnail(videoId)
+                                popularSongs.add(Song(id = videoId, title = title, artist = artistName, thumbnail = thumb))
+                            } catch (e: Exception) { Log.e("Innertube", "Artist song error: ${e.message}") }
                         }
                     }
 
-                    // Albums & Singles — in musicCarouselShelfRenderer
                     section.optJSONObject("musicCarouselShelfRenderer")?.let { carousel ->
                         val hdrTitle = carousel.optJSONObject("header")
                             ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
@@ -947,9 +919,9 @@ object Innertube {
                                     ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
                                     ?.optJSONArray("thumbnails")
                                 val thumb = thumbArr2?.optJSONObject(0)?.optString("url") ?: ""
-                                val album = com.rkd.audiobasics.data.Album(id = albumBrowseId, title = title, artist = artistName, thumbnail = thumb, year = year)
+                                val album = Album(id = albumBrowseId, title = title, artist = artistName, thumbnail = thumb, year = year)
                                 if (isAlbums) albums.add(album) else singles.add(album)
-                            } catch (_: Exception) {}
+                            } catch (e: Exception) { Log.e("Innertube", "Artist album error: ${e.message}") }
                         }
                     }
                 }
