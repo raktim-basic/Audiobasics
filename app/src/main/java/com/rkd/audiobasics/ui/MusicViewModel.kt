@@ -1120,7 +1120,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             if (CacheManager.isLyricsCached(getApplication(), song.id)) return
             val result = LyricsRepository.getLyrics(
                 title = song.title,
-                artist = song.artist.split(Regex(",\s*|\s*feat\.\s*", RegexOption.IGNORE_CASE)).first().trim(),
+                artist = song.artist.split(",").first().trim(),
                 duration = song.duration
             ) ?: return
             CacheManager.saveLyrics(getApplication(), song.id, LyricsCache.serialize(result))
