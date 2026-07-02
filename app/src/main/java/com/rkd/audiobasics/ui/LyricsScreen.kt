@@ -93,7 +93,7 @@ fun LyricsScreen(
 
             // Cache the result if found
             if (result != null) {
-                val json = serializeLyrics(result)
+                val json = LyricsCache.serialize(result)
                 CacheManager.saveLyrics(context, song.id, json)
             }
         } catch (_: Exception) {
