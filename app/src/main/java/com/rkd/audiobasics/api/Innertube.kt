@@ -461,7 +461,7 @@ object Innertube {
                             when {
                                 seg.length == 4 && seg.all { it.isDigit() } -> albumYear = seg
                                 seg.lowercase() in listOf("album", "ep", "single", "playlist") -> {}
-                                seg.matches(Regex("\d+ songs?")) -> {}
+                                seg.matches(Regex("\\d+ songs?")) -> {}
                                 albumArtist == fallbackArtist && seg.isNotBlank() -> albumArtist = seg
                             }
                         }
