@@ -433,9 +433,18 @@ object Innertube {
                     ?: return@withContext Pair(null, emptyList())
 
                 // ── Parse album metadata from step1 header (no second call needed) ──
-                val header = step1.optJSONObject("header")
+                // Root-level header (playlist-style browse, e.g. OLAK5uy_ ids)
+                var header = step1.optJSONObject("header")
+                // Album-style browse (e.g. MPREb_ ids) nests the header under
+                // contents.twoColumnBrowseResultsRenderer.header instead of the root.
+                if (header == null) {
+                    header = step1.optJSONObject("contents")
+                        ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                        ?.optJSONObject("header")
+                }
                 val detailHeader = header?.optJSONObject("musicDetailHeaderRenderer")
                     ?: header?.optJSONObject("musicImmersiveHeaderRenderer")
+                    ?: header?.optJSONObject("musicResponsiveHeaderRenderer")
                 if (detailHeader != null) {
                     albumTitle = extractText(detailHeader, "title")
                     // Thumbnail
@@ -494,7 +503,7 @@ object Innertube {
                 }
                 if (albumYear.isBlank()) {
                     // Try to find any standalone 4-digit year in header section
-                    val headerStr = step1.optJSONObject("header")?.toString() ?: ""
+                    val headerStr = header?.toString() ?: ""
                     albumYear = Regex("""(?<![\d])(20[0-2]\d|19[5-9]\d)(?![\d])""")
                         .find(headerStr)?.groupValues?.get(1) ?: ""
                 }
