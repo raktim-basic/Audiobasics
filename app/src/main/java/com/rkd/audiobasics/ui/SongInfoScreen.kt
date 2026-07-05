@@ -27,6 +27,7 @@ import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import android.content.Context
+import timber.log.Timber
 
 @Composable
 fun SongInfoScreen(
@@ -48,6 +49,7 @@ fun SongInfoScreen(
     var albumTitleLoading by remember(song.albumId) { mutableStateOf(song.albumId.isNotBlank()) }
 
     LaunchedEffect(song.albumId) {
+        Timber.tag("AlbumIdDebug").d("SongInfoScreen opened for '%s' albumId='%s'", song.title, song.albumId)
         if (song.albumId.isBlank()) {
             albumTitleLoading = false
             return@LaunchedEffect
