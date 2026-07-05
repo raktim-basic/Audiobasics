@@ -95,6 +95,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
     // ── Liked songs (SharedPrefs) ─────────────────────────────────────────────
     private val _likedSongs = MutableStateFlow<List<Song>>(loadLikedSongs())
     val likedSongs: StateFlow<List<Song>> = _likedSongs
@@ -378,6 +385,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearSearch() {
+        _searchResults.value = emptyList()
+        _isSearching.value = false
+        _searchQuery.value = ""
+    }
+
+    fun clearSearchResultsOnly() {
         _searchResults.value = emptyList()
         _isSearching.value = false
     }
@@ -989,6 +1002,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 put("isCached", song.isCached)
                 put("cacheFailed", song.cacheFailed)
                 put("isExplicit", song.isExplicit)
+                put("albumId", song.albumId)
+                put("year", song.year)
             })
         }
         prefs.edit().putString("liked_songs", arr.toString()).apply()
@@ -1006,7 +1021,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
                     isCached = isCached,
                     cacheFailed = if (isCached) false else obj.optBoolean("cacheFailed", false),
-                    isExplicit = obj.optBoolean("isExplicit", false)
+                    isExplicit = obj.optBoolean("isExplicit", false),
+                    albumId = obj.optString("albumId", ""),
+                    year = obj.optString("year", "")
                 )
             }
         } catch (_: Exception) { emptyList() }
