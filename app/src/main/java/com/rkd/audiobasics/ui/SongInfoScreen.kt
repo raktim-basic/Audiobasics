@@ -14,12 +14,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
@@ -31,6 +33,7 @@ fun SongInfoScreen(
     song: Song,
     isDarkMode: Boolean,
     context: Context,
+    savedAlbums: List<Album> = emptyList(),
     onDismiss: () -> Unit,
     onArtistClick: (String) -> Unit,   // artist name
     onAlbumClick: (String) -> Unit     // albumId
@@ -38,6 +41,32 @@ fun SongInfoScreen(
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+
+    // Resolve the album title from its id — check saved albums first (instant),
+    // then fall back to a network lookup. Falls back to showing the id if lookup fails.
+    var albumTitle by remember(song.albumId) { mutableStateOf<String?>(null) }
+    var albumTitleLoading by remember(song.albumId) { mutableStateOf(song.albumId.isNotBlank()) }
+
+    LaunchedEffect(song.albumId) {
+        if (song.albumId.isBlank()) {
+            albumTitleLoading = false
+            return@LaunchedEffect
+        }
+        val cached = savedAlbums.firstOrNull { it.id == song.albumId }
+        if (cached != null && cached.title.isNotBlank()) {
+            albumTitle = cached.title
+            albumTitleLoading = false
+            return@LaunchedEffect
+        }
+        try {
+            val (meta, _) = Innertube.getAlbumSongs(song.albumId)
+            albumTitle = meta?.title?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            albumTitle = null
+        } finally {
+            albumTitleLoading = false
+        }
+    }
 
     // Compute file size
     val fileSizeText = remember(song.id) {
@@ -144,18 +173,34 @@ fun SongInfoScreen(
                             fontSize = 16.sp,
                             color = textColor
                         )
-                        Text(
-                            text = buildAnnotatedString {
-                                withStyle(SpanStyle(
-                                    color = Color.Red,
-                                    textDecoration = TextDecoration.Underline
-                                )) { append(song.albumId) } // will be replaced with album title ideally
-                            },
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            modifier = Modifier.clickable { onAlbumClick(song.albumId) }
-                        )
+                        when {
+                            albumTitleLoading -> Text(
+                                text = "Loading…",
+                                fontFamily = NothingFont,
+                                fontStyle = FontStyle.Italic,
+                                fontSize = 16.sp,
+                                color = subColor
+                            )
+                            albumTitle != null -> Text(
+                                text = buildAnnotatedString {
+                                    withStyle(SpanStyle(
+                                        color = Color.Red,
+                                        textDecoration = TextDecoration.Underline
+                                    )) { append(albumTitle!!) }
+                                },
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                modifier = Modifier.clickable { onAlbumClick(song.albumId) }
+                            )
+                            else -> Text(
+                                text = "Unknown",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = subColor
+                            )
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                 }
