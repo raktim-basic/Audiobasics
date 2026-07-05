@@ -1023,6 +1023,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 put("duration", album.duration)
                 put("songCount", album.songCount)
                 put("youtubeUrl", album.youtubeUrl)
+                put("year", album.year)
             })
         }
         prefs.edit().putString("saved_albums", arr.toString()).apply()
@@ -1038,7 +1039,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
                     duration = obj.optLong("duration", 0L),
                     songCount = obj.optInt("songCount", 0),
-                    youtubeUrl = obj.optString("youtubeUrl", "")
+                    youtubeUrl = obj.optString("youtubeUrl", ""),
+                    year = obj.optString("year", "")
                 )
             }
         } catch (_: Exception) { emptyList() }
@@ -1061,7 +1063,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         put("id", album.id); put("title", album.title)
                         put("artist", album.artist); put("thumbnail", album.thumbnail)
                         put("duration", album.duration); put("songCount", album.songCount)
-                        put("youtubeUrl", album.youtubeUrl)
+                        put("youtubeUrl", album.youtubeUrl); put("year", album.year)
                     })
                 }
                 root.put("liked_songs", songsArr)
