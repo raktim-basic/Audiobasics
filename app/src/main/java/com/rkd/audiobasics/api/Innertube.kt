@@ -379,9 +379,17 @@ object Innertube {
                             ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                         val thumb = if (thumbnails != null && thumbnails.length() > 0)
                             thumbnails.getJSONObject(thumbnails.length() - 1).optString("url", "") else ""
+                        // Extract year from subtitle runs (any 4-digit segment)
+                        var albumYear = ""
+                        if (runs != null) {
+                            for (r in 0 until runs.length()) {
+                                val t = runs.optJSONObject(r)?.optString("text", "") ?: ""
+                                if (t.length == 4 && t.all { c -> c.isDigit() }) { albumYear = t; break }
+                            }
+                        }
                         out.add(Song(id = browseId, title = title,
                             artist = "(Album) ${artist.ifBlank { "Unknown Artist" }}",
-                            thumbnail = thumb, isAlbum = true))
+                            thumbnail = thumb, isAlbum = true, year = albumYear))
                     } catch (_: Exception) {}
                 }
             }
@@ -482,12 +490,17 @@ object Innertube {
                     }
                 }
 
-                // ── Microformat year fallback (works even if header is null) ──
+                // ── Year fallback: raw JSON search (works for any header type) ──
                 if (albumYear.isBlank()) {
-                    val uploadDate = step1.optJSONObject("microformat")
-                        ?.optJSONObject("microformatDataRenderer")?.optString("uploadDate", "")
-                    if (!uploadDate.isNullOrBlank() && uploadDate.length >= 4)
-                        albumYear = uploadDate.take(4)
+                    // Try common JSON paths for year
+                    albumYear = Regex(""""year"\s*:\s*"(\d{4})"""")
+                        .find(step1.toString())?.groupValues?.get(1) ?: ""
+                }
+                if (albumYear.isBlank()) {
+                    // Try to find any standalone 4-digit year in header section
+                    val headerStr = step1.optJSONObject("header")?.toString() ?: ""
+                    albumYear = Regex("""(?<![\d])(20[0-2]\d|19[5-9]\d)(?![\d])""")
+                        .find(headerStr)?.groupValues?.get(1) ?: ""
                 }
                 // ── Fetch songs via playlist ──
                 var playlistId: String? = step1.optJSONObject("microformat")
@@ -854,7 +867,8 @@ object Innertube {
         try {
             search(query).filter { it.isAlbum }.map { song ->
                 com.rkd.audiobasics.data.Album(id = song.id, title = song.title,
-                    artist = song.artist.removePrefix("(Album) "), thumbnail = song.thumbnail)
+                    artist = song.artist.removePrefix("(Album) "), thumbnail = song.thumbnail,
+                    year = song.year)
             }
         } catch (e: Exception) { Log.e("Innertube", "searchAlbums error: ${e.message}"); emptyList() }
     }
@@ -980,12 +994,16 @@ object Innertube {
                             val isSingles = hdrTitle.contains("single", ignoreCase = true) || hdrTitle.contains("EP")
                             if (!isAlbums && !isSingles) return@let
 
-                            // Check for "See all" / moreContentButton to get full list
-                            val moreEndpoint = carouselHeader
-                                ?.optJSONObject("moreContentButton")
-                                ?.optJSONObject("buttonRenderer")
-                                ?.optJSONObject("navigationEndpoint")
+                            // "See all" endpoint: first check title run navigation, then moreContentButton
+                            val titleNavEndpoint = carouselHeader
+                                ?.optJSONObject("title")?.optJSONArray("runs")
+                                ?.optJSONObject(0)?.optJSONObject("navigationEndpoint")
                                 ?.optJSONObject("browseEndpoint")
+                            val moreEndpoint = titleNavEndpoint
+                                ?: carouselHeader?.optJSONObject("moreContentButton")
+                                    ?.optJSONObject("buttonRenderer")
+                                    ?.optJSONObject("navigationEndpoint")
+                                    ?.optJSONObject("browseEndpoint")
 
                             val allItems = mutableListOf<JSONObject>()
                             val carouselItems = carousel.optJSONArray("contents")
@@ -1003,15 +1021,34 @@ object Innertube {
                                         if (moreParams.isNotBlank()) moreBody.put("params", moreParams)
                                         val moreJson = ytmPost("browse", moreBody)
                                         // Parse grid items from the full list response
-                                        val gridItems = moreJson?.optJSONObject("contents")
+                                        // Try multiple response shapes for the full discography page
+                                        val moreContents = moreJson?.optJSONObject("contents")
+                                        val gridItems = moreContents
                                             ?.optJSONObject("singleColumnBrowseResultsRenderer")
                                             ?.optJSONArray("tabs")?.optJSONObject(0)
                                             ?.optJSONObject("tabRenderer")?.optJSONObject("content")
                                             ?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
-                                            ?.optJSONObject(0)?.optJSONObject("musicShelfRenderer")
-                                            ?.optJSONArray("contents")
-                                            ?: moreJson?.optJSONObject("contents")
-                                                ?.optJSONObject("gridRenderer")?.optJSONArray("items")
+                                            ?.let { sections ->
+                                                val allGridItems = org.json.JSONArray()
+                                                for (s in 0 until sections.length()) {
+                                                    val shelf = sections.optJSONObject(s)
+                                                        ?.optJSONObject("musicShelfRenderer")
+                                                        ?.optJSONArray("contents")
+                                                        ?: sections.optJSONObject(s)
+                                                            ?.optJSONObject("gridRenderer")
+                                                            ?.optJSONArray("items")
+                                                    if (shelf != null)
+                                                        for (k in 0 until shelf.length()) allGridItems.put(shelf.getJSONObject(k))
+                                                }
+                                                if (allGridItems.length() > 0) allGridItems else null
+                                            }
+                                            ?: moreContents?.optJSONObject("gridRenderer")?.optJSONArray("items")
+                                            ?: moreContents?.optJSONObject("twoColumnBrowseResultsRenderer")
+                                                ?.optJSONArray("tabs")?.optJSONObject(0)
+                                                ?.optJSONObject("tabRenderer")?.optJSONObject("content")
+                                                ?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                                                ?.optJSONObject(0)?.optJSONObject("musicCarouselShelfRenderer")
+                                                ?.optJSONArray("contents")
                                         if (gridItems != null) {
                                             allItems.clear()
                                             for (j in 0 until gridItems.length())
