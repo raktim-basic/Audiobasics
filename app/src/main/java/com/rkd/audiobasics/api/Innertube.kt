@@ -300,8 +300,13 @@ object Innertube {
                                 if (seg == 1) {
                                     albumId = runObj.optJSONObject("navigationEndpoint")
                                         ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
+                                    // TEMP DEBUG: log what we actually got for segment 1 (the album run)
+                                    Timber.tag("AlbumIdDebug").d("song='%s' seg1Text='%s' albumId='%s' hasNavEndpoint=%s", title, t, albumId, runObj.has("navigationEndpoint"))
                                     break
                                 }
+                            }
+                            if (albumId.isBlank()) {
+                                Timber.tag("AlbumIdDebug").d("song='%s' NO albumId found. runsRaw=%s", title, runs.toString().take(1500))
                             }
                         }
                         out.add(Song(id = videoId, title = title, artist = artist,
@@ -435,16 +440,23 @@ object Innertube {
                 // ── Parse album metadata from step1 header (no second call needed) ──
                 // Root-level header (playlist-style browse, e.g. OLAK5uy_ ids)
                 var header = step1.optJSONObject("header")
+                var headerSource = if (header != null) "root" else "none"
                 // Album-style browse (e.g. MPREb_ ids) nests the header under
                 // contents.twoColumnBrowseResultsRenderer.header instead of the root.
                 if (header == null) {
                     header = step1.optJSONObject("contents")
                         ?.optJSONObject("twoColumnBrowseResultsRenderer")
                         ?.optJSONObject("header")
+                    if (header != null) headerSource = "twoColumnBrowseResultsRenderer"
                 }
                 val detailHeader = header?.optJSONObject("musicDetailHeaderRenderer")
                     ?: header?.optJSONObject("musicImmersiveHeaderRenderer")
                     ?: header?.optJSONObject("musicResponsiveHeaderRenderer")
+                // TEMP DEBUG: log exactly what we found for this browseId
+                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' headerSource='%s' headerKeys=%s detailHeaderFound=%s", browseId, headerSource, header?.keys()?.asSequence()?.toList(), detailHeader != null)
+                if (detailHeader == null) {
+                    Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' FULL step1 (first 2000 chars): %s", browseId, step1.toString().take(2000))
+                }
                 if (detailHeader != null) {
                     albumTitle = extractText(detailHeader, "title")
                     // Thumbnail
