@@ -10,5 +10,6 @@ data class Song(
     val albumId: String = "",
     val isCached: Boolean = false,
     val cacheFailed: Boolean = false,
-    val isExplicit: Boolean = false
+    val isExplicit: Boolean = false,
+    val year: String = ""
 )
