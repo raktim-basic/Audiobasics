@@ -248,9 +248,10 @@ fun AudiobasicsApp(
             onNavigateArtist = { name -> showPlayerDialog = false; navigate(Screen.ArtistDetail(name)) },
             onNavigateAlbum = { albumId ->
                 showPlayerDialog = false
-                // Navigate to album by id — look up from saved albums or play queue
+                // Navigate to album by id — look up from saved albums, else a blank
+                // placeholder that AlbumScreen will enrich with real metadata on load.
                 val album = vm.savedAlbums.value.firstOrNull { it.id == albumId }
-                    ?: Album(id = albumId, title = albumId, artist = "", thumbnail = "")
+                    ?: Album(id = albumId, title = "", artist = "", thumbnail = "")
                 navigate(Screen.AlbumDetail(album))
             }
         )
