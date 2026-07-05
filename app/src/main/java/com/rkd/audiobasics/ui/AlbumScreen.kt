@@ -109,7 +109,9 @@ fun AlbumScreen(
             albumSongs = songs
             if (meta != null) {
                 enrichedAlbum = album.copy(
+                    title = meta.title.ifBlank { album.title },
                     artist = meta.artist.ifBlank { album.artist },
+                    thumbnail = meta.thumbnail.ifBlank { album.thumbnail },
                     year = meta.year.ifBlank { album.year }
                 )
             }
@@ -165,7 +167,7 @@ fun AlbumScreen(
                     ) {
                         Spacer(Modifier.height(24.dp))
                         AsyncImage(
-                            model = album.thumbnail,
+                            model = enrichedAlbum.thumbnail.ifBlank { album.thumbnail },
                             contentDescription = null,
                             modifier = Modifier
                                 .fillMaxWidth(0.75f)
@@ -246,7 +248,7 @@ fun AlbumScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = album.title,
+                                text = enrichedAlbum.title.ifBlank { album.title },
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
