@@ -233,20 +233,17 @@ object Innertube {
 
     suspend fun search(query: String): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
-        val albums = mutableListOf<Song>()
         try {
             parseSongsFromYTM(ytmPost("search",
                 JSONObject().put("query", query).put("params", "EgWKAQIIAWoMEA4QChADEAQQCRAF")), songs)
-            parseAlbumsFromYTM(ytmPost("search",
-                JSONObject().put("query", query).put("params", "EgWKAQIYAWoMEA4QChADEAQQCRAF")), albums)
         } catch (e: Exception) {
             Log.e("Innertube", "YTM search error: ${e.message}")
         }
-        if (songs.isEmpty()) fallbackSearch(query, songs, albums)
-        val results = mutableListOf<Song>()
-        results.addAll(albums.take(3))
-        results.addAll(songs.sortedByDescending { it.isExplicit })
-        results
+        if (songs.isEmpty()) {
+            val albumsUnused = mutableListOf<Song>()
+            fallbackSearch(query, songs, albumsUnused)
+        }
+        songs.sortedByDescending { it.isExplicit }
     }
 
     private fun parseSongsFromYTM(response: JSONObject?, out: MutableList<Song>) {
@@ -329,7 +326,6 @@ object Innertube {
                 val items = sections.optJSONObject(si)
                     ?.optJSONObject("musicShelfRenderer")?.optJSONArray("contents") ?: continue
                 for (ii in 0 until items.length()) {
-                    if (out.size >= 3) break
                     try {
                         val item = items.getJSONObject(ii)
                             .optJSONObject("musicResponsiveListItemRenderer") ?: continue
@@ -865,7 +861,10 @@ object Innertube {
     // ── Album search ─────────────────────────────────────────────────────────
     suspend fun searchAlbums(query: String): List<com.rkd.audiobasics.data.Album> = withContext(Dispatchers.IO) {
         try {
-            search(query).filter { it.isAlbum }.map { song ->
+            val albums = mutableListOf<Song>()
+            parseAlbumsFromYTM(ytmPost("search",
+                JSONObject().put("query", query).put("params", "EgWKAQIYAWoMEA4QChADEAQQCRAF")), albums)
+            albums.map { song ->
                 com.rkd.audiobasics.data.Album(id = song.id, title = song.title,
                     artist = song.artist.removePrefix("(Album) "), thumbnail = song.thumbnail,
                     year = song.year)
