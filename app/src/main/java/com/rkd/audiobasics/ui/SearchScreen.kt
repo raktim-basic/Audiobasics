@@ -246,7 +246,8 @@ fun SearchScreen(
                                                 id = song.id,
                                                 title = song.title,
                                                 artist = song.artist.removePrefix("(Album) "),
-                                                thumbnail = song.thumbnail
+                                                thumbnail = song.thumbnail,
+                                                year = song.year
                                             )
                                         )
                                     } else {
