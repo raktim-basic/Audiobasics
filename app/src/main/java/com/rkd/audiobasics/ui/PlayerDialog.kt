@@ -59,6 +59,7 @@ fun PlayerDialog(
     val isLoading by vm.isLoading.collectAsState()
     val position by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
+    val savedAlbums by vm.savedAlbums.collectAsState()
 
     var showLyrics by remember { mutableStateOf(false) }
     var showSongInfo by remember { mutableStateOf(false) }
@@ -403,6 +404,7 @@ fun PlayerDialog(
             song = song!!,
             isDarkMode = isDarkMode,
             context = context,
+            savedAlbums = savedAlbums,
             onDismiss = { showSongInfo = false },
             onArtistClick = { artistName ->
                 showSongInfo = false
