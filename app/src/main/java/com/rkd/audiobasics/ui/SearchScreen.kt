@@ -118,7 +118,7 @@ fun SearchScreen(
     val currentSong by vm.currentSong.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
-    var query by rememberSaveable { mutableStateOf("") }
+    val query by vm.searchQuery.collectAsState()
     var showLinkDialog by rememberSaveable { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showSuggestions by rememberSaveable { mutableStateOf(false) }
@@ -199,7 +199,7 @@ fun SearchScreen(
                                     .clickable {
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                         suggestionJob?.cancel()
-                                        query = suggestion
+                                        vm.setSearchQuery(suggestion)
                                         suggestions = emptyList()
                                         showSuggestions = false
                                         vm.search(suggestion)
@@ -236,31 +236,17 @@ fun SearchScreen(
                                 isLiked = isLiked,
                                 isInQueue = false,
                                 isPlaying = isPlaying,
-                                showMenu = !song.isAlbum,
+                                showMenu = true,
                                 hapticsEnabled = hapticsEnabled,
                                 context = context,
-                                onClick = {
-                                    if (song.isAlbum) {
-                                        onAlbumClick(
-                                            Album(
-                                                id = song.id,
-                                                title = song.title,
-                                                artist = song.artist.removePrefix("(Album) "),
-                                                thumbnail = song.thumbnail,
-                                                year = song.year
-                                            )
-                                        )
-                                    } else {
-                                        vm.play(song)
-                                    }
-                                },
+                                onClick = { vm.play(song) },
                                 onAddToQueue = { vm.addToQueue(song) },
                                 onPlayNext = { vm.playNext(song) },
                                 onLike = { vm.toggleLike(song) },
                                 onShare = {},
                                 onRetryCache = { vm.retryCache(song) },
                                 onRemoveLike = { vm.toggleLike(song) },
-                                onAddTo = if (!song.isAlbum) { { onAddTo(song) } } else null
+                                onAddTo = { onAddTo(song) }
                             )
                         }
                     }
@@ -362,9 +348,9 @@ fun SearchScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = {
-                    query = it
+                    vm.setSearchQuery(it)
                     if (it.isNotBlank()) {
-                        if (results.isNotEmpty()) vm.clearSearch()
+                        if (results.isNotEmpty()) vm.clearSearchResultsOnly()
                         showSuggestions = true
                     } else {
                         showSuggestions = false
