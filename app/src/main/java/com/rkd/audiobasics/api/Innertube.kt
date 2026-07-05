@@ -453,9 +453,23 @@ object Innertube {
                     ?: header?.optJSONObject("musicImmersiveHeaderRenderer")
                     ?: header?.optJSONObject("musicResponsiveHeaderRenderer")
                 // TEMP DEBUG: log exactly what we found for this browseId
-                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' headerSource='%s' headerKeys=%s detailHeaderFound=%s", browseId, headerSource, header?.keys()?.asSequence()?.toList(), detailHeader != null)
+                val hasSecondaryContents = step1.optJSONObject("contents")
+                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                    ?.has("secondaryContents") ?: false
+                val hasMicroformat = step1.has("microformat")
+                val topLevelKeys = step1.keys().asSequence().toList()
+                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' headerSource='%s' detailHeaderFound=%s hasSecondaryContents=%s hasMicroformat=%s topLevelKeys=%s", browseId, headerSource, detailHeader != null, hasSecondaryContents, hasMicroformat, topLevelKeys)
                 if (detailHeader == null) {
-                    Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' FULL step1 (first 2000 chars): %s", browseId, step1.toString().take(2000))
+                    val fullStr = step1.toString()
+                    val chunkSize = 3000
+                    var idx = 0
+                    var part = 0
+                    while (idx < fullStr.length && part < 6) {
+                        val end = minOf(idx + chunkSize, fullStr.length)
+                        Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' step1 part%d: %s", browseId, part, fullStr.substring(idx, end))
+                        idx = end
+                        part++
+                    }
                 }
                 if (detailHeader != null) {
                     albumTitle = extractText(detailHeader, "title")
