@@ -132,6 +132,17 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _savedAlbums = MutableStateFlow<List<Album>>(loadSavedAlbums())
     val savedAlbums: StateFlow<List<Album>> = _savedAlbums
 
+    // In-memory cache of album metadata resolved via a live lookup (e.g. from Song Info),
+    // separate from savedAlbums/library — avoids re-fetching the same album repeatedly
+    // in a single app session without implying the user saved it to their library.
+    private val _resolvedAlbumCache = MutableStateFlow<Map<String, Album>>(emptyMap())
+    val resolvedAlbumCache: StateFlow<Map<String, Album>> = _resolvedAlbumCache
+
+    fun cacheResolvedAlbum(album: Album) {
+        if (album.id.isBlank() || album.title.isBlank()) return
+        _resolvedAlbumCache.value = _resolvedAlbumCache.value + (album.id to album)
+    }
+
     // ── Settings ──────────────────────────────────────────────────────────────
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
