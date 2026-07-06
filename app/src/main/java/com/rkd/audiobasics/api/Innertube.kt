@@ -429,8 +429,15 @@ object Innertube {
             var albumYear = ""
             var albumThumb = ""
             try {
-                val step1 = ytmPost("browse", JSONObject().put("browseId", browseId))
+                // Playlist-style ids (e.g. OLAK5uy_..., PL..., RDCLAK...) must be browsed with
+                // a "VL" prefix — passing them bare causes an INVALID_ARGUMENT (400) error.
+                // Album-style ids (MPREb_...) must NOT be prefixed.
+                val effectiveBrowseId = if (!browseId.startsWith("MPREb_") && !browseId.startsWith("VL")) {
+                    "VL$browseId"
+                } else browseId
+                val step1 = ytmPost("browse", JSONObject().put("browseId", effectiveBrowseId))
                     ?: return@withContext Pair(null, emptyList())
+                Timber.tag("AlbumIdDebug").d("getAlbumSongs INPUT browseId='%s' effectiveBrowseId='%s' topLevelKeys=%s", browseId, effectiveBrowseId, step1.keys().asSequence().toList())
 
                 // ── Metadata: album browse responses (MPREb_ ids) don't return a header
                 // renderer at all — the only reliable source of title/artist/thumbnail is
@@ -573,6 +580,14 @@ object Innertube {
                         firstSection.optJSONObject("musicShelfRenderer")?.optJSONArray("contents")
                             ?: firstSection.optJSONObject("musicPlaylistShelfRenderer")?.optJSONArray("contents")
                     }
+                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' shelfContentsFound=%s shelfLen=%s", browseId, shelfContents != null, shelfContents?.length())
+                if (shelfContents == null) {
+                    Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' NO SHELF. topLevelKeys=%s twoColKeys=%s", browseId, step1.keys().asSequence().toList(), step1.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")?.keys()?.asSequence()?.toList())
+                    val singleCol = step1.optJSONObject("contents")?.optJSONObject("singleColumnBrowseResultsRenderer")
+                    if (singleCol != null) {
+                        Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' HAS singleColumnBrowseResultsRenderer, keys=%s", browseId, singleCol.keys().asSequence().toList())
+                    }
+                }
                 if (shelfContents != null) {
                     for (i in 0 until shelfContents.length()) {
                         try {
