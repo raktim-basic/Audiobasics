@@ -453,24 +453,20 @@ object Innertube {
                     ?: header?.optJSONObject("musicImmersiveHeaderRenderer")
                     ?: header?.optJSONObject("musicResponsiveHeaderRenderer")
                 // TEMP DEBUG: log exactly what we found for this browseId
-                val hasSecondaryContents = step1.optJSONObject("contents")
-                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
-                    ?.has("secondaryContents") ?: false
-                val hasMicroformat = step1.has("microformat")
+                val twoCol = step1.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
+                val hasSecondaryContents = twoCol?.has("secondaryContents") ?: false
+                val hasTabs = twoCol?.has("tabs") ?: false
                 val topLevelKeys = step1.keys().asSequence().toList()
-                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' headerSource='%s' detailHeaderFound=%s hasSecondaryContents=%s hasMicroformat=%s topLevelKeys=%s", browseId, headerSource, detailHeader != null, hasSecondaryContents, hasMicroformat, topLevelKeys)
-                if (detailHeader == null) {
-                    val fullStr = step1.toString()
-                    val chunkSize = 3000
-                    var idx = 0
-                    var part = 0
-                    while (idx < fullStr.length && part < 6) {
-                        val end = minOf(idx + chunkSize, fullStr.length)
-                        Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' step1 part%d: %s", browseId, part, fullStr.substring(idx, end))
-                        idx = end
-                        part++
-                    }
+                val microformat = step1.optJSONObject("microformat")
+                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' headerSource='%s' detailHeaderFound=%s hasSecondaryContents=%s hasTabs=%s topLevelKeys=%s", browseId, headerSource, detailHeader != null, hasSecondaryContents, hasTabs, topLevelKeys)
+                if (microformat != null) {
+                    Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' microformat: %s", browseId, microformat.toString())
                 }
+                // Also check the very first shelf item's header sibling keys (in case header
+                // lives alongside secondaryContents rather than as a separate top-level key)
+                val secondaryContentsObj = twoCol?.optJSONObject("secondaryContents")
+                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' twoColKeys=%s secondaryContentsKeys=%s", browseId, twoCol?.keys()?.asSequence()?.toList(), secondaryContentsObj?.keys()?.asSequence()?.toList())
+
                 if (detailHeader != null) {
                     albumTitle = extractText(detailHeader, "title")
                     // Thumbnail
