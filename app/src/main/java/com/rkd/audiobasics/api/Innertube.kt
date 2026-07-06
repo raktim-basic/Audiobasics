@@ -300,13 +300,8 @@ object Innertube {
                                 if (seg == 1) {
                                     albumId = runObj.optJSONObject("navigationEndpoint")
                                         ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
-                                    // TEMP DEBUG: log what we actually got for segment 1 (the album run)
-                                    Timber.tag("AlbumIdDebug").d("song='%s' seg1Text='%s' albumId='%s' hasNavEndpoint=%s", title, t, albumId, runObj.has("navigationEndpoint"))
                                     break
                                 }
-                            }
-                            if (albumId.isBlank()) {
-                                Timber.tag("AlbumIdDebug").d("song='%s' NO albumId found. runsRaw=%s", title, runs.toString().take(1500))
                             }
                         }
                         out.add(Song(id = videoId, title = title, artist = artist,
@@ -437,48 +432,76 @@ object Innertube {
                 val step1 = ytmPost("browse", JSONObject().put("browseId", browseId))
                     ?: return@withContext Pair(null, emptyList())
 
-                // ── Parse album metadata from step1 header (no second call needed) ──
-                // Root-level header (playlist-style browse, e.g. OLAK5uy_ ids)
-                var header = step1.optJSONObject("header")
-                var headerSource = if (header != null) "root" else "none"
-                // Album-style browse (e.g. MPREb_ ids) nests the header under
-                // contents.twoColumnBrowseResultsRenderer.header instead of the root.
-                if (header == null) {
-                    header = step1.optJSONObject("contents")
-                        ?.optJSONObject("twoColumnBrowseResultsRenderer")
-                        ?.optJSONObject("header")
-                    if (header != null) headerSource = "twoColumnBrowseResultsRenderer"
+                // ── Metadata: album browse responses (MPREb_ ids) don't return a header
+                // renderer at all — the only reliable source of title/artist/thumbnail is
+                // the microformat block, which is always present. ──
+                val microformatData = step1.optJSONObject("microformat")
+                    ?.optJSONObject("microformatDataRenderer")
+
+                // microformat title is formatted as "<Album Title> - Album by <Artist>"
+                // (sometimes "- Single by" / "- EP by"). Split it apart.
+                val rawTitle = microformatData?.optString("title", "") ?: ""
+                val titleMatch = Regex("""^(.*?)\s*-\s*(?:Album|Single|EP|Playlist)\s+by\s+(.+)$""", RegexOption.IGNORE_CASE)
+                    .find(rawTitle)
+                if (titleMatch != null) {
+                    albumTitle = titleMatch.groupValues[1].trim()
+                    if (albumArtist.isBlank() || albumArtist == fallbackArtist) {
+                        albumArtist = titleMatch.groupValues[2].trim()
+                    }
+                } else if (rawTitle.isNotBlank()) {
+                    albumTitle = rawTitle
                 }
-                val detailHeader = header?.optJSONObject("musicDetailHeaderRenderer")
+
+                val thumbArr = microformatData?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                if (thumbArr != null && thumbArr.length() > 0) {
+                    albumThumb = thumbArr.getJSONObject(thumbArr.length() - 1).optString("url", "")
+                }
+
+                // Also still try a classic header renderer. Per ViMusic's proven approach,
+                // for twoColumnBrowseResultsRenderer responses the header is NOT a top-level
+                // "header" key — it's the first item inside the primary tab's own section list:
+                // contents.twoColumnBrowseResultsRenderer.tabs[0].tabRenderer.content
+                //   .sectionListRenderer.contents[0].musicResponsiveHeaderRenderer
+                var header = step1.optJSONObject("header")
+                val twoColumn = step1.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
+                if (header == null) {
+                    header = twoColumn?.optJSONObject("header")
+                }
+                var detailHeader = header?.optJSONObject("musicDetailHeaderRenderer")
                     ?: header?.optJSONObject("musicImmersiveHeaderRenderer")
                     ?: header?.optJSONObject("musicResponsiveHeaderRenderer")
-                // TEMP DEBUG: log exactly what we found for this browseId
-                val twoCol = step1.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
-                val hasSecondaryContents = twoCol?.has("secondaryContents") ?: false
-                val hasTabs = twoCol?.has("tabs") ?: false
-                val topLevelKeys = step1.keys().asSequence().toList()
-                val microformat = step1.optJSONObject("microformat")
-                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' headerSource='%s' detailHeaderFound=%s hasSecondaryContents=%s hasTabs=%s topLevelKeys=%s", browseId, headerSource, detailHeader != null, hasSecondaryContents, hasTabs, topLevelKeys)
-                if (microformat != null) {
-                    Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' microformat: %s", browseId, microformat.toString())
+                if (detailHeader == null) {
+                    val tabHeaderContainer = twoColumn?.optJSONArray("tabs")
+                        ?.optJSONObject(0)?.optJSONObject("tabRenderer")
+                        ?.optJSONObject("content")?.optJSONObject("sectionListRenderer")
+                        ?.optJSONArray("contents")?.optJSONObject(0)
+                    detailHeader = tabHeaderContainer?.optJSONObject("musicResponsiveHeaderRenderer")
+                        ?: tabHeaderContainer?.optJSONObject("musicDetailHeaderRenderer")
+                        ?: tabHeaderContainer?.optJSONObject("musicImmersiveHeaderRenderer")
                 }
-                // Also check the very first shelf item's header sibling keys (in case header
-                // lives alongside secondaryContents rather than as a separate top-level key)
-                val secondaryContentsObj = twoCol?.optJSONObject("secondaryContents")
-                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' twoColKeys=%s secondaryContentsKeys=%s", browseId, twoCol?.keys()?.asSequence()?.toList(), secondaryContentsObj?.keys()?.asSequence()?.toList())
-
+                // Also check the single-column response shape (used for some browse variants)
+                if (detailHeader == null) {
+                    val singleColHeaderContainer = step1.optJSONObject("contents")
+                        ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                        ?.optJSONArray("tabs")?.optJSONObject(0)?.optJSONObject("tabRenderer")
+                        ?.optJSONObject("content")?.optJSONObject("sectionListRenderer")
+                        ?.optJSONArray("contents")?.optJSONObject(0)
+                    detailHeader = singleColHeaderContainer?.optJSONObject("musicResponsiveHeaderRenderer")
+                        ?: singleColHeaderContainer?.optJSONObject("musicDetailHeaderRenderer")
+                        ?: (header?.optJSONObject("musicDetailHeaderRenderer"))
+                }
                 if (detailHeader != null) {
-                    albumTitle = extractText(detailHeader, "title")
-                    // Thumbnail
-                    val thumbArr = detailHeader.optJSONObject("thumbnail")
+                    val headerTitle = extractText(detailHeader, "title")
+                    if (headerTitle.isNotBlank()) albumTitle = headerTitle
+                    val headerThumbArr = detailHeader.optJSONObject("thumbnail")
                         ?.optJSONObject("croppedSquareThumbnailRenderer")
                         ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                         ?: detailHeader.optJSONObject("thumbnail")
                         ?.optJSONObject("musicThumbnailRenderer")
                         ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                    if (thumbArr != null && thumbArr.length() > 0)
-                        albumThumb = thumbArr.getJSONObject(thumbArr.length() - 1).optString("url", "")
-                    // Parse subtitle segments: typically "Album • Artist • Year • N songs"
+                    if (headerThumbArr != null && headerThumbArr.length() > 0)
+                        albumThumb = headerThumbArr.getJSONObject(headerThumbArr.length() - 1).optString("url", "")
+                    // Subtitle segments: typically "Album • Artist • Year • N songs"
                     val subtitleRuns = detailHeader.optJSONObject("subtitle")?.optJSONArray("runs")
                     if (subtitleRuns != null) {
                         val segments = mutableListOf<String>()
@@ -501,14 +524,14 @@ object Innertube {
                             }
                         }
                     }
-                    // Also try microformat for year (reliable fallback)
-                    if (albumYear.isBlank()) {
-                        val uploadDate = step1.optJSONObject("microformat")
-                            ?.optJSONObject("microformatDataRenderer")?.optString("uploadDate", "")
-                        if (!uploadDate.isNullOrBlank() && uploadDate.length >= 4)
-                            albumYear = uploadDate.take(4)
+                    // Some header variants (musicResponsiveHeaderRenderer) put the artist in
+                    // straplineTextOne instead of a dedicated "artist" field.
+                    val straplineRuns = detailHeader.optJSONObject("straplineTextOne")?.optJSONArray("runs")
+                    if (straplineRuns != null && straplineRuns.length() > 0 && (albumArtist.isBlank() || albumArtist == fallbackArtist)) {
+                        val parts = (0 until straplineRuns.length())
+                            .mapNotNull { straplineRuns.optJSONObject(it)?.optString("text", "")?.takeIf { t -> t.isNotBlank() } }
+                        if (parts.isNotEmpty()) albumArtist = parts.joinToString("")
                     }
-                    // Also check dedicated artist field (some header types have it)
                     val artistRuns = detailHeader.optJSONObject("artist")?.optJSONArray("runs")
                     if (artistRuns != null && artistRuns.length() > 0) {
                         val parts = (0 until artistRuns.length())
@@ -517,77 +540,78 @@ object Innertube {
                     }
                 }
 
-                // ── Year fallback: raw JSON search (works for any header type) ──
+                // ── Year: microformat's description usually contains a release date
+                // ("...released on April 14, 2017...") — pull the year from there first. ──
                 if (albumYear.isBlank()) {
-                    // Try common JSON paths for year
+                    val description = microformatData?.optString("description", "") ?: ""
+                    albumYear = Regex("""released on [A-Za-z]+ \d{1,2},\s*(\d{4})""")
+                        .find(description)?.groupValues?.get(1) ?: ""
+                }
+                if (albumYear.isBlank()) {
+                    val uploadDate = microformatData?.optString("uploadDate", "")
+                    if (!uploadDate.isNullOrBlank() && uploadDate.length >= 4) albumYear = uploadDate.take(4)
+                }
+                if (albumYear.isBlank()) {
                     albumYear = Regex(""""year"\s*:\s*"(\d{4})"""")
                         .find(step1.toString())?.groupValues?.get(1) ?: ""
                 }
                 if (albumYear.isBlank()) {
-                    // Try to find any standalone 4-digit year in header section
-                    val headerStr = header?.toString() ?: ""
+                    val description = microformatData?.optString("description", "") ?: ""
                     albumYear = Regex("""(?<![\d])(20[0-2]\d|19[5-9]\d)(?![\d])""")
-                        .find(headerStr)?.groupValues?.get(1) ?: ""
+                        .find(description)?.groupValues?.get(1) ?: ""
                 }
-                // ── Fetch songs via playlist ──
-                var playlistId: String? = step1.optJSONObject("microformat")
-                    ?.optJSONObject("microformatDataRenderer")?.optString("urlCanonical")
-                    ?.substringAfterLast("=")?.takeIf { it.isNotBlank() }
-                if (playlistId == null && browseId.startsWith("OLAK5uy_")) playlistId = browseId
-                if (playlistId == null)
-                    playlistId = Regex("\"playlistId\":\"(OLAK5uy_[^\"]+)\"")
-                        .find(step1.toString())?.groupValues?.get(1)
 
-                if (playlistId != null) {
-                    val step2 = ytmPost("browse", JSONObject().put("browseId", "VL$playlistId"))
-                    val shelfContents = step2?.optJSONObject("contents")
-                        ?.optJSONObject("twoColumnBrowseResultsRenderer")
-                        ?.optJSONObject("secondaryContents")
-                        ?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
-                        ?.optJSONObject(0)?.optJSONObject("musicPlaylistShelfRenderer")
-                        ?.optJSONArray("contents")
-                    if (shelfContents != null) {
-                        for (i in 0 until shelfContents.length()) {
-                            try {
-                                val item = shelfContents.getJSONObject(i)
-                                    .optJSONObject("musicResponsiveListItemRenderer") ?: continue
-                                val videoId = item.optJSONObject("playlistItemData")
-                                    ?.optString("videoId")?.takeIf { it.isNotBlank() }
-                                    ?: item.optJSONObject("overlay")
-                                        ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                                        ?.optJSONObject("content")?.optJSONObject("musicPlayButtonRenderer")
-                                        ?.optJSONObject("playNavigationEndpoint")
-                                        ?.optJSONObject("watchEndpoint")?.optString("videoId") ?: continue
-                                val col0 = item.optJSONArray("flexColumns")?.optJSONObject(0)
-                                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                                val songTitle = extractText(col0, "text"); if (songTitle.isBlank()) continue
-                                // Per-song artist from col1 subtitle (same logic as parseSongsFromYTM)
-                                val col1 = item.optJSONArray("flexColumns")?.optJSONObject(1)
-                                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                                val col1Runs = col1?.optJSONObject("text")?.optJSONArray("runs")
-                                var songArtist = albumArtist.ifBlank { fallbackArtist.ifBlank { "Unknown Artist" } }
-                                if (col1Runs != null) {
-                                    val parts = mutableListOf<String>()
-                                    var hitDot = false
-                                    for (r in 0 until col1Runs.length()) {
-                                        val t = col1Runs.optJSONObject(r)?.optString("text", "") ?: ""
-                                        if (t == " • " || t == "•") { if (!hitDot) { hitDot = true; continue } else break }
-                                        if (t.isBlank()) continue
-                                        if (!hitDot) parts.add(t)
-                                    }
-                                    if (parts.isNotEmpty()) songArtist = parts.joinToString("")
+                // ── Tracklist: the browse response for MPREb_ ids already contains the
+                // full tracklist directly under secondaryContents — no second call needed.
+                // (A second browse using a derived VL<playlistId> id is unreliable and can
+                // 400 for these ids, so we no longer make that call.) ──
+                val shelfContents = step1.optJSONObject("contents")
+                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                    ?.optJSONObject("secondaryContents")
+                    ?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                    ?.optJSONObject(0)?.let { firstSection ->
+                        firstSection.optJSONObject("musicShelfRenderer")?.optJSONArray("contents")
+                            ?: firstSection.optJSONObject("musicPlaylistShelfRenderer")?.optJSONArray("contents")
+                    }
+                if (shelfContents != null) {
+                    for (i in 0 until shelfContents.length()) {
+                        try {
+                            val item = shelfContents.getJSONObject(i)
+                                .optJSONObject("musicResponsiveListItemRenderer") ?: continue
+                            val videoId = item.optJSONObject("playlistItemData")
+                                ?.optString("videoId")?.takeIf { it.isNotBlank() }
+                                ?: item.optJSONObject("overlay")
+                                    ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                                    ?.optJSONObject("content")?.optJSONObject("musicPlayButtonRenderer")
+                                    ?.optJSONObject("playNavigationEndpoint")
+                                    ?.optJSONObject("watchEndpoint")?.optString("videoId") ?: continue
+                            val col0 = item.optJSONArray("flexColumns")?.optJSONObject(0)
+                                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                            val songTitle = extractText(col0, "text"); if (songTitle.isBlank()) continue
+                            // Per-song artist from col1 subtitle (same logic as parseSongsFromYTM)
+                            val col1 = item.optJSONArray("flexColumns")?.optJSONObject(1)
+                                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                            val col1Runs = col1?.optJSONObject("text")?.optJSONArray("runs")
+                            var songArtist = albumArtist.ifBlank { fallbackArtist.ifBlank { "Unknown Artist" } }
+                            if (col1Runs != null) {
+                                val parts = mutableListOf<String>()
+                                var hitDot = false
+                                for (r in 0 until col1Runs.length()) {
+                                    val t = col1Runs.optJSONObject(r)?.optString("text", "") ?: ""
+                                    if (t == " • " || t == "•") { if (!hitDot) { hitDot = true; continue } else break }
+                                    if (t.isBlank()) continue
+                                    if (!hitDot) parts.add(t)
                                 }
-                                songs.add(Song(id = videoId, title = songTitle, artist = songArtist,
-                                    thumbnail = ytThumbnail(videoId), duration = parseDurationMs(item),
-                                    albumId = browseId, isExplicit = parseExplicit(item.optJSONArray("badges"))))
-                            } catch (_: Exception) {}
-                        }
+                                if (parts.isNotEmpty()) songArtist = parts.joinToString("")
+                            }
+                            songs.add(Song(id = videoId, title = songTitle, artist = songArtist,
+                                thumbnail = ytThumbnail(videoId), duration = parseDurationMs(item),
+                                albumId = browseId, isExplicit = parseExplicit(item.optJSONArray("badges"))))
+                        } catch (_: Exception) {}
                     }
                 }
-                // ── If header gave no better artist, derive from songs ──
-                // (covers cases where subtitle has no artist segment)
+                // ── If header/microformat gave no better artist, derive from songs ──
                 if (albumArtist == fallbackArtist && songs.isNotEmpty()) {
-                    // Find the most common artist string (usually the album artist for non-collab tracks)
                     albumArtist = songs.groupBy { it.artist }
                         .maxByOrNull { it.value.size }?.key ?: fallbackArtist
                 }
