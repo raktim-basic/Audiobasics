@@ -35,6 +35,8 @@ fun SongInfoScreen(
     isDarkMode: Boolean,
     context: Context,
     savedAlbums: List<Album> = emptyList(),
+    resolvedAlbumCache: Map<String, Album> = emptyMap(),
+    onCacheResolvedAlbum: (Album) -> Unit = {},
     onDismiss: () -> Unit,
     onArtistClick: (String) -> Unit,   // artist name
     onAlbumClick: (String) -> Unit     // albumId
@@ -43,18 +45,18 @@ fun SongInfoScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
 
-    // Resolve the album title from its id — check saved albums first (instant),
-    // then fall back to a network lookup. Falls back to showing the id if lookup fails.
+    // Resolve the album title from its id — check saved albums / already-resolved cache
+    // first (instant, no network), then fall back to a network lookup only once per album.
     var albumTitle by remember(song.albumId) { mutableStateOf<String?>(null) }
     var albumTitleLoading by remember(song.albumId) { mutableStateOf(song.albumId.isNotBlank()) }
 
     LaunchedEffect(song.albumId) {
-        Timber.tag("AlbumIdDebug").d("SongInfoScreen opened for '%s' albumId='%s'", song.title, song.albumId)
         if (song.albumId.isBlank()) {
             albumTitleLoading = false
             return@LaunchedEffect
         }
         val cached = savedAlbums.firstOrNull { it.id == song.albumId }
+            ?: resolvedAlbumCache[song.albumId]
         if (cached != null && cached.title.isNotBlank()) {
             albumTitle = cached.title
             albumTitleLoading = false
@@ -63,6 +65,9 @@ fun SongInfoScreen(
         try {
             val (meta, _) = Innertube.getAlbumSongs(song.albumId)
             albumTitle = meta?.title?.takeIf { it.isNotBlank() }
+            if (meta != null && meta.title.isNotBlank()) {
+                onCacheResolvedAlbum(meta)
+            }
         } catch (_: Exception) {
             albumTitle = null
         } finally {
