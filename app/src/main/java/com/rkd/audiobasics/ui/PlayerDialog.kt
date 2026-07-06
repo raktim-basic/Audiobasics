@@ -60,6 +60,7 @@ fun PlayerDialog(
     val position by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
     val savedAlbums by vm.savedAlbums.collectAsState()
+    val resolvedAlbumCache by vm.resolvedAlbumCache.collectAsState()
 
     var showLyrics by remember { mutableStateOf(false) }
     var showSongInfo by remember { mutableStateOf(false) }
@@ -405,6 +406,8 @@ fun PlayerDialog(
             isDarkMode = isDarkMode,
             context = context,
             savedAlbums = savedAlbums,
+            resolvedAlbumCache = resolvedAlbumCache,
+            onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
             onDismiss = { showSongInfo = false },
             onArtistClick = { artistName ->
                 showSongInfo = false
