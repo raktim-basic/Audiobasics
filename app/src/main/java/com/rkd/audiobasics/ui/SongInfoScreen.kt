@@ -63,7 +63,7 @@ fun SongInfoScreen(
             return@LaunchedEffect
         }
         try {
-            val (meta, _) = Innertube.getAlbumSongs(song.albumId)
+            val (meta, _) = Innertube.getAlbumSongs(song.albumId, caller = "SongInfoScreen")
             albumTitle = meta?.title?.takeIf { it.isNotBlank() }
             if (meta != null && meta.title.isNotBlank()) {
                 onCacheResolvedAlbum(meta)
@@ -249,3 +249,4 @@ private fun InfoRow(label: String, value: String, textColor: Color) {
         color = textColor
     )
 }
+
