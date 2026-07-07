@@ -132,15 +132,39 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _savedAlbums = MutableStateFlow<List<Album>>(loadSavedAlbums())
     val savedAlbums: StateFlow<List<Album>> = _savedAlbums
 
-    // In-memory cache of album metadata resolved via a live lookup (e.g. from Song Info),
-    // separate from savedAlbums/library — avoids re-fetching the same album repeatedly
-    // in a single app session without implying the user saved it to their library.
-    private val _resolvedAlbumCache = MutableStateFlow<Map<String, Album>>(emptyMap())
+    // Persistent (SharedPrefs-backed) cache of album metadata resolved via a live lookup —
+    // populated automatically as songs are played or cached for offline use, so Song Info
+    // (and offline playback) can show the album without a network call. Keyed by albumId.
+    private val _resolvedAlbumCache = MutableStateFlow<Map<String, Album>>(loadResolvedAlbumCache())
     val resolvedAlbumCache: StateFlow<Map<String, Album>> = _resolvedAlbumCache
 
     fun cacheResolvedAlbum(album: Album) {
         if (album.id.isBlank() || album.title.isBlank()) return
+        if (_resolvedAlbumCache.value[album.id]?.title == album.title) return // no-op, avoid redundant writes
         _resolvedAlbumCache.value = _resolvedAlbumCache.value + (album.id to album)
+        saveResolvedAlbumCache()
+    }
+
+    // Resolves an album's metadata in the background if not already known, and persists it.
+    // Safe to call repeatedly — no-ops instantly if already resolved or already in flight.
+    private val resolvingAlbumIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private fun resolveAlbumInBackground(albumId: String, fallbackArtist: String = "") {
+        if (albumId.isBlank()) return
+        if (_resolvedAlbumCache.value.containsKey(albumId)) return
+        if (_savedAlbums.value.any { it.id == albumId }) return
+        if (!resolvingAlbumIds.add(albumId)) return // already resolving
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val (meta, _) = Innertube.getAlbumSongs(albumId, fallbackArtist, caller = "autoResolve")
+                if (meta != null && meta.title.isNotBlank()) {
+                    cacheResolvedAlbum(meta)
+                }
+            } catch (e: Exception) {
+                Log.e("YTLite", "Background album resolve failed for $albumId: ${e.message}")
+            } finally {
+                resolvingAlbumIds.remove(albumId)
+            }
+        }
     }
 
     // ── Settings ──────────────────────────────────────────────────────────────
@@ -415,6 +439,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _queue.value = listOf(song)
             _currentPosition.value = 0L
             _duration.value = 0L
+            if (song.albumId.isNotBlank()) resolveAlbumInBackground(song.albumId, song.artist)
             try {
                 controller?.run {
                     setMediaItem(buildMediaItem(song, resolveUri(song)))
@@ -452,6 +477,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _queue.value = queue
             _currentPosition.value = 0L
             _duration.value = 0L
+            if (song.albumId.isNotBlank()) resolveAlbumInBackground(song.albumId, song.artist)
             try {
                 val songIndex = queue.indexOf(song).takeIf { it >= 0 } ?: 0
                 val mediaItems = queue.map { s -> buildMediaItem(s, resolveUri(s)) }
@@ -697,6 +723,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun cacheSongSilently(song: Song): Boolean {
+        // Resolve this song's album metadata in the background if not already known,
+        // so it's ready (and persisted) by the time the song is played offline or
+        // Song Info is opened — no need to wait for the user to open Song Info first.
+        if (song.albumId.isNotBlank()) {
+            resolveAlbumInBackground(song.albumId, song.artist)
+        }
         return try {
             when (val result = CacheManager.cacheSong(getApplication(), song)) {
                 is CacheResult.Success -> {
@@ -1038,6 +1070,35 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         } catch (_: Exception) { emptyList() }
+    }
+
+    private fun saveResolvedAlbumCache() {
+        val arr = JSONArray()
+        _resolvedAlbumCache.value.values.forEach { album ->
+            arr.put(JSONObject().apply {
+                put("id", album.id)
+                put("title", album.title)
+                put("artist", album.artist)
+                put("thumbnail", album.thumbnail)
+                put("year", album.year)
+            })
+        }
+        prefs.edit().putString("resolved_album_cache", arr.toString()).apply()
+    }
+
+    private fun loadResolvedAlbumCache(): Map<String, Album> {
+        return try {
+            val arr = JSONArray(prefs.getString("resolved_album_cache", "[]") ?: "[]")
+            (0 until arr.length()).associate { i ->
+                val obj = arr.getJSONObject(i)
+                val album = Album(
+                    id = obj.getString("id"), title = obj.getString("title"),
+                    artist = obj.optString("artist", ""), thumbnail = obj.optString("thumbnail", ""),
+                    year = obj.optString("year", "")
+                )
+                album.id to album
+            }
+        } catch (_: Exception) { emptyMap() }
     }
 
     private fun saveSavedAlbums() {
