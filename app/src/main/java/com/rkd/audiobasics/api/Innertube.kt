@@ -421,7 +421,7 @@ object Innertube {
         } catch (e: Exception) { Log.e("Innertube", "Fallback search error: ${e.message}") }
     }
 
-    suspend fun getAlbumSongs(browseId: String, fallbackArtist: String = ""): Pair<Album?, List<Song>> =
+    suspend fun getAlbumSongs(browseId: String, fallbackArtist: String = "", caller: String = "unknown"): Pair<Album?, List<Song>> =
         withContext(Dispatchers.IO) {
             val songs = mutableListOf<Song>()
             var albumTitle = ""
@@ -437,7 +437,7 @@ object Innertube {
                 } else browseId
                 val step1 = ytmPost("browse", JSONObject().put("browseId", effectiveBrowseId))
                     ?: return@withContext Pair(null, emptyList())
-                Timber.tag("AlbumIdDebug").d("getAlbumSongs INPUT browseId='%s' effectiveBrowseId='%s' topLevelKeys=%s", browseId, effectiveBrowseId, step1.keys().asSequence().toList())
+                Timber.tag("AlbumIdDebug").d("getAlbumSongs[%s] INPUT browseId='%s' effectiveBrowseId='%s' topLevelKeys=%s", caller, browseId, effectiveBrowseId, step1.keys().asSequence().toList())
 
                 // ── Metadata: album browse responses (MPREb_ ids) don't return a header
                 // renderer at all — the only reliable source of title/artist/thumbnail is
@@ -631,6 +631,7 @@ object Innertube {
                         .maxByOrNull { it.value.size }?.key ?: fallbackArtist
                 }
             } catch (e: Exception) { Log.e("Innertube", "getAlbumSongs error: ${e.message}") }
+            Timber.tag("AlbumIdDebug").d("getAlbumSongs[%s] RESULT browseId='%s' albumTitle='%s' albumArtist='%s' albumYear='%s' songCount=%d", caller, browseId, albumTitle, albumArtist, albumYear, songs.size)
             Pair(Album(id = browseId, title = albumTitle, artist = albumArtist,
                 thumbnail = albumThumb, year = albumYear), songs)
         }
