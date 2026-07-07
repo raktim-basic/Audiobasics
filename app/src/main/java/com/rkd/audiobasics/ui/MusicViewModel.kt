@@ -895,7 +895,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             // Cache all songs of this album
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val (_, songs) = Innertube.getAlbumSongs(album.id, album.artist)
+                    val (_, songs) = Innertube.getAlbumSongs(album.id, album.artist, caller = "saveAlbum")
                     songs.forEach { song ->
                         cacheSemaphore.withPermit { cacheSongSilently(song) }
                     }
@@ -914,7 +914,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         // Remove cached songs that aren't liked or in custom playlists
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val (_, songs) = Innertube.getAlbumSongs(album.id, album.artist)
+                val (_, songs) = Innertube.getAlbumSongs(album.id, album.artist, caller = "unsaveAlbum")
                 songs.forEach { song ->
                     val liked = isLiked(song.id)
                     val inPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
