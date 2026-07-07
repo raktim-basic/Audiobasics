@@ -104,7 +104,8 @@ fun AlbumScreen(
         try {
             val (meta, songs) = com.rkd.audiobasics.api.Innertube.getAlbumSongs(
                 browseId = album.id,
-                fallbackArtist = album.artist
+                fallbackArtist = album.artist,
+                caller = "AlbumScreen"
             )
             albumSongs = songs
             if (meta != null) {
