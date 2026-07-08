@@ -160,7 +160,8 @@ fun CustomPlaylistScreen(
                     title = entity.title,
                     artist = entity.artist,
                     thumbnail = entity.thumbnail,
-                    isExplicit = entity.isExplicit
+                    isExplicit = entity.isExplicit,
+                    albumId = entity.albumId
                 )
                 SongItem(
                     song = song,
@@ -171,7 +172,7 @@ fun CustomPlaylistScreen(
                     context = context,
                     onClick = {
                         val queue = filteredSongs.map {
-                            Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail)
+                            Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId)
                         }
                         vm.playWithQueue(song, queue)
                     },
@@ -266,7 +267,7 @@ fun CustomPlaylistScreen(
     removeConfirm?.let { song ->
         AlertDialog(
             onDismissRequest = { removeConfirm = null },
-            title = { Text("Are you sure?", fontFamily = NothingFont, fontWeight = FontWeight.Bold) },
+            title = { Text("Are you sure??", fontFamily = NothingFont, fontWeight = FontWeight.Bold) },
             text = { Text("Remove \"${song.title}\" from \"${playlist.name}\"?", fontFamily = NothingFont) },
             confirmButton = {
                 TextButton(onClick = {
