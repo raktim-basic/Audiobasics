@@ -157,7 +157,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val (meta, _) = Innertube.getAlbumSongs(albumId, fallbackArtist, caller = "autoResolve")
                 if (meta != null && meta.title.isNotBlank()) {
-                    cacheResolvedAlbum(meta)
+                    cacheResolvedAlbum(meta.copy(id = albumId))
                 }
             } catch (e: Exception) {
                 Log.e("YTLite", "Background album resolve failed for $albumId: ${e.message}")
@@ -165,6 +165,21 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 resolvingAlbumIds.remove(albumId)
             }
         }
+    }
+
+    fun normalizeAlbumTitle(title: String): String =
+        title.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+    // Given a possibly-incomplete/duplicate albumId, returns the id of the canonical saved
+    // album with a matching title if one exists — otherwise returns the id unchanged. Used
+    // so Song Info's "open album" link routes to the richer, already-saved catalog entry
+    // instead of a different (e.g. search-derived) browse id for the same physical album.
+    fun canonicalAlbumId(albumId: String): String {
+        if (albumId.isBlank()) return albumId
+        if (_savedAlbums.value.any { it.id == albumId }) return albumId
+        val title = _resolvedAlbumCache.value[albumId]?.title ?: return albumId
+        val match = _savedAlbums.value.firstOrNull { normalizeAlbumTitle(it.title) == normalizeAlbumTitle(title) }
+        return match?.id ?: albumId
     }
 
     // ── Settings ──────────────────────────────────────────────────────────────
