@@ -150,12 +150,17 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val resolvingAlbumIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private fun resolveAlbumInBackground(albumId: String, fallbackArtist: String = "") {
         if (albumId.isBlank()) return
-        if (_resolvedAlbumCache.value.containsKey(albumId)) return
-        if (_savedAlbums.value.any { it.id == albumId }) return
+        val alreadyCached = _resolvedAlbumCache.value.containsKey(albumId)
+        val alreadySaved = _savedAlbums.value.any { it.id == albumId }
+        val alreadyResolving = resolvingAlbumIds.contains(albumId)
+        Timber.tag("AlbumIdDebug").d("resolveAlbumInBackground albumId='%s' alreadyCached=%s alreadySaved=%s alreadyResolving=%s", albumId, alreadyCached, alreadySaved, alreadyResolving)
+        if (alreadyCached) return
+        if (alreadySaved) return
         if (!resolvingAlbumIds.add(albumId)) return // already resolving
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val (meta, _) = Innertube.getAlbumSongs(albumId, fallbackArtist, caller = "autoResolve")
+                Timber.tag("AlbumIdDebug").d("resolveAlbumInBackground albumId='%s' RESULT title='%s'", albumId, meta?.title)
                 if (meta != null && meta.title.isNotBlank()) {
                     cacheResolvedAlbum(meta)
                 }
@@ -845,6 +850,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     added = false
                 } else {
+                    Timber.tag("AlbumIdDebug").d("addToPlaylist song='%s' albumId='%s'", song.title, song.albumId)
                     playlistDao.insertSong(
                         PlaylistSongEntity(
                             playlistId = playlistId,
@@ -909,11 +915,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun PlaylistSongEntity.toSong() = Song(
-        id = songId, title = title, artist = artist,
-        thumbnail = thumbnail, isExplicit = isExplicit, albumId = albumId,
-        isCached = CacheManager.isCached(getApplication(), songId)
-    )
+    private fun PlaylistSongEntity.toSong(): Song {
+        Timber.tag("AlbumIdDebug").d("PlaylistSongEntity.toSong title='%s' albumId='%s'", title, albumId)
+        return Song(
+            id = songId, title = title, artist = artist,
+            thumbnail = thumbnail, isExplicit = isExplicit, albumId = albumId,
+            isCached = CacheManager.isCached(getApplication(), songId)
+        )
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Saved Albums
