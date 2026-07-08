@@ -408,6 +408,7 @@ fun PlayerDialog(
             savedAlbums = savedAlbums,
             resolvedAlbumCache = resolvedAlbumCache,
             onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
+            canonicalAlbumId = { vm.canonicalAlbumId(it) },
             onDismiss = { showSongInfo = false },
             onArtistClick = { artistName ->
                 showSongInfo = false
