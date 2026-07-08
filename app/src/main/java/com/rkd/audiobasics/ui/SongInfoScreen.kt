@@ -57,7 +57,6 @@ fun SongInfoScreen(
         }
         val cached = savedAlbums.firstOrNull { it.id == song.albumId }
             ?: resolvedAlbumCache[song.albumId]
-        Timber.tag("AlbumIdDebug").d("SongInfoScreen songTitle='%s' albumId='%s' savedAlbumsCount=%d resolvedCacheCount=%d resolvedCacheKeys=%s cachedHit=%s", song.title, song.albumId, savedAlbums.size, resolvedAlbumCache.size, resolvedAlbumCache.keys.toList(), cached != null)
         if (cached != null && cached.title.isNotBlank()) {
             albumTitle = cached.title
             albumTitleLoading = false
