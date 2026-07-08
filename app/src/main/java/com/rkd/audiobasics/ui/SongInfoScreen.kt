@@ -1,509 +1,264 @@
 package com.rkd.audiobasics.ui
 
-import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import coil.compose.AsyncImage
+import com.rkd.audiobasics.api.Innertube
+import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.data.Album
+import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
-import com.rkd.audiobasics.utils.HapticUtils
+import android.content.Context
+import timber.log.Timber
 
 @Composable
-fun PlayerDialog(
-    vm: MusicViewModel,
+fun SongInfoScreen(
+    song: Song,
     isDarkMode: Boolean,
+    context: Context,
+    savedAlbums: List<Album> = emptyList(),
+    resolvedAlbumCache: Map<String, Album> = emptyMap(),
+    onCacheResolvedAlbum: (Album) -> Unit = {},
+    canonicalAlbumId: (String) -> String = { it },
     onDismiss: () -> Unit,
-    onNavigateQueue: () -> Unit,
-    onNavigateArtist: (String) -> Unit,
-    onNavigateAlbum: (String) -> Unit
+    onArtistClick: (String) -> Unit,   // artist name
+    onAlbumClick: (String) -> Unit     // albumId
 ) {
-    val context = LocalContext.current
-    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-    val song by vm.currentSong.collectAsState()
-    val isPlaying by vm.isPlaying.collectAsState()
-    val isLoading by vm.isLoading.collectAsState()
-    val position by vm.currentPosition.collectAsState()
-    val duration by vm.duration.collectAsState()
-    val savedAlbums by vm.savedAlbums.collectAsState()
-    val resolvedAlbumCache by vm.resolvedAlbumCache.collectAsState()
-
-    var showLyrics by remember { mutableStateOf(false) }
-    var showSongInfo by remember { mutableStateOf(false) }
-    var showAddToSheet by remember { mutableStateOf(false) }
-    var showCreatePlaylist by remember { mutableStateOf(false) }
-    var showThreeDotMenu by remember { mutableStateOf(false) }
-    var dragPosition by remember { mutableStateOf<Long?>(null) }
-
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
-    val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
-    val subTextColor = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
+    val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
 
-    if (showLyrics) {
-        LyricsScreen(vm = vm, isDarkMode = isDarkMode, onBack = { showLyrics = false })
-        return
+    // Resolve the album title from its id — check saved albums / already-resolved cache
+    // first (instant, no network), then fall back to a network lookup only once per album.
+    // Also resolve the id to navigate to: if this song's albumId turns out to be a different
+    // catalog entry for an album the user already has saved (same title), route taps to the
+    // richer saved entry instead of the possibly-incomplete one this song happened to carry.
+    var albumTitle by remember(song.albumId) { mutableStateOf<String?>(null) }
+    var albumTitleLoading by remember(song.albumId) { mutableStateOf(song.albumId.isNotBlank()) }
+    var effectiveAlbumId by remember(song.albumId) { mutableStateOf(song.albumId) }
+
+    LaunchedEffect(song.albumId) {
+        if (song.albumId.isBlank()) {
+            albumTitleLoading = false
+            return@LaunchedEffect
+        }
+        val cached = savedAlbums.firstOrNull { it.id == song.albumId }
+            ?: resolvedAlbumCache[song.albumId]
+        if (cached != null && cached.title.isNotBlank()) {
+            val canonicalId = canonicalAlbumId(song.albumId)
+            val canonicalAlbum = savedAlbums.firstOrNull { it.id == canonicalId } ?: cached
+            albumTitle = canonicalAlbum.title
+            effectiveAlbumId = canonicalId
+            albumTitleLoading = false
+            return@LaunchedEffect
+        }
+        try {
+            val (meta, _) = Innertube.getAlbumSongs(song.albumId, caller = "SongInfoScreen")
+            if (meta != null && meta.title.isNotBlank()) {
+                onCacheResolvedAlbum(meta)
+                val canonicalId = canonicalAlbumId(song.albumId)
+                val canonicalAlbum = savedAlbums.firstOrNull { it.id == canonicalId }
+                albumTitle = canonicalAlbum?.title ?: meta.title
+                effectiveAlbumId = canonicalId
+            } else {
+                albumTitle = null
+            }
+        } catch (_: Exception) {
+            albumTitle = null
+        } finally {
+            albumTitleLoading = false
+        }
     }
 
-    Dialog(
-        onDismissRequest = { onDismiss() },
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Box(
+    // Compute file size
+    val fileSizeText = remember(song.id) {
+        val f = CacheManager.getCacheFile(context, song.id)
+        if (f.exists() && f.length() > 0) {
+            val mb = f.length() / (1024.0 * 1024.0)
+            "%.1f MB".format(mb)
+        } else "N/A"
+    }
+
+    // Duration mm:ss
+    val durationText = remember(song.duration) {
+        if (song.duration > 0) {
+            val totalSeconds = song.duration / 1000
+            val m = totalSeconds / 60
+            val s = totalSeconds % 60
+            "%02d:%02d".format(m, s)
+        } else "N/A"
+    }
+
+    // Has lyrics cached?
+    val hasLyrics = remember(song.id) {
+        CacheManager.isLyricsCached(context, song.id)
+    }
+
+    // Parse artists (comma/& separated in the artist string)
+    val artists = remember(song.artist) {
+        song.artist
+            .split(Regex(",\\s*|\\s*&\\s*|\\s*feat\\.\\s*", RegexOption.IGNORE_CASE))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable { onDismiss() },
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(bgColor)
         ) {
+            // Title
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.88f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(bgColor)
-                    .clickable(enabled = false) {}
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Column {
-                    // ── Top bar ─────────────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Speaker/cast (placeholder)
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
-                        }
+                Text(
+                    text = "Song info.",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color.Red
+                )
+            }
 
-                        // Song info
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showSongInfo = true
-                        }) {
-                            Icon(Icons.Default.Info, contentDescription = "Song info", tint = textColor, modifier = Modifier.size(20.dp))
-                        }
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = subColor.copy(0.3f))
 
-                        // Close
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            onDismiss()
-                        }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor, modifier = Modifier.size(20.dp))
-                        }
-                    }
+            Spacer(Modifier.height(8.dp))
 
-                    // ── Artwork + title ──────────────────────────────────
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                    ) {
-                        AsyncImage(
-                            model = song?.thumbnail,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(110.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+
+                InfoRow(label = "Name", value = song.title, textColor = textColor)
+
+                Spacer(Modifier.height(18.dp))
+
+                // Artists (clickable)
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(
+                        text = "Artist(s) : ",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = textColor
+                    )
+                    Column {
+                        artists.forEachIndexed { i, artist ->
                             Text(
-                                text = song?.title ?: "Song Name",
+                                text = buildAnnotatedString {
+                                    withStyle(SpanStyle(
+                                        color = Color.Red,
+                                        textDecoration = TextDecoration.Underline
+                                    )) { append(artist) }
+                                    if (i < artists.lastIndex) append(", ")
+                                },
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = textColor,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                fontSize = 16.sp,
+                                modifier = Modifier.clickable { onArtistClick(artist) }
                             )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = song?.artist ?: "Artist",
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Album (clickable if exists)
+                if (song.albumId.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Album/EP : ",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        when {
+                            albumTitleLoading -> Text(
+                                text = "Loading…",
                                 fontFamily = NothingFont,
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp,
-                                color = subTextColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                fontStyle = FontStyle.Italic,
+                                fontSize = 16.sp,
+                                color = subColor
+                            )
+                            albumTitle != null -> Text(
+                                text = buildAnnotatedString {
+                                    withStyle(SpanStyle(
+                                        color = Color.Red,
+                                        textDecoration = TextDecoration.Underline
+                                    )) { append(albumTitle!!) }
+                                },
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                modifier = Modifier.clickable { onAlbumClick(effectiveAlbumId) }
+                            )
+                            else -> Text(
+                                text = "Unknown",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = subColor
                             )
                         }
                     }
+                    Spacer(Modifier.height(16.dp))
+                }
 
-                    Spacer(Modifier.height(20.dp))
+                InfoRow(label = "Explicit", value = if (song.isExplicit) "Yes" else "No", textColor = textColor)
+                Spacer(Modifier.height(16.dp))
+                InfoRow(label = "Length", value = durationText, textColor = textColor)
+                Spacer(Modifier.height(16.dp))
+                InfoRow(label = "Size", value = fileSizeText, textColor = textColor)
+                Spacer(Modifier.height(16.dp))
+                InfoRow(label = "Lyrics", value = if (hasLyrics) "Yes" else "No", textColor = textColor)
+            }
 
-                    // ── Progress bar ─────────────────────────────────────
-                    val displayPosition = dragPosition ?: position
+            Spacer(Modifier.height(8.dp))
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = formatTime(displayPosition),
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = textColor
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(20.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            DashedProgressBar(
-                                progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f,
-                                onSeek = { seekProgress ->
-                                    val newPos = (seekProgress * duration).toLong()
-                                    vm.seekTo(newPos)
-                                    dragPosition = null
-                                },
-                                onDragging = { dragProgress ->
-                                    dragPosition = (dragProgress * duration).toLong()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                hapticsEnabled = hapticsEnabled,
-                                context = context
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = formatTime(duration),
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = textColor
-                        )
-                    }
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = subColor.copy(0.3f))
 
-                    Spacer(Modifier.height(20.dp))
-
-                    // ── Playback controls ────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.skipToPrevious()
-                        }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = textColor, modifier = Modifier.size(36.dp))
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(surfaceColor)
-                                .clickable {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    vm.togglePlayPause()
-                                }
-                                .padding(horizontal = 32.dp, vertical = 14.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = textColor)
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = if (isPlaying) "Pause" else "Play",
-                                        tint = textColor,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        text = if (isPlaying) "Pause" else "Play",
-                                        fontFamily = NothingFont,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
-                                        color = textColor
-                                    )
-                                }
-                            }
-                        }
-
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.skipToNext()
-                        }) {
-                            Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = textColor, modifier = Modifier.size(36.dp))
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // ── Bottom bar ───────────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor)
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // + Add to playlist
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showAddToSheet = true
-                        }) {
-                            Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = textColor, modifier = Modifier.size(26.dp))
-                        }
-
-                        // Lyrics
-                        Text(
-                            text = "LYRICS",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = textColor,
-                            modifier = Modifier.clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                showLyrics = true
-                            }
-                        )
-
-                        // 3-dot dropdown
-                        Box {
-                            IconButton(onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                showThreeDotMenu = true
-                            }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor, modifier = Modifier.size(26.dp))
-                            }
-
-                            DropdownMenu(
-                                expanded = showThreeDotMenu,
-                                onDismissRequest = { showThreeDotMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                                    text = { Text("Share", fontFamily = NothingFont) },
-                                    onClick = {
-                                        showThreeDotMenu = false
-                                        song?.let { s ->
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${s.id}")
-                                            }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Share song"))
-                                        }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
-                                    text = { Text("Queue", fontFamily = NothingFont) },
-                                    onClick = {
-                                        showThreeDotMenu = false
-                                        onDismiss()
-                                        onNavigateQueue()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null) },
-                                    text = { Text("Sleep timer", fontFamily = NothingFont) },
-                                    onClick = {
-                                        showThreeDotMenu = false
-                                        onDismiss()
-                                        onNavigateQueue()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Default.Repeat, contentDescription = null) },
-                                    text = { Text("Repeat", fontFamily = NothingFont) },
-                                    onClick = {
-                                        showThreeDotMenu = false
-                                        onDismiss()
-                                        onNavigateQueue()
-                                    }
-                                )
-                            }
-                        }
-                    }
+            // Back button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
                 }
             }
         }
     }
-
-    // ── Add to playlist sheet ──────────────────────────────────────────────
-    if (showAddToSheet && song != null) {
-        AddToPlaylistSheet(
-            song = song!!,
-            vm = vm,
-            isDarkMode = isDarkMode,
-            onDismiss = { showAddToSheet = false },
-            onCreateNew = { showCreatePlaylist = true }
-        )
-    }
-
-    // ── Create playlist dialog ─────────────────────────────────────────────
-    if (showCreatePlaylist) {
-        CreatePlaylistDialog(
-            isDarkMode = isDarkMode,
-            onDismiss = { showCreatePlaylist = false },
-            onCreate = { name, emoji ->
-                vm.createPlaylist(name, emoji)
-                showCreatePlaylist = false
-            }
-        )
-    }
-
-    // ── Song info screen ───────────────────────────────────────────────────
-    if (showSongInfo && song != null) {
-        SongInfoScreen(
-            song = song!!,
-            isDarkMode = isDarkMode,
-            context = context,
-            savedAlbums = savedAlbums,
-            resolvedAlbumCache = resolvedAlbumCache,
-            onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
-            canonicalAlbumId = { vm.canonicalAlbumId(it) },
-            onDismiss = { showSongInfo = false },
-            onArtistClick = { artistName ->
-                showSongInfo = false
-                onDismiss()
-                onNavigateArtist(artistName)
-            },
-            onAlbumClick = { albumId ->
-                showSongInfo = false
-                onDismiss()
-                onNavigateAlbum(albumId)
-            }
-        )
-    }
 }
 
 @Composable
-fun DashedProgressBar(
-    progress: Float,
-    onSeek: (Float) -> Unit,
-    onDragging: (Float) -> Unit,
-    modifier: Modifier = Modifier,
-    hapticsEnabled: Boolean,
-    context: android.content.Context
-) {
-    val totalDashes = 30
-    var barWidthPx by remember { mutableStateOf(0f) }
-    var dragProgress by remember { mutableStateOf<Float?>(null) }
-
-    val displayProgress = dragProgress ?: progress
-    val displayFilled = (displayProgress * totalDashes).toInt()
-    var lastFilled by remember { mutableStateOf(displayFilled) }
-
-    LaunchedEffect(displayFilled) {
-        if (dragProgress != null && displayFilled != lastFilled && hapticsEnabled) {
-            HapticUtils.performSubtleHaptic(context)
-            lastFilled = displayFilled
-        }
-    }
-
-    Row(
-        modifier = modifier
-            .height(24.dp)
-            .onSizeChanged { barWidthPx = it.width.toFloat() }
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        if (barWidthPx > 0) {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            dragProgress = (offset.x / barWidthPx).coerceIn(0f, 1f)
-                            lastFilled = (dragProgress!! * totalDashes).toInt()
-                            onDragging(dragProgress!!)
-                        }
-                    },
-                    onDragEnd = {
-                        dragProgress?.let { onSeek(it) }
-                        dragProgress = null
-                    },
-                    onDragCancel = { dragProgress = null },
-                    onHorizontalDrag = { _, dragAmount ->
-                        if (barWidthPx > 0) {
-                            val current = dragProgress ?: progress
-                            dragProgress = (current + dragAmount / barWidthPx).coerceIn(0f, 1f)
-                            onDragging(dragProgress!!)
-                        }
-                    }
-                )
-            },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        repeat(totalDashes) { index ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        if (index < displayFilled) Color(0xFFFF0000) else Color(0xFF333333)
-                    )
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
-                    ) {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onSeek((index + 1).toFloat() / totalDashes.toFloat())
-                    }
-            )
-        }
-    }
-}
-
-fun formatTime(ms: Long): String {
-    if (ms <= 0) return "00:00"
-    val totalSeconds = ms / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%02d:%02d".format(minutes, seconds)
+private fun InfoRow(label: String, value: String, textColor: Color) {
+    Text(
+        text = "$label : $value",
+        fontFamily = NothingFont,
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp,
+        color = textColor
+    )
 }
