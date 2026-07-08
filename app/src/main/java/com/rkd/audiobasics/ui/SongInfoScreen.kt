@@ -37,6 +37,7 @@ fun SongInfoScreen(
     savedAlbums: List<Album> = emptyList(),
     resolvedAlbumCache: Map<String, Album> = emptyMap(),
     onCacheResolvedAlbum: (Album) -> Unit = {},
+    canonicalAlbumId: (String) -> String = { it },
     onDismiss: () -> Unit,
     onArtistClick: (String) -> Unit,   // artist name
     onAlbumClick: (String) -> Unit     // albumId
@@ -47,8 +48,12 @@ fun SongInfoScreen(
 
     // Resolve the album title from its id — check saved albums / already-resolved cache
     // first (instant, no network), then fall back to a network lookup only once per album.
+    // Also resolve the id to navigate to: if this song's albumId turns out to be a different
+    // catalog entry for an album the user already has saved (same title), route taps to the
+    // richer saved entry instead of the possibly-incomplete one this song happened to carry.
     var albumTitle by remember(song.albumId) { mutableStateOf<String?>(null) }
     var albumTitleLoading by remember(song.albumId) { mutableStateOf(song.albumId.isNotBlank()) }
+    var effectiveAlbumId by remember(song.albumId) { mutableStateOf(song.albumId) }
 
     LaunchedEffect(song.albumId) {
         if (song.albumId.isBlank()) {
@@ -58,15 +63,23 @@ fun SongInfoScreen(
         val cached = savedAlbums.firstOrNull { it.id == song.albumId }
             ?: resolvedAlbumCache[song.albumId]
         if (cached != null && cached.title.isNotBlank()) {
-            albumTitle = cached.title
+            val canonicalId = canonicalAlbumId(song.albumId)
+            val canonicalAlbum = savedAlbums.firstOrNull { it.id == canonicalId } ?: cached
+            albumTitle = canonicalAlbum.title
+            effectiveAlbumId = canonicalId
             albumTitleLoading = false
             return@LaunchedEffect
         }
         try {
             val (meta, _) = Innertube.getAlbumSongs(song.albumId, caller = "SongInfoScreen")
-            albumTitle = meta?.title?.takeIf { it.isNotBlank() }
             if (meta != null && meta.title.isNotBlank()) {
                 onCacheResolvedAlbum(meta)
+                val canonicalId = canonicalAlbumId(song.albumId)
+                val canonicalAlbum = savedAlbums.firstOrNull { it.id == canonicalId }
+                albumTitle = canonicalAlbum?.title ?: meta.title
+                effectiveAlbumId = canonicalId
+            } else {
+                albumTitle = null
             }
         } catch (_: Exception) {
             albumTitle = null
@@ -198,7 +211,7 @@ fun SongInfoScreen(
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
-                                modifier = Modifier.clickable { onAlbumClick(song.albumId) }
+                                modifier = Modifier.clickable { onAlbumClick(effectiveAlbumId) }
                             )
                             else -> Text(
                                 text = "Unknown",
