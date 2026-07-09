@@ -644,19 +644,23 @@ object Innertube {
                 // guest features (which show up in the same comma/& format, with no
                 // reliable "feat." marker to detect) while keeping the true core artist(s). ──
                 if (songs.isNotEmpty()) {
-                    val perSongNames = songs.map { splitArtistNames(it.artist) }
-                    val commonNames = perSongNames.reduce { acc, names -> acc.intersect(names.toSet()).toList() }
-                    if (commonNames.isNotEmpty()) {
-                        // Preserve the order names appear in the first song's artist string.
-                        val firstSongOrder = perSongNames.first()
-                        val ordered = firstSongOrder.filter { it in commonNames }
-                        if (ordered.isNotEmpty()) albumArtist = ordered.joinToString(" & ")
-                    } else if (albumArtist == fallbackArtist) {
-                        // No name is common to every track (e.g. a various-artists
-                        // compilation) and the header gave us nothing either — fall back to
-                        // the single most common per-song artist string as a last resort.
-                        albumArtist = songs.groupBy { it.artist }
-                            .maxByOrNull { it.value.size }?.key ?: fallbackArtist
+                    try {
+                        val perSongNames = songs.map { splitArtistNames(it.artist) }
+                        val commonNames = perSongNames.reduce { acc, names -> acc.intersect(names.toSet()).toList() }
+                        if (commonNames.isNotEmpty()) {
+                            // Preserve the order names appear in the first song's artist string.
+                            val firstSongOrder = perSongNames.first()
+                            val ordered = firstSongOrder.filter { it in commonNames }
+                            if (ordered.isNotEmpty()) albumArtist = ordered.joinToString(" & ")
+                        } else if (albumArtist == fallbackArtist) {
+                            // No name is common to every track (e.g. a various-artists
+                            // compilation) and the header gave us nothing either — fall back
+                            // to the single most common per-song artist string.
+                            albumArtist = songs.groupBy { it.artist }
+                                .maxByOrNull { it.value.size }?.key ?: fallbackArtist
+                        }
+                    } catch (e: Exception) {
+                        Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' artist intersection FAILED: %s", browseId, e.message)
                     }
                 }
             } catch (e: Exception) { Log.e("Innertube", "getAlbumSongs error: ${e.message}") }
