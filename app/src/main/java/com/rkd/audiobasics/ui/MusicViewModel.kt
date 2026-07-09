@@ -935,7 +935,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // ─────────────────────────────────────────────────────────────────────────
 
     fun saveAlbum(album: Album) {
-        if (_savedAlbums.value.none { it.id == album.id }) {
+        if (!isAlbumSaved(album.id, album.title)) {
             _savedAlbums.value = listOf(album) + _savedAlbums.value
             saveSavedAlbums()
             Toast.makeText(getApplication(), "Album saved", Toast.LENGTH_SHORT).show()
@@ -955,18 +955,26 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun unsaveAlbum(album: Album) {
-        _savedAlbums.value = _savedAlbums.value.filter { it.id != album.id }
+        // Remove by id OR by matching title, so unsaving works even if this screen was
+        // opened via a different browse id than the one the album was originally saved under.
+        val toRemove = _savedAlbums.value.filter {
+            it.id == album.id || (album.title.isNotBlank() && normalizeAlbumTitle(it.title) == normalizeAlbumTitle(album.title))
+        }
+        if (toRemove.isEmpty()) return
+        _savedAlbums.value = _savedAlbums.value.filterNot { it in toRemove }
         saveSavedAlbums()
         Toast.makeText(getApplication(), "Album removed", Toast.LENGTH_SHORT).show()
         // Remove cached songs that aren't liked or in custom playlists
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val (_, songs) = Innertube.getAlbumSongs(album.id, album.artist, caller = "unsaveAlbum")
-                songs.forEach { song ->
-                    val liked = isLiked(song.id)
-                    val inPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
-                    if (!liked && !inPlaylist) {
-                        CacheManager.removeCachedSong(getApplication(), song.id)
+                toRemove.forEach { removedAlbum ->
+                    val (_, songs) = Innertube.getAlbumSongs(removedAlbum.id, removedAlbum.artist, caller = "unsaveAlbum")
+                    songs.forEach { song ->
+                        val liked = isLiked(song.id)
+                        val inPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
+                        if (!liked && !inPlaylist) {
+                            CacheManager.removeCachedSong(getApplication(), song.id)
+                        }
                     }
                 }
                 refreshCacheSize()
@@ -976,7 +984,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun isAlbumSaved(albumId: String) = _savedAlbums.value.any { it.id == albumId }
+    fun isAlbumSaved(albumId: String, albumTitle: String = ""): Boolean {
+        if (_savedAlbums.value.any { it.id == albumId }) return true
+        if (albumTitle.isBlank()) return false
+        return _savedAlbums.value.any { normalizeAlbumTitle(it.title) == normalizeAlbumTitle(albumTitle) }
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Cache helpers
