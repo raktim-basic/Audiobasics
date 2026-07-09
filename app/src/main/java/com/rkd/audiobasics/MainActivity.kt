@@ -246,13 +246,13 @@ fun AudiobasicsApp(
             onDismiss = { showPlayerDialog = false },
             onNavigateQueue = { showPlayerDialog = false; navigate(Screen.Queue) },
             onNavigateArtist = { name -> showPlayerDialog = false; navigate(Screen.ArtistDetail(name)) },
-            onNavigateAlbum = { albumId ->
+            onNavigateAlbum = { albumTitle ->
                 showPlayerDialog = false
-                // Navigate to album by id — look up from saved albums, else a blank
-                // placeholder that AlbumScreen will enrich with real metadata on load.
-                val album = vm.savedAlbums.value.firstOrNull { it.id == albumId }
-                    ?: Album(id = albumId, title = "", artist = "", thumbnail = "")
-                navigate(Screen.AlbumDetail(album))
+                // Search for the album by name rather than browsing this specific id —
+                // YTM itself sometimes has more than one catalog entry for what's really
+                // the same album, so search reliably lands on a real, complete result
+                // instead of risking opening a different, possibly-incomplete duplicate.
+                navigate(Screen.SearchAlbums(albumTitle))
             }
         )
     }
