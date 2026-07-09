@@ -37,10 +37,10 @@ fun SongInfoScreen(
     savedAlbums: List<Album> = emptyList(),
     resolvedAlbumCache: Map<String, Album> = emptyMap(),
     onCacheResolvedAlbum: (Album) -> Unit = {},
-    canonicalAlbumId: (String) -> String = { it },
     onDismiss: () -> Unit,
     onArtistClick: (String) -> Unit,   // artist name
-    onAlbumClick: (String) -> Unit     // albumId
+    onAlbumClick: (String) -> Unit     // album title — searches for it rather than
+                                        // browsing a specific (possibly duplicate) id
 ) {
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -48,12 +48,12 @@ fun SongInfoScreen(
 
     // Resolve the album title from its id — check saved albums / already-resolved cache
     // first (instant, no network), then fall back to a network lookup only once per album.
-    // Also resolve the id to navigate to: if this song's albumId turns out to be a different
-    // catalog entry for an album the user already has saved (same title), route taps to the
-    // richer saved entry instead of the possibly-incomplete one this song happened to carry.
+    // Tapping the title searches for it by name instead of browsing this specific id, since
+    // YTM itself (confirmed against the official app) sometimes has two separate catalog
+    // entries for what's really the same album — search reliably lands on one canonical
+    // result instead of risking opening a different, possibly-incomplete duplicate.
     var albumTitle by remember(song.albumId) { mutableStateOf<String?>(null) }
     var albumTitleLoading by remember(song.albumId) { mutableStateOf(song.albumId.isNotBlank()) }
-    var effectiveAlbumId by remember(song.albumId) { mutableStateOf(song.albumId) }
 
     LaunchedEffect(song.albumId) {
         if (song.albumId.isBlank()) {
@@ -63,23 +63,15 @@ fun SongInfoScreen(
         val cached = savedAlbums.firstOrNull { it.id == song.albumId }
             ?: resolvedAlbumCache[song.albumId]
         if (cached != null && cached.title.isNotBlank()) {
-            val canonicalId = canonicalAlbumId(song.albumId)
-            val canonicalAlbum = savedAlbums.firstOrNull { it.id == canonicalId } ?: cached
-            albumTitle = canonicalAlbum.title
-            effectiveAlbumId = canonicalId
+            albumTitle = cached.title
             albumTitleLoading = false
             return@LaunchedEffect
         }
         try {
             val (meta, _) = Innertube.getAlbumSongs(song.albumId, caller = "SongInfoScreen")
+            albumTitle = meta?.title?.takeIf { it.isNotBlank() }
             if (meta != null && meta.title.isNotBlank()) {
                 onCacheResolvedAlbum(meta)
-                val canonicalId = canonicalAlbumId(song.albumId)
-                val canonicalAlbum = savedAlbums.firstOrNull { it.id == canonicalId }
-                albumTitle = canonicalAlbum?.title ?: meta.title
-                effectiveAlbumId = canonicalId
-            } else {
-                albumTitle = null
             }
         } catch (_: Exception) {
             albumTitle = null
@@ -211,7 +203,7 @@ fun SongInfoScreen(
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
-                                modifier = Modifier.clickable { onAlbumClick(effectiveAlbumId) }
+                                modifier = Modifier.clickable { onAlbumClick(albumTitle!!) }
                             )
                             else -> Text(
                                 text = "Unknown",
