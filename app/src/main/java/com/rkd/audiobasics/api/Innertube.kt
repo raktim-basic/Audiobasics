@@ -186,6 +186,17 @@ object Innertube {
         } catch (_: Exception) { "" }
     }
 
+    // Splits an artist credit string like "Future, Metro Boomin, & Kendrick Lamar" or
+    // "Future & Metro Boomin" into individual, trimmed names: ["Future", "Metro Boomin",
+    // "Kendrick Lamar"]. Deliberately doesn't try to detect "(feat. ...)" — YTM doesn't
+    // consistently mark guest features that way, so callers should instead use this to
+    // intersect names across every track on an album and keep only the ones present on all.
+    private fun splitArtistNames(artist: String): List<String> {
+        return artist.split(",", "&")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+    }
+
     private fun extractVideoId(endpoint: JSONObject?): String? {
         return try {
             endpoint?.optJSONObject("watchEndpoint")?.optString("videoId")
@@ -625,10 +636,28 @@ object Innertube {
                         } catch (_: Exception) {}
                     }
                 }
-                // ── If header/microformat gave no better artist, derive from songs ──
-                if (albumArtist == fallbackArtist && songs.isNotEmpty()) {
-                    albumArtist = songs.groupBy { it.artist }
-                        .maxByOrNull { it.value.size }?.key ?: fallbackArtist
+                // ── Album artist: derive from the tracklist itself rather than trusting the
+                // header/microformat alone, since YTM's album-level artist credit is often
+                // incomplete (e.g. shows only "Future" for an album that's really
+                // "Future & Metro Boomin" throughout). An artist only belongs in the album
+                // credit if they appear on EVERY track — this naturally excludes one-off
+                // guest features (which show up in the same comma/& format, with no
+                // reliable "feat." marker to detect) while keeping the true core artist(s). ──
+                if (songs.isNotEmpty()) {
+                    val perSongNames = songs.map { splitArtistNames(it.artist) }
+                    val commonNames = perSongNames.reduce { acc, names -> acc.intersect(names.toSet()).toList() }
+                    if (commonNames.isNotEmpty()) {
+                        // Preserve the order names appear in the first song's artist string.
+                        val firstSongOrder = perSongNames.first()
+                        val ordered = firstSongOrder.filter { it in commonNames }
+                        if (ordered.isNotEmpty()) albumArtist = ordered.joinToString(" & ")
+                    } else if (albumArtist == fallbackArtist) {
+                        // No name is common to every track (e.g. a various-artists
+                        // compilation) and the header gave us nothing either — fall back to
+                        // the single most common per-song artist string as a last resort.
+                        albumArtist = songs.groupBy { it.artist }
+                            .maxByOrNull { it.value.size }?.key ?: fallbackArtist
+                    }
                 }
             } catch (e: Exception) { Log.e("Innertube", "getAlbumSongs error: ${e.message}") }
             Timber.tag("AlbumIdDebug").d("getAlbumSongs[%s] RESULT browseId='%s' albumTitle='%s' albumArtist='%s' albumYear='%s' songCount=%d", caller, browseId, albumTitle, albumArtist, albumYear, songs.size)
