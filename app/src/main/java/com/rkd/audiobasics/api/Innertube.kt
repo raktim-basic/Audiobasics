@@ -314,6 +314,17 @@ object Innertube {
                                     break
                                 }
                             }
+                            if (albumId.isBlank()) {
+                                val segments = mutableListOf<String>()
+                                var cur = StringBuilder()
+                                for (r in 0 until runs.length()) {
+                                    val t = runs.optJSONObject(r)?.optString("text", "") ?: ""
+                                    if (t == " • " || t == "•") { segments.add(cur.toString()); cur = StringBuilder() }
+                                    else cur.append(t)
+                                }
+                                segments.add(cur.toString())
+                                Timber.tag("AlbumIdDebug").d("parseSongsFromYTM song='%s' albumId BLANK, segments=%s", title, segments)
+                            }
                         }
                         out.add(Song(id = videoId, title = title, artist = artist,
                             thumbnail = ytThumbnail(videoId), duration = durationMs,
