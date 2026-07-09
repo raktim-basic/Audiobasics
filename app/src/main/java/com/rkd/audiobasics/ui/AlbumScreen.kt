@@ -74,8 +74,11 @@ fun AlbumScreen(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
-    val isSaved by remember(vm.savedAlbums.collectAsState().value) {
-        derivedStateOf { vm.isAlbumSaved(album.id) }
+
+    var enrichedAlbum by remember { mutableStateOf(album) }
+
+    val isSaved by remember(vm.savedAlbums.collectAsState().value, enrichedAlbum) {
+        derivedStateOf { vm.isAlbumSaved(album.id, enrichedAlbum.title) }
     }
 
     var albumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
@@ -96,8 +99,6 @@ fun AlbumScreen(
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-
-    var enrichedAlbum by remember { mutableStateOf(album) }
 
     LaunchedEffect(album.id) {
         isLoading = true
