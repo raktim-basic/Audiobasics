@@ -51,4 +51,7 @@ interface PlaylistDao {
 
     @Query("SELECT DISTINCT songId FROM playlist_songs")
     suspend fun getAllPlaylistSongIds(): List<String>
+
+    @Query("SELECT * FROM playlist_songs GROUP BY songId")
+    suspend fun getAllPlaylistSongs(): List<PlaylistSongEntity>
 }
