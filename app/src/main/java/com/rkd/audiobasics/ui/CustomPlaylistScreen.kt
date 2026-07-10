@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.data.Song
@@ -75,6 +76,10 @@ fun CustomPlaylistScreen(
         }
     }
 
+    val uncachedCount = remember(playlistSongs, context) {
+        playlistSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.songId) }
+    }
+
     val totalItems = filteredSongs.size + 1
     val scrollProgress = remember(listState, totalItems) {
         derivedStateOf {
@@ -95,7 +100,7 @@ fun CustomPlaylistScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Spacer(Modifier.height(32.dp))
-                    Text(text = playlist.emoji, fontSize = 100.sp)
+                    Text(text = if (uncachedCount > 0) "💔" else playlist.emoji, fontSize = 100.sp)
                     Spacer(Modifier.height(24.dp))
                 }
             }
@@ -126,7 +131,37 @@ fun CustomPlaylistScreen(
                                 tint = textColor, modifier = Modifier.size(24.dp))
                         }
                     }
-                    Spacer(Modifier.height(6.dp))
+
+                    if (uncachedCount > 0) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (uncachedCount == playlistSongs.size) "All songs aren't downloaded. "
+                                       else "$uncachedCount songs aren't downloaded. ",
+                                fontFamily = NothingFont,
+                                fontSize = 13.sp,
+                                color = Color.Gray
+                            )
+                            Text(
+                                text = "Download them?",
+                                fontFamily = NothingFont,
+                                fontSize = 13.sp,
+                                color = Color(0xFF1565C0),
+                                textDecoration = TextDecoration.Underline,
+                                modifier = Modifier.clickable {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    vm.cacheAllInPlaylist(playlist.id)
+                                }
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier.height(6.dp))
+                    }
+
                     DashedDivider(
                         modifier = Modifier.fillMaxWidth(),
                         isDarkMode = isDarkMode,
@@ -155,13 +190,18 @@ fun CustomPlaylistScreen(
 
             // ── Songs ──────────────────────────────────────────────────────
             items(filteredSongs, key = { it.songId }) { entity ->
+                val songIsCached = remember(entity.songId, uncachedCount) {
+                    com.rkd.audiobasics.cache.CacheManager.isCached(context, entity.songId)
+                }
                 val song = Song(
                     id = entity.songId,
                     title = entity.title,
                     artist = entity.artist,
                     thumbnail = entity.thumbnail,
                     isExplicit = entity.isExplicit,
-                    albumId = entity.albumId
+                    albumId = entity.albumId,
+                    isCached = songIsCached,
+                    cacheFailed = !songIsCached
                 )
                 SongItem(
                     song = song,
@@ -170,6 +210,8 @@ fun CustomPlaylistScreen(
                     isPlaying = currentSong?.id == song.id,
                     hapticsEnabled = hapticsEnabled,
                     context = context,
+                    showCacheIndicator = true,
+                    removeLabel = "Remove from playlist",
                     onClick = {
                         val queue = filteredSongs.map {
                             Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId)
@@ -181,6 +223,7 @@ fun CustomPlaylistScreen(
                     onAddToQueue = { vm.addToQueue(song) },
                     onPlayNext = { vm.playNext(song) },
                     onAddTo = { onAddTo(song) },
+                    onRetryCache = { vm.retryCacheInPlaylist(song) },
                     onRemoveLike = { removeConfirm = song }
                 )
             }
