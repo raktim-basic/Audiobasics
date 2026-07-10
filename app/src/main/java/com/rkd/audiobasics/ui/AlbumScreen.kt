@@ -68,7 +68,8 @@ fun AlbumScreen(
     onBack: () -> Unit,
     onNavigateQueue: () -> Unit,
     onNavigateArtist: (String) -> Unit = {},
-    onAddTo: (Song) -> Unit = {}
+    onAddTo: (Song) -> Unit = {},
+    onNavigateCacheSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -85,6 +86,7 @@ fun AlbumScreen(
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
+    var cacheRefreshTick by remember { mutableStateOf(0) }
 
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
@@ -130,6 +132,15 @@ fun AlbumScreen(
             it.title.contains(searchQuery, ignoreCase = true) ||
                     it.artist.contains(searchQuery, ignoreCase = true)
         }
+    }
+
+    val cacheProgress by vm.cacheProgress.collectAsState()
+    LaunchedEffect(cacheProgress) {
+        if (cacheProgress == null) cacheRefreshTick++
+    }
+
+    val uncachedInAlbumCount = remember(albumSongs, cacheRefreshTick) {
+        albumSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.id) }
     }
 
     val totalRegularItems = filteredSongs.size + 1
@@ -339,6 +350,33 @@ fun AlbumScreen(
                             }
                         }
 
+                        if (uncachedInAlbumCount > 0) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "This album isn't available offline. ",
+                                    fontFamily = NothingFont,
+                                    fontSize = 13.sp,
+                                    color = Color.Gray
+                                )
+                                Text(
+                                    text = "Download now?",
+                                    fontFamily = NothingFont,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF1565C0),
+                                    textDecoration = TextDecoration.Underline,
+                                    modifier = Modifier.clickable {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        onNavigateCacheSettings()
+                                    }
+                                )
+                            }
+                        }
+
                         DashedDivider(
                             modifier = Modifier.fillMaxWidth(),
                             isDarkMode = isDarkMode,
@@ -365,19 +403,27 @@ fun AlbumScreen(
                     itemsIndexed(filteredSongs) { index, song ->
                         val isLiked = likedSongs.any { it.id == song.id }
                         val isPlaying = currentSong?.id == song.id
+                        val songIsCached = remember(song.id, cacheRefreshTick) {
+                            com.rkd.audiobasics.cache.CacheManager.isCached(context, song.id)
+                        }
                         AlbumSongRow(
                             trackNumber = index + 1,
                             song = song,
                             isDarkMode = isDarkMode,
                             isLiked = isLiked,
                             isPlaying = isPlaying,
+                            isCached = songIsCached,
                             hapticsEnabled = hapticsEnabled,
                             context = context,
                             onClick = { vm.playWithQueue(song, albumSongs) },
                             onAddToQueue = { vm.addToQueue(song) },
                             onPlayNext = { vm.playNext(song) },
                             onLike = { vm.toggleLike(song) },
-                            onAddTo = { onAddTo(song) }
+                            onAddTo = { onAddTo(song) },
+                            onRetryCache = {
+                                vm.retryCacheStandalone(song)
+                                cacheRefreshTick++
+                            }
                         )
                     }
                 }
@@ -474,19 +520,22 @@ fun AlbumSongRow(
     isDarkMode: Boolean,
     isLiked: Boolean,
     isPlaying: Boolean,
+    isCached: Boolean,
     hapticsEnabled: Boolean,
     context: android.content.Context,
     onClick: () -> Unit,
     onAddToQueue: () -> Unit,
     onPlayNext: () -> Unit,
     onLike: () -> Unit,
-    onAddTo: (() -> Unit)? = null
+    onAddTo: (() -> Unit)? = null,
+    onRetryCache: (() -> Unit)? = null
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val titleColor = if (isPlaying) Color.Red else textColor
     var menuExpanded by remember { mutableStateOf(false) }
+    var showBrokenHeartDialog by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -512,15 +561,29 @@ fun AlbumSongRow(
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = song.title,
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = titleColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = song.title,
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = titleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (!isCached) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "💔",
+                        fontSize = 13.sp,
+                        modifier = Modifier.clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            showBrokenHeartDialog = true
+                        }
+                    )
+                }
+            }
             Spacer(Modifier.height(2.dp))
             Text(
                 text = song.artist,
@@ -580,5 +643,23 @@ fun AlbumSongRow(
                 )
             }
         }
+    }
+
+    if (showBrokenHeartDialog) {
+        BrokenHeartDialog(
+            song = song,
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onDismiss = { showBrokenHeartDialog = false },
+            onPlayOnline = {
+                showBrokenHeartDialog = false
+                onClick()
+            },
+            onRetryCache = {
+                showBrokenHeartDialog = false
+                onRetryCache?.invoke()
+            }
+        )
     }
 }
