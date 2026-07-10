@@ -264,7 +264,7 @@ fun AudiobasicsApp(
             vm = vm,
             isDarkMode = isDarkMode,
             onDismiss = { addToSheetSong = null },
-            onCreateNew = { addToSheetSong = null; showCreatePlaylistFromSheet = true }
+            onCreateNew = { showCreatePlaylistFromSheet = true }
         )
     }
     if (showCreatePlaylistFromSheet) {
@@ -324,7 +324,8 @@ fun AudiobasicsApp(
                     is Screen.Queue -> QueueScreen(
                         vm = vm,
                         isDarkMode = isDarkMode,
-                        onBack = { navigateBack() }
+                        onBack = { navigateBack() },
+                        onAddTo = { song -> addToSheetSong = song }
                     )
                     is Screen.Settings -> SettingsScreen(
                         vm = vm,
@@ -339,7 +340,8 @@ fun AudiobasicsApp(
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
                         onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) }
+                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) },
+                        onAddTo = { song -> addToSheetSong = song }
                     )
                     is Screen.Albums -> SavedAlbumsScreen(
                         vm = vm,
@@ -406,7 +408,8 @@ fun AudiobasicsApp(
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
                         onAddTo = { song -> addToSheetSong = song },
-                        onNavigateQueue = { navigate(Screen.Queue) }
+                        onNavigateQueue = { navigate(Screen.Queue) },
+                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) }
                     )
                 }
             }
