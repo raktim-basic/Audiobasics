@@ -537,7 +537,6 @@ private fun CachePage(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val cacheSize by vm.cacheSize.collectAsState()
     val cacheProgress by vm.cacheProgress.collectAsState()
-    val likedSongs by vm.likedSongs.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
@@ -573,12 +572,11 @@ private fun CachePage(
             }
 
             item {
-                val uncachedCount = likedSongs.count { !it.isCached }
                 val isCurrentlyCaching = cacheProgress != null
 
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Download All Liked Songs",
+                    title = "Download All",
                     subtitle = when {
                         isCurrentlyCaching -> {
                             val (done, total) = cacheProgress!!
@@ -586,8 +584,7 @@ private fun CachePage(
                                 ((done.toFloat() / total.toFloat()) * 100).toInt() else 0
                             "Downloading... $done / $total ($percent%)"
                         }
-                        uncachedCount == 0 -> "All songs downloaded!"
-                        else -> "$uncachedCount songs not downloaded"
+                        else -> "Download every song in your library"
                     },
                     icon = {
                         if (isCurrentlyCaching) {
@@ -608,7 +605,7 @@ private fun CachePage(
                     onClick = {
                         if (!isCurrentlyCaching) {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.cacheAllLiked()
+                            vm.cacheAllLibrary()
                         }
                     }
                 )
