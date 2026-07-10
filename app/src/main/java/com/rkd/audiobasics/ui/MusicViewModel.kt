@@ -713,6 +713,59 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Download every song in the whole library: liked songs + every custom playlist, deduplicated. */
+    fun cacheAllLibrary() {
+        if (_cacheProgress.value != null) {
+            Toast.makeText(getApplication(), "Already downloading...", Toast.LENGTH_SHORT).show()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val likedIds = _likedSongs.value.map { it.id }.toSet()
+            val playlistSongs = playlistDao.getAllPlaylistSongs().map { it.toSong() }
+            val combined = LinkedHashMap<String, Song>()
+            _likedSongs.value.forEach { combined[it.id] = it }
+            playlistSongs.forEach { if (it.id !in combined) combined[it.id] = it }
+
+            val uncached = combined.values.filter { !it.isCached }
+            if (uncached.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "All songs downloaded!", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            cacheAllJob = viewModelScope.launch {
+                createCacheNotificationChannel()
+                val total = uncached.size
+                var done = 0
+                _cacheProgress.value = Pair(0, total)
+                updateCacheNotification(0, total)
+                try {
+                    coroutineScope {
+                        uncached.map { song ->
+                            async {
+                                if (song.id in likedIds) {
+                                    updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = false)
+                                }
+                                cacheSemaphore.withPermit { cacheSongSilently(song) }
+                                synchronized(this@MusicViewModel) { done++ }
+                                _cacheProgress.value = Pair(done, total)
+                                updateCacheNotification(done, total)
+                            }
+                        }.forEach { it.await() }
+                    }
+                } finally {
+                    _cacheProgress.value = null
+                    refreshCacheSize()
+                    cancelCacheNotification()
+                    if (_openPlaylistId.value != null) {
+                        _openPlaylistSongs.value = playlistDao.getPlaylistSongs(_openPlaylistId.value!!)
+                    }
+                    Toast.makeText(getApplication(), "Download complete!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     fun shuffleLiked() {
         val shuffled = _likedSongs.value.shuffled()
         if (shuffled.isEmpty()) return
@@ -928,51 +981,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _openPlaylistId.value?.let { pid ->
                 withContext(Dispatchers.IO) {
                     _openPlaylistSongs.value = playlistDao.getPlaylistSongs(pid)
-                }
-            }
-        }
-    }
-
-    /** Download every song in a specific custom playlist (not just liked songs). */
-    fun cacheAllInPlaylist(playlistId: String) {
-        if (_cacheProgress.value != null) {
-            Toast.makeText(getApplication(), "Already downloading...", Toast.LENGTH_SHORT).show()
-            return
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            val allSongs = playlistDao.getPlaylistSongs(playlistId).map { it.toSong() }
-            val uncached = allSongs.filter { !it.isCached }
-            if (uncached.isEmpty()) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "All songs downloaded!", Toast.LENGTH_SHORT).show()
-                }
-                return@launch
-            }
-            cacheAllJob = viewModelScope.launch {
-                createCacheNotificationChannel()
-                val total = uncached.size
-                var done = 0
-                _cacheProgress.value = Pair(0, total)
-                updateCacheNotification(0, total)
-                try {
-                    coroutineScope {
-                        uncached.map { song ->
-                            async {
-                                cacheSemaphore.withPermit { cacheSongSilently(song) }
-                                synchronized(this@MusicViewModel) { done++ }
-                                _cacheProgress.value = Pair(done, total)
-                                updateCacheNotification(done, total)
-                            }
-                        }.forEach { it.await() }
-                    }
-                } finally {
-                    _cacheProgress.value = null
-                    refreshCacheSize()
-                    cancelCacheNotification()
-                    if (_openPlaylistId.value == playlistId) {
-                        _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
-                    }
-                    Toast.makeText(getApplication(), "Download complete!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
