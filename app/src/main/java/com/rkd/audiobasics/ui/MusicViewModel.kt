@@ -676,6 +676,18 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Retry downloading a single song not tracked as liked or in a playlist (e.g. from an album view). */
+    fun retryCacheStandalone(song: Song) {
+        CacheManager.removeCachedSong(getApplication(), song.id)
+        viewModelScope.launch {
+            cacheSemaphore.withPermit { cacheSongSilently(song) }
+            if (isLiked(song.id)) {
+                updateLikedSongCacheStatus(song.id, isCached = CacheManager.isCached(getApplication(), song.id), cacheFailed = false)
+            }
+            refreshCacheSize()
+        }
+    }
+
     fun cacheAllLiked() {
         if (_cacheProgress.value != null) {
             Toast.makeText(getApplication(), "Already downloading...", Toast.LENGTH_SHORT).show()
@@ -713,7 +725,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Download every song in the whole library: liked songs + every custom playlist, deduplicated. */
+    /** Download every song in the whole library: liked songs, every custom playlist, and every saved album, deduplicated. */
     fun cacheAllLibrary() {
         if (_cacheProgress.value != null) {
             Toast.makeText(getApplication(), "Already downloading...", Toast.LENGTH_SHORT).show()
@@ -722,11 +734,31 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val likedIds = _likedSongs.value.map { it.id }.toSet()
             val playlistSongs = playlistDao.getAllPlaylistSongs().map { it.toSong() }
+
             val combined = LinkedHashMap<String, Song>()
             _likedSongs.value.forEach { combined[it.id] = it }
             playlistSongs.forEach { if (it.id !in combined) combined[it.id] = it }
 
-            val uncached = combined.values.filter { !it.isCached }
+            // Fetch tracklists for every saved album (network calls, run in parallel)
+            val albumSongLists = coroutineScope {
+                _savedAlbums.value.map { album ->
+                    async {
+                        try {
+                            Innertube.getAlbumSongs(album.id, album.artist, caller = "cacheAllLibrary").second
+                        } catch (e: Exception) {
+                            Log.e("YTLite", "cacheAllLibrary: failed to load ${album.title}: ${e.message}")
+                            emptyList()
+                        }
+                    }
+                }.map { it.await() }
+            }
+            albumSongLists.forEach { songs ->
+                songs.forEach { if (it.id !in combined) combined[it.id] = it }
+            }
+
+            val uncached = combined.values.filter {
+                !CacheManager.isCached(getApplication(), it.id)
+            }
             if (uncached.isEmpty()) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "All songs downloaded!", Toast.LENGTH_SHORT).show()
