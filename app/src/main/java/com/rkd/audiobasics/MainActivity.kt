@@ -376,7 +376,8 @@ fun AudiobasicsApp(
                         onBack = { navigateBack() },
                         onNavigateQueue = { navigate(Screen.Queue) },
                         onNavigateArtist = { name -> navigate(Screen.ArtistDetail(name)) },
-                        onAddTo = { song -> addToSheetSong = song }
+                        onAddTo = { song -> addToSheetSong = song },
+                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) }
                     )
                     is Screen.ArtistDetail -> ArtistScreen(
                         vm = vm,
