@@ -44,7 +44,8 @@ fun CustomPlaylistScreen(
     isDarkMode: Boolean,
     onBack: () -> Unit,
     onAddTo: (Song) -> Unit,
-    onNavigateQueue: () -> Unit = {}
+    onNavigateQueue: () -> Unit = {},
+    onNavigateCacheSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -154,7 +155,7 @@ fun CustomPlaylistScreen(
                                 textDecoration = TextDecoration.Underline,
                                 modifier = Modifier.clickable {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    vm.cacheAllInPlaylist(playlist.id)
+                                    onNavigateCacheSettings()
                                 }
                             )
                         }
