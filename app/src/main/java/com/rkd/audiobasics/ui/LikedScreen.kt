@@ -44,7 +44,8 @@ fun LikedScreen(
     isDarkMode: Boolean,
     onBack: () -> Unit,
     onNavigateQueue: () -> Unit,
-    onNavigateCacheSettings: () -> Unit
+    onNavigateCacheSettings: () -> Unit,
+    onAddTo: (com.rkd.audiobasics.data.Song) -> Unit = {}
 ) {
     val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
@@ -227,7 +228,8 @@ fun LikedScreen(
                     onLike = { vm.toggleLike(song) },
                     onShare = {},
                     onRetryCache = { vm.retryCache(song) },
-                    onRemoveLike = { vm.toggleLike(song) }
+                    onRemoveLike = { vm.toggleLike(song) },
+                    onAddTo = { onAddTo(song) }
                 )
             }
         }
