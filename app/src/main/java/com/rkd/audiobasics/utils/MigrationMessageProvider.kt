@@ -36,7 +36,7 @@ object MigrationMessageProvider {
     const val UPDATER_WARNING_DEFAULT =
         "A major update is coming. You'll need to uninstall this app and install the new one.\n\n" +
             "To keep your library and playlists, export them before updating, then import on the new version.\n" +
-            "(Note: cached songs will need to be re-downloaded)\n\n" +
+            "(Note: downloaded songs will need to be re-downloaded)\n\n" +
             "This is a one-time change and won't happen again."
 
     const val POPUP_WARNING_DEFAULT =
