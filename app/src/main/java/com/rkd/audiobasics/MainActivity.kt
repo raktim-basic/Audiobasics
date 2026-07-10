@@ -230,7 +230,7 @@ fun AudiobasicsApp(
         AlertDialog(
             onDismissRequest = { vm.dismissStorageLow() },
             title = { Text("Storage Low", fontFamily = NothingFont) },
-            text = { Text("Cannot cache song — less than 1GB storage available.", fontFamily = NothingFont) },
+            text = { Text("Cannot download song — less than 1GB storage available.", fontFamily = NothingFont) },
             confirmButton = {
                 TextButton(onClick = { vm.dismissStorageLow() }) {
                     Text("OK", fontFamily = NothingFont, color = Color.Red)
