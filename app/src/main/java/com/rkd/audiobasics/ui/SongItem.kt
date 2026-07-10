@@ -314,7 +314,7 @@ fun BrokenHeartDialog(
     onDismiss: () -> Unit,
     onPlayOnline: () -> Unit,
     onRetryCache: () -> Unit,
-    onRemoveLike: () -> Unit
+    onRemoveLike: (() -> Unit)? = null
 ) {
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -352,11 +352,13 @@ fun BrokenHeartDialog(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(16.dp))
-                listOf(
-                    Triple("Play online", Color.Red, onPlayOnline),
-                    Triple("Retry download", if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0), onRetryCache),
-                    Triple(removeLabel, if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0), onRemoveLike)
-                ).forEach { (label, bg, action) ->
+                buildList {
+                    add(Triple("Play online", Color.Red, onPlayOnline))
+                    add(Triple("Retry download", if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0), onRetryCache))
+                    if (onRemoveLike != null) {
+                        add(Triple(removeLabel, if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0), onRemoveLike))
+                    }
+                }.forEach { (label, bg, action) ->
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
