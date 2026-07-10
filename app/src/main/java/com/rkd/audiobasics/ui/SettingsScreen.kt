@@ -206,7 +206,7 @@ private fun SettingsMainPage(
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Cache",
+                    title = "Downloads",
                     subtitle = "Offline songs management",
                     icon = {
                         Icon(
@@ -548,7 +548,7 @@ private fun CachePage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Cache",
+                text = "Downloads",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 24.sp,
@@ -565,8 +565,8 @@ private fun CachePage(
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Cache Size",
-                    subtitle = if (cacheSize.isBlank()) "No cache" else cacheSize,
+                    title = "Download Size",
+                    subtitle = if (cacheSize.isBlank()) "No downloads" else cacheSize,
                     icon = {},
                     onClick = {}
                 )
@@ -578,16 +578,16 @@ private fun CachePage(
 
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Cache All Liked Songs",
+                    title = "Download All Liked Songs",
                     subtitle = when {
                         isCurrentlyCaching -> {
                             val (done, total) = cacheProgress!!
                             val percent = if (total > 0)
                                 ((done.toFloat() / total.toFloat()) * 100).toInt() else 0
-                            "Caching... $done / $total ($percent%)"
+                            "Downloading... $done / $total ($percent%)"
                         }
-                        uncachedCount == 0 -> "All songs cached!"
-                        else -> "$uncachedCount songs not cached"
+                        uncachedCount == 0 -> "All songs downloaded!"
+                        else -> "$uncachedCount songs not downloaded"
                     },
                     icon = {
                         if (isCurrentlyCaching) {
