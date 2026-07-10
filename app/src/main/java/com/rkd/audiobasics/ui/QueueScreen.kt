@@ -47,7 +47,8 @@ private fun formatCountdown(remainingMs: Long): String {
 fun QueueScreen(
     vm: MusicViewModel,
     isDarkMode: Boolean,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onAddTo: (com.rkd.audiobasics.data.Song) -> Unit = {}
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -311,6 +312,7 @@ fun QueueScreen(
                             },
                             onRetryCache = { vm.retryCache(song) },
                             onRemoveLike = { vm.toggleLike(song) },
+                            onAddTo = { onAddTo(song) },
                             isDragging = isDragging
                         )
                     }
