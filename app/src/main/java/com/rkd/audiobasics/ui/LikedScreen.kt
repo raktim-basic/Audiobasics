@@ -177,14 +177,14 @@ fun LikedScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (uncachedCount == likedSongs.size) "All songs aren't cached. " 
-                                       else "$uncachedCount songs aren't cached. ",
+                                text = if (uncachedCount == likedSongs.size) "All songs aren't downloaded. " 
+                                       else "$uncachedCount songs aren't downloaded. ",
                                 fontFamily = NothingFont,
                                 fontSize = 13.sp,
                                 color = Color.Gray
                             )
                             Text(
-                                text = "Cache them?",
+                                text = "Download them?",
                                 fontFamily = NothingFont,
                                 fontSize = 13.sp,
                                 color = Color(0xFF1565C0),
