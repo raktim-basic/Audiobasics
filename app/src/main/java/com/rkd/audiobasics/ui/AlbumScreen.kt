@@ -102,9 +102,23 @@ fun AlbumScreen(
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    LaunchedEffect(album.id) {
-        isLoading = true
+    val savedAlbumSongsMap by vm.savedAlbumSongs.collectAsState()
+    val persistedForThisAlbum = savedAlbumSongsMap[album.id]
+
+    LaunchedEffect(album.id, persistedForThisAlbum != null) {
+        // If this album has a persisted offline tracklist, show it immediately —
+        // this is what lets a saved album open fully offline.
+        val persisted = savedAlbumSongsMap[album.id]
+        if (persisted != null) {
+            albumSongs = persisted
+            isLoading = false
+        }
+
+        // Still attempt a live refresh (updates metadata / picks up tracklist changes)
+        // unless we already have a persisted copy and there's no network — errors are
+        // silently ignored in that case since we already have something to show.
         try {
+            if (persisted == null) isLoading = true
             val (meta, songs) = com.rkd.audiobasics.api.Innertube.getAlbumSongs(
                 browseId = album.id,
                 fallbackArtist = album.artist,
@@ -118,9 +132,19 @@ fun AlbumScreen(
                     thumbnail = meta.thumbnail.ifBlank { album.thumbnail },
                     year = meta.year.ifBlank { album.year }
                 )
+                // Share this resolved metadata app-wide so Song Info (and anywhere else
+                // that looks up album titles by id) benefits immediately, not just this screen.
+                if (meta.title.isNotBlank()) {
+                    vm.cacheResolvedAlbum(enrichedAlbum)
+                    // If this album was saved previously with incomplete metadata (e.g. a
+                    // blank title from before this fix), refresh the saved copy too.
+                    if (isSaved) vm.refreshSavedAlbumMetadata(enrichedAlbum)
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
+            // Network failed — fall back to whatever we have persisted, if anything.
+            if (persisted != null) albumSongs = persisted
         } finally {
             isLoading = false
         }
@@ -140,8 +164,9 @@ fun AlbumScreen(
         if (cacheProgress == null) cacheRefreshTick++
     }
 
-    val uncachedInAlbumCount = remember(albumSongs, cacheRefreshTick) {
-        albumSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.id) }
+    val uncachedInAlbumCount = remember(albumSongs, cacheRefreshTick, isSaved) {
+        if (!isSaved) 0
+        else albumSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.id) }
     }
     val isAlbumCaching = remember(albumSongs, cachingSongIds) {
         albumSongs.any { it.id in cachingSongIds }
@@ -258,10 +283,17 @@ fun AlbumScreen(
                             .fillMaxWidth()
                             .background(bgColor)
                     ) {
+                        var titleOverflowed by remember { mutableStateOf(false) }
+                        var titleExpanded by remember { mutableStateOf(false) }
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                                .padding(horizontal = 20.dp, vertical = 8.dp)
+                                .clickable(enabled = titleOverflowed || titleExpanded) {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    titleExpanded = !titleExpanded
+                                },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
@@ -270,33 +302,38 @@ fun AlbumScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
                                 color = textColor,
-                                maxLines = 2,
+                                maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
                                 overflow = TextOverflow.Ellipsis,
+                                onTextLayout = { result ->
+                                    if (!titleExpanded && result.hasVisualOverflow) titleOverflowed = true
+                                },
                                 modifier = Modifier.weight(1f)
                             )
-                            Spacer(Modifier.width(8.dp))
 
-                            // Share
-                            IconButton(onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(
-                                        Intent.EXTRA_TEXT,
-                                        album.youtubeUrl.ifBlank {
-                                            "https://www.youtube.com/playlist?list=${album.id}"
-                                        }
-                                    )
+                            if (!titleExpanded) {
+                                Spacer(Modifier.width(8.dp))
+
+                                // Share
+                                IconButton(onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(
+                                            Intent.EXTRA_TEXT,
+                                            album.youtubeUrl.ifBlank {
+                                                "https://www.youtube.com/playlist?list=${album.id}"
+                                            }
+                                        )
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share album"))
+                                }) {
+                                    Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor, modifier = Modifier.size(22.dp))
                                 }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share album"))
-                            }) {
-                                Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor, modifier = Modifier.size(22.dp))
-                            }
 
                             // Save/unsave
                             IconButton(onClick = {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                if (isSaved) vm.unsaveAlbum(album) else vm.saveAlbum(album)
+                                if (isSaved) vm.unsaveAlbum(enrichedAlbum) else vm.saveAlbum(enrichedAlbum)
                             }) {
                                 Icon(
                                     imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
@@ -352,6 +389,7 @@ fun AlbumScreen(
                                     )
                                 }
                             }
+                            } // end if (!titleExpanded)
                         }
 
                         if (uncachedInAlbumCount > 0) {
@@ -408,8 +446,8 @@ fun AlbumScreen(
                     itemsIndexed(filteredSongs) { index, song ->
                         val isLiked = likedSongs.any { it.id == song.id }
                         val isPlaying = currentSong?.id == song.id
-                        val songIsCached = remember(song.id, cacheRefreshTick) {
-                            com.rkd.audiobasics.cache.CacheManager.isCached(context, song.id)
+                        val songIsCached = remember(song.id, cacheRefreshTick, isSaved) {
+                            !isSaved || com.rkd.audiobasics.cache.CacheManager.isCached(context, song.id)
                         }
                         AlbumSongRow(
                             trackNumber = index + 1,
