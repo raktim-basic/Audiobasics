@@ -81,6 +81,11 @@ fun CustomPlaylistScreen(
         playlistSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.songId) }
     }
 
+    val cachingSongIds by vm.cachingSongIds.collectAsState()
+    val isPlaylistCaching = remember(playlistSongs, cachingSongIds) {
+        playlistSongs.any { it.songId in cachingSongIds }
+    }
+
     val totalItems = filteredSongs.size + 1
     val scrollProgress = remember(listState, totalItems) {
         derivedStateOf {
@@ -101,7 +106,10 @@ fun CustomPlaylistScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Spacer(Modifier.height(32.dp))
-                    Text(text = if (uncachedCount > 0) "💔" else playlist.emoji, fontSize = 100.sp)
+                    Text(
+                        text = if (isPlaylistCaching) "❤️‍🩹" else if (uncachedCount > 0) "💔" else playlist.emoji,
+                        fontSize = 100.sp
+                    )
                     Spacer(Modifier.height(24.dp))
                 }
             }
@@ -141,14 +149,15 @@ fun CustomPlaylistScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (uncachedCount == playlistSongs.size) "All songs aren't downloaded. "
+                                text = if (isPlaylistCaching) "Downloading songs. "
+                                       else if (uncachedCount == playlistSongs.size) "All songs aren't downloaded. "
                                        else "$uncachedCount songs aren't downloaded. ",
                                 fontFamily = NothingFont,
                                 fontSize = 13.sp,
                                 color = Color.Gray
                             )
                             Text(
-                                text = "Download them?",
+                                text = if (isPlaylistCaching) "See progress" else "Download them?",
                                 fontFamily = NothingFont,
                                 fontSize = 13.sp,
                                 color = Color(0xFF1565C0),
@@ -225,7 +234,8 @@ fun CustomPlaylistScreen(
                     onPlayNext = { vm.playNext(song) },
                     onAddTo = { onAddTo(song) },
                     onRetryCache = { vm.retryCacheInPlaylist(song) },
-                    onRemoveLike = { removeConfirm = song }
+                    onRemoveLike = { removeConfirm = song },
+                    isCaching = song.id in cachingSongIds
                 )
             }
         }
