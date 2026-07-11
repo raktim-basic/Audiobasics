@@ -122,12 +122,14 @@ fun SongInfoScreen(
         CacheManager.isLyricsCached(context, song.id)
     }
 
-    // Parse artists (comma/& separated in the artist string)
-    val artists = remember(song.artist) {
-        song.artist
-            .split(Regex(",\\s*|\\s*&\\s*|\\s*feat\\.\\s*", RegexOption.IGNORE_CASE))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
+    // Individual artist names — prefer the structured list parsed directly from YouTube's
+    // response (accurate even for names containing a comma, like "Tyler, The Creator");
+    // falls back to a best-effort string split only for songs loaded without that data
+    // (e.g. from an older cached/liked entry saved before this field existed).
+    val artists = remember(song.id, song.artist, song.artistNames) {
+        song.artistNames.ifEmpty {
+            com.rkd.audiobasics.api.Innertube.splitArtistNamesWithFeat(song.artist)
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
