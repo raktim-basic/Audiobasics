@@ -38,19 +38,38 @@ object Innertube {
      * display string by comma after the fact is lossy and can't tell these cases apart; reading
      * the runs directly can.
      */
+    /**
+     * Extracts individual artist names from a raw "runs" list (the artist-credit portion of a
+     * song/album subtitle, already truncated to before the first "•").
+     *
+     * Deliberately does NOT treat a comma as a separator between artists, even when YouTube
+     * sends it as its own literal run (e.g. "Tyler" / ", " / "The Creator" as three runs) —
+     * YouTube uses a comma-run between names in both cases: genuinely distinct co-artists, AND
+     * as an internal rendering detail of a single artist's own name. There's no reliable way to
+     * tell these apart from the runs alone, so treating comma as a hard separator is unsafe.
+     * Only "&" (as its own run) and "•" reliably mean "next artist" — those are split on;
+     * comma-adjacent runs are instead re-joined with ", " to preserve names like
+     * "Tyler, The Creator" or "Earth, Wind & Fire" intact.
+     */
     private fun extractArtistNamesFromRuns(runs: List<JSONObject>): List<String> {
         val names = mutableListOf<String>()
+        val current = StringBuilder()
+        fun flush() {
+            val name = current.toString().trim().trim(',').trim()
+            if (name.isNotBlank()) names.add(name)
+            current.clear()
+        }
         runs.forEach { run ->
             val t = run.optString("text", "")
             val trimmed = t.trim()
-            // Pure separator runs (",", "&", "•", "and") carry no artist name — skip them.
-            // Anything else is kept as-is, comma or ampersand included, since a real separator
-            // run from YouTube never mixes a name with the separator character.
-            val isPureSeparator = trimmed.isEmpty() ||
-                trimmed == "," || trimmed == "&" || trimmed == "•" ||
-                trimmed.equals("and", ignoreCase = true)
-            if (!isPureSeparator) names.add(trimmed)
+            when {
+                trimmed == "&" || trimmed == "•" || trimmed.equals("and", ignoreCase = true) -> flush()
+                trimmed == "," -> current.append(", ") // keep as part of the current name, not a split point
+                trimmed.isBlank() -> {}
+                else -> current.append(t)
+            }
         }
+        flush()
         return names.filter { it.isNotBlank() }
     }
 
@@ -216,60 +235,28 @@ object Innertube {
         } catch (_: Exception) { "" }
     }
 
-    // Splits an artist credit string like "Future, Metro Boomin, & Kendrick Lamar" or
-    // "Future & Metro Boomin" into individual, trimmed names: ["Future", "Metro Boomin",
-    // "Kendrick Lamar"]. Deliberately doesn't try to detect "(feat. ...)" — YTM doesn't
-    // consistently mark guest features that way, so callers should instead use this to
-    // intersect names across every track on an album and keep only the ones present on all.
-    // Artist names that contain a comma or ampersand as part of the name itself, not as a
-    // separator between multiple artists. Checked (case-insensitively) before the generic
-    // split so these are never incorrectly broken into separate "artists".
-    private val COMMA_SAFE_ARTIST_NAMES = listOf(
-        "Tyler, The Creator",
-        "Earth, Wind & Fire",
-        "Crosby, Stills & Nash",
-        "Crosby, Stills, Nash & Young",
-        "Florence + The Machine"
-    )
-
-    /** Masks commas/ampersands inside known comma-safe artist names so a generic separator
-     *  split won't break them apart. Caller is responsible for un-masking after splitting. */
-    private fun maskCommaSafeNames(input: String): String {
-        var masked = input
-        val placeholder = "\u0000"
-        COMMA_SAFE_ARTIST_NAMES.forEach { safeName ->
-            val idx = masked.indexOf(safeName, ignoreCase = true)
-            if (idx >= 0) {
-                val actual = masked.substring(idx, idx + safeName.length)
-                masked = masked.replaceRange(idx, idx + safeName.length, actual.replace(",", placeholder))
-            }
-        }
-        return masked
-    }
-
+    // Splits an artist credit string like "Future & Metro Boomin" or "Future and Metro Boomin"
+    // into individual, trimmed names. Deliberately does NOT split on comma — YouTube uses a
+    // comma both between genuinely separate co-artists (rare; usually they use "&" or "and")
+    // and inside a single artist's own name (e.g. "Tyler, The Creator", "Earth, Wind & Fire"),
+    // and there's no reliable way to tell these apart from the string alone. Only "&" and the
+    // word "and" are safe, unambiguous separators. Also doesn't try to detect "(feat. ...)" —
+    // YTM doesn't consistently mark guest features that way, so callers should instead use this
+    // to intersect names across every track on an album and keep only the ones present on all.
     fun splitArtistNames(artist: String): List<String> {
-        val trimmed = artist.trim()
-        // Whole-string match against a known comma-safe name — treat as a single artist.
-        COMMA_SAFE_ARTIST_NAMES.forEach { safeName ->
-            if (trimmed.equals(safeName, ignoreCase = true)) return listOf(trimmed)
-        }
-        val masked = maskCommaSafeNames(trimmed)
-        return masked.split(",", "&")
-            .map { it.trim().replace("\u0000", ",") }
+        return artist.trim()
+            .split(Regex("\\s*&\\s*|\\s+and\\s+", RegexOption.IGNORE_CASE))
+            .map { it.trim().trim(',').trim() }
             .filter { it.isNotBlank() }
     }
 
     /** Same as [splitArtistNames] but also splits on "feat." — used where a full song credit
      *  string (e.g. "Tyler, The Creator feat. Kali Uchis") needs breaking into individual
-     *  artist names for display/linking. */
+     *  artist names for display/linking. Still never splits on comma alone. */
     fun splitArtistNamesWithFeat(artist: String): List<String> {
-        val trimmed = artist.trim()
-        COMMA_SAFE_ARTIST_NAMES.forEach { safeName ->
-            if (trimmed.equals(safeName, ignoreCase = true)) return listOf(trimmed)
-        }
-        val masked = maskCommaSafeNames(trimmed)
-        return masked.split(Regex(",\\s*|\\s*&\\s*|\\s*feat\\.\\s*", RegexOption.IGNORE_CASE))
-            .map { it.trim().replace("\u0000", ",") }
+        return artist.trim()
+            .split(Regex("\\s*&\\s*|\\s+and\\s+|\\s*feat\\.\\s*", RegexOption.IGNORE_CASE))
+            .map { it.trim().trim(',').trim() }
             .filter { it.isNotBlank() }
     }
 
