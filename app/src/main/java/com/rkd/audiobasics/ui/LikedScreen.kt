@@ -80,6 +80,11 @@ fun LikedScreen(
         likedSongs.count { !it.isCached }
     }
 
+    val cachingSongIds by vm.cachingSongIds.collectAsState()
+    val isLikedCaching = remember(likedSongs, cachingSongIds) {
+        likedSongs.any { it.id in cachingSongIds }
+    }
+
     LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
         if (filteredSongs.isNotEmpty()) {
             savedLikedIndex = listState.firstVisibleItemIndex
@@ -123,7 +128,10 @@ fun LikedScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Spacer(Modifier.height(32.dp))
-                    Text(if (uncachedCount > 0) "💔" else "❤️", fontSize = 100.sp)
+                    Text(
+                        if (isLikedCaching) "❤️‍🩹" else if (uncachedCount > 0) "💔" else "❤️",
+                        fontSize = 100.sp
+                    )
                     Spacer(Modifier.height(24.dp))
                 }
             }
@@ -178,14 +186,15 @@ fun LikedScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (uncachedCount == likedSongs.size) "All songs aren't downloaded. " 
+                                text = if (isLikedCaching) "Downloading songs. "
+                                       else if (uncachedCount == likedSongs.size) "All songs aren't downloaded. " 
                                        else "$uncachedCount songs aren't downloaded. ",
                                 fontFamily = NothingFont,
                                 fontSize = 13.sp,
                                 color = Color.Gray
                             )
                             Text(
-                                text = "Download them?",
+                                text = if (isLikedCaching) "See progress" else "Download them?",
                                 fontFamily = NothingFont,
                                 fontSize = 13.sp,
                                 color = Color(0xFF1565C0),
@@ -229,7 +238,8 @@ fun LikedScreen(
                     onShare = {},
                     onRetryCache = { vm.retryCache(song) },
                     onRemoveLike = { vm.toggleLike(song) },
-                    onAddTo = { onAddTo(song) }
+                    onAddTo = { onAddTo(song) },
+                    isCaching = song.id in cachingSongIds
                 )
             }
         }
