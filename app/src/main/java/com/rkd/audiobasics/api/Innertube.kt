@@ -25,6 +25,36 @@ import org.schabi.newpipe.extractor.stream.AudioStream
 import java.util.concurrent.TimeUnit
 
 object Innertube {
+    /**
+     * Extracts individual artist names from a raw "runs" JSONArray (the artist-credit portion
+     * of a song/album subtitle, already truncated to before the first "•"), treating run
+     * boundaries as the only source of truth for where one artist name ends and another
+     * begins — never re-splitting a single run's own text on comma/ampersand.
+     *
+     * This is the fix for artist names that contain a comma or ampersand as part of the name
+     * itself (e.g. "Tyler, The Creator", "Earth, Wind & Fire") — YouTube always gives these as
+     * ONE run with the full name as its text, while genuinely separate co-artists are given as
+     * separate runs joined by a literal separator run (", " or " & "). Splitting the joined
+     * display string by comma after the fact is lossy and can't tell these cases apart; reading
+     * the runs directly can.
+     */
+    private fun extractArtistNamesFromRuns(runs: List<JSONObject>): List<String> {
+        val names = mutableListOf<String>()
+        runs.forEach { run ->
+            val t = run.optString("text", "")
+            val trimmed = t.trim()
+            // Pure separator runs (",", "&", "•", "and") carry no artist name — skip them.
+            // Anything else is kept as-is, comma or ampersand included, since a real separator
+            // run from YouTube never mixes a name with the separator character.
+            val isPureSeparator = trimmed.isEmpty() ||
+                trimmed == "," || trimmed == "&" || trimmed == "•" ||
+                trimmed.equals("and", ignoreCase = true)
+            if (!isPureSeparator) names.add(trimmed)
+        }
+        return names.filter { it.isNotBlank() }
+    }
+
+
 
     private var newPipeInitialized = false
 
@@ -191,9 +221,55 @@ object Innertube {
     // "Kendrick Lamar"]. Deliberately doesn't try to detect "(feat. ...)" — YTM doesn't
     // consistently mark guest features that way, so callers should instead use this to
     // intersect names across every track on an album and keep only the ones present on all.
-    private fun splitArtistNames(artist: String): List<String> {
-        return artist.split(",", "&")
-            .map { it.trim() }
+    // Artist names that contain a comma or ampersand as part of the name itself, not as a
+    // separator between multiple artists. Checked (case-insensitively) before the generic
+    // split so these are never incorrectly broken into separate "artists".
+    private val COMMA_SAFE_ARTIST_NAMES = listOf(
+        "Tyler, The Creator",
+        "Earth, Wind & Fire",
+        "Crosby, Stills & Nash",
+        "Crosby, Stills, Nash & Young",
+        "Florence + The Machine"
+    )
+
+    /** Masks commas/ampersands inside known comma-safe artist names so a generic separator
+     *  split won't break them apart. Caller is responsible for un-masking after splitting. */
+    private fun maskCommaSafeNames(input: String): String {
+        var masked = input
+        val placeholder = "\u0000"
+        COMMA_SAFE_ARTIST_NAMES.forEach { safeName ->
+            val idx = masked.indexOf(safeName, ignoreCase = true)
+            if (idx >= 0) {
+                val actual = masked.substring(idx, idx + safeName.length)
+                masked = masked.replaceRange(idx, idx + safeName.length, actual.replace(",", placeholder))
+            }
+        }
+        return masked
+    }
+
+    fun splitArtistNames(artist: String): List<String> {
+        val trimmed = artist.trim()
+        // Whole-string match against a known comma-safe name — treat as a single artist.
+        COMMA_SAFE_ARTIST_NAMES.forEach { safeName ->
+            if (trimmed.equals(safeName, ignoreCase = true)) return listOf(trimmed)
+        }
+        val masked = maskCommaSafeNames(trimmed)
+        return masked.split(",", "&")
+            .map { it.trim().replace("\u0000", ",") }
+            .filter { it.isNotBlank() }
+    }
+
+    /** Same as [splitArtistNames] but also splits on "feat." — used where a full song credit
+     *  string (e.g. "Tyler, The Creator feat. Kali Uchis") needs breaking into individual
+     *  artist names for display/linking. */
+    fun splitArtistNamesWithFeat(artist: String): List<String> {
+        val trimmed = artist.trim()
+        COMMA_SAFE_ARTIST_NAMES.forEach { safeName ->
+            if (trimmed.equals(safeName, ignoreCase = true)) return listOf(trimmed)
+        }
+        val masked = maskCommaSafeNames(trimmed)
+        return masked.split(Regex(",\\s*|\\s*&\\s*|\\s*feat\\.\\s*", RegexOption.IGNORE_CASE))
+            .map { it.trim().replace("\u0000", ",") }
             .filter { it.isNotBlank() }
     }
 
@@ -630,18 +706,26 @@ object Innertube {
                                 ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
                             val col1Runs = col1?.optJSONObject("text")?.optJSONArray("runs")
                             var songArtist = albumArtist.ifBlank { fallbackArtist.ifBlank { "Unknown Artist" } }
+                            var songArtistNames: List<String> = emptyList()
                             if (col1Runs != null) {
                                 val parts = mutableListOf<String>()
+                                val preDotRuns = mutableListOf<JSONObject>()
                                 var hitDot = false
                                 for (r in 0 until col1Runs.length()) {
-                                    val t = col1Runs.optJSONObject(r)?.optString("text", "") ?: ""
+                                    val runObj = col1Runs.optJSONObject(r)
+                                    val t = runObj?.optString("text", "") ?: ""
                                     if (t == " • " || t == "•") { if (!hitDot) { hitDot = true; continue } else break }
                                     if (t.isBlank()) continue
-                                    if (!hitDot) parts.add(t)
+                                    if (!hitDot) {
+                                        parts.add(t)
+                                        if (runObj != null) preDotRuns.add(runObj)
+                                    }
                                 }
                                 if (parts.isNotEmpty()) songArtist = parts.joinToString("")
+                                songArtistNames = extractArtistNamesFromRuns(preDotRuns)
                             }
                             songs.add(Song(id = videoId, title = songTitle, artist = songArtist,
+                                artistNames = songArtistNames,
                                 thumbnail = ytThumbnail(videoId), duration = parseDurationMs(item),
                                 albumId = browseId, albumTitle = albumTitle,
                                 isExplicit = parseExplicit(item.optJSONArray("badges"))))
@@ -1079,21 +1163,29 @@ object Innertube {
                                     ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
                                 val col1Runs = col1?.optJSONObject("text")?.optJSONArray("runs")
                                 var songArtist = artistName
+                                var songArtistNames: List<String> = emptyList()
                                 if (col1Runs != null) {
                                     val parts = mutableListOf<String>(); var hitDot = false
+                                    val preDotRuns = mutableListOf<JSONObject>()
                                     for (r2 in 0 until col1Runs.length()) {
-                                        val t = col1Runs.optJSONObject(r2)?.optString("text", "") ?: ""
+                                        val runObj = col1Runs.optJSONObject(r2)
+                                        val t = runObj?.optString("text", "") ?: ""
                                         if (t == " • " || t == "•") { if (!hitDot) { hitDot = true; continue } else break }
                                         if (t.isBlank()) continue
-                                        if (!hitDot) parts.add(t)
+                                        if (!hitDot) {
+                                            parts.add(t)
+                                            if (runObj != null) preDotRuns.add(runObj)
+                                        }
                                     }
                                     if (parts.isNotEmpty()) songArtist = parts.joinToString("")
+                                    songArtistNames = extractArtistNamesFromRuns(preDotRuns)
                                 }
                                 val thumb = r.optJSONObject("thumbnail")
                                     ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
                                     ?.optJSONArray("thumbnails")?.let { t -> t.optJSONObject(t.length() - 1)?.optString("url") }
                                     ?: ytThumbnail(videoId)
-                                popularSongs.add(Song(id = videoId, title = title, artist = songArtist, thumbnail = thumb))
+                                popularSongs.add(Song(id = videoId, title = title, artist = songArtist,
+                                    artistNames = songArtistNames, thumbnail = thumb))
                             } catch (_: Exception) {}
                         }
                     }
