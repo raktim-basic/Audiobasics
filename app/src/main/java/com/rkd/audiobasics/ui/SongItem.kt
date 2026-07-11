@@ -50,7 +50,8 @@ fun SongItem(
     showMenu: Boolean = !song.isAlbum || isInQueue,
     isDragging: Boolean = false,
     showCacheIndicator: Boolean = isLiked,
-    removeLabel: String = "Remove from liked"
+    removeLabel: String = "Remove from liked",
+    isCaching: Boolean = false
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
@@ -152,15 +153,15 @@ fun SongItem(
             }
         }
 
-        // 💔 not-downloaded indicator
+        // 💔 not-downloaded / ❤️‍🩹 downloading indicator
         if (showCacheIndicator && song.cacheFailed) {
             Text(
-                text = "💔",
+                text = if (isCaching) "❤️‍🩹" else "💔",
                 fontSize = 20.sp,
                 modifier = Modifier
                     .clickable {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        showBrokenHeartDialog = true
+                        if (!isCaching) showBrokenHeartDialog = true
                     }
                     .padding(8.dp)
             )
