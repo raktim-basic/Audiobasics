@@ -77,11 +77,12 @@ fun CustomPlaylistScreen(
         }
     }
 
-    val uncachedCount = remember(playlistSongs, context) {
+    val cachingSongIds by vm.cachingSongIds.collectAsState()
+
+    val uncachedCount = remember(playlistSongs, context, cachingSongIds) {
         playlistSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.songId) }
     }
 
-    val cachingSongIds by vm.cachingSongIds.collectAsState()
     val isPlaylistCaching = remember(playlistSongs, cachingSongIds) {
         playlistSongs.any { it.songId in cachingSongIds }
     }
