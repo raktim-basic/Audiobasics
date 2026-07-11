@@ -236,10 +236,6 @@ fun AlbumScreen(
                         // Clickable artists (red, underlined)
                         val displayedArtist = enrichedAlbum.artist.substringBeforeLast("•").trim()
                         val artistList = com.rkd.audiobasics.api.Innertube.splitArtistNames(displayedArtist)
-                        com.rkd.audiobasics.ui.DebugLogCollector.add(
-                            android.util.Log.ERROR, "ARTISTDEBUG",
-                            "album.artist='${album.artist}' | displayedArtist='$displayedArtist' | artistList.size=${artistList.size} | artistList=${artistList.mapIndexed { idx, a -> "[$idx]='$a'" }}"
-                        )
 
                         Row(
                             modifier = Modifier.padding(horizontal = 20.dp),
