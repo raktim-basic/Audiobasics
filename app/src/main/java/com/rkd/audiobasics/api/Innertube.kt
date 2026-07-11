@@ -643,7 +643,8 @@ object Innertube {
                             }
                             songs.add(Song(id = videoId, title = songTitle, artist = songArtist,
                                 thumbnail = ytThumbnail(videoId), duration = parseDurationMs(item),
-                                albumId = browseId, isExplicit = parseExplicit(item.optJSONArray("badges"))))
+                                albumId = browseId, albumTitle = albumTitle,
+                                isExplicit = parseExplicit(item.optJSONArray("badges"))))
                         } catch (_: Exception) {}
                     }
                 }
