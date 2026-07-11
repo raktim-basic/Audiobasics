@@ -1212,6 +1212,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 put("albumId", song.albumId)
                 put("albumTitle", song.albumTitle)
                 put("year", song.year)
+                put("artistNames", JSONArray(song.artistNames))
             })
         }
         prefs.edit().putString("liked_songs", arr.toString()).apply()
@@ -1224,6 +1225,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val obj = arr.getJSONObject(i)
                 val id = obj.getString("id")
                 val isCached = CacheManager.isCached(getApplication(), id)
+                val artistNamesArr = obj.optJSONArray("artistNames")
+                val artistNames = if (artistNamesArr != null) {
+                    (0 until artistNamesArr.length()).map { artistNamesArr.optString(it, "") }.filter { it.isNotBlank() }
+                } else emptyList()
                 Song(
                     id = id, title = obj.getString("title"),
                     artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
@@ -1232,7 +1237,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     isExplicit = obj.optBoolean("isExplicit", false),
                     albumId = obj.optString("albumId", ""),
                     albumTitle = obj.optString("albumTitle", ""),
-                    year = obj.optString("year", "")
+                    year = obj.optString("year", ""),
+                    artistNames = artistNames
                 )
             }
         } catch (_: Exception) { emptyList() }
@@ -1313,8 +1319,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     put("thumbnail", song.thumbnail)
                     put("duration", song.duration)
                     put("albumId", song.albumId)
+                    put("albumTitle", song.albumTitle)
                     put("isExplicit", song.isExplicit)
                     put("year", song.year)
+                    put("artistNames", JSONArray(song.artistNames))
                 })
             }
             root.put(albumId, arr)
@@ -1330,13 +1338,19 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val arr = root.getJSONArray(albumId)
                 val songs = (0 until arr.length()).map { i ->
                     val obj = arr.getJSONObject(i)
+                    val artistNamesArr = obj.optJSONArray("artistNames")
+                    val artistNames = if (artistNamesArr != null) {
+                        (0 until artistNamesArr.length()).map { artistNamesArr.optString(it, "") }.filter { it.isNotBlank() }
+                    } else emptyList()
                     Song(
                         id = obj.getString("id"), title = obj.getString("title"),
                         artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
                         duration = obj.optLong("duration", 0L),
                         albumId = obj.optString("albumId", ""),
+                        albumTitle = obj.optString("albumTitle", ""),
                         isExplicit = obj.optBoolean("isExplicit", false),
-                        year = obj.optString("year", "")
+                        year = obj.optString("year", ""),
+                        artistNames = artistNames
                     )
                 }
                 map[albumId] = songs
@@ -1421,7 +1435,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             if (CacheManager.isLyricsCached(getApplication(), song.id)) return
             val result = LyricsRepository.getLyrics(
                 title = song.title,
-                artist = song.artist.split(",").first().trim(),
+                artist = com.rkd.audiobasics.api.Innertube.splitArtistNames(song.artist).firstOrNull() ?: song.artist,
                 duration = song.duration
             ) ?: return
             CacheManager.saveLyrics(getApplication(), song.id, LyricsCache.serialize(result))
