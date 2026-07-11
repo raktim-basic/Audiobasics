@@ -136,6 +136,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _savedAlbums = MutableStateFlow<List<Album>>(loadSavedAlbums())
     val savedAlbums: StateFlow<List<Album>> = _savedAlbums
 
+    // Persisted tracklists for saved albums (songId list + metadata per album), so a saved
+    // album can be opened and browsed fully offline without needing a live Innertube call.
+    // Keyed by albumId.
+    private val _savedAlbumSongs = MutableStateFlow<Map<String, List<Song>>>(loadSavedAlbumSongs())
+    val savedAlbumSongs: StateFlow<Map<String, List<Song>>> = _savedAlbumSongs
+
     // Persistent (SharedPrefs-backed) cache of album metadata resolved via a live lookup —
     // populated automatically as songs are played or cached for offline use, so Song Info
     // (and offline playback) can show the album without a network call. Keyed by albumId.
@@ -742,12 +748,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _likedSongs.value.forEach { combined[it.id] = it }
             playlistSongs.forEach { if (it.id !in combined) combined[it.id] = it }
 
-            // Fetch tracklists for every saved album (network calls, run in parallel)
+            // Use persisted tracklists for saved albums where available; only hit the
+            // network for albums we don't have a persisted tracklist for yet.
             val albumSongLists = coroutineScope {
                 _savedAlbums.value.map { album ->
                     async {
-                        try {
-                            Innertube.getAlbumSongs(album.id, album.artist, caller = "cacheAllLibrary").second
+                        _savedAlbumSongs.value[album.id] ?: try {
+                            val songs = Innertube.getAlbumSongs(album.id, album.artist, caller = "cacheAllLibrary").second
+                            _savedAlbumSongs.value = _savedAlbumSongs.value + (album.id to songs)
+                            songs
                         } catch (e: Exception) {
                             Log.e("YTLite", "cacheAllLibrary: failed to load ${album.title}: ${e.message}")
                             emptyList()
@@ -755,6 +764,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }.map { it.await() }
             }
+            saveSavedAlbumSongs()
             albumSongLists.forEach { songs ->
                 songs.forEach { if (it.id !in combined) combined[it.id] = it }
             }
@@ -1035,10 +1045,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _savedAlbums.value = listOf(album) + _savedAlbums.value
             saveSavedAlbums()
             Toast.makeText(getApplication(), "Album saved", Toast.LENGTH_SHORT).show()
-            // Cache all songs of this album
+            // Cache all songs of this album, and persist the tracklist itself so the
+            // album can be browsed fully offline afterward.
             viewModelScope.launch(Dispatchers.IO) {
                 try {
                     val (_, songs) = Innertube.getAlbumSongs(album.id, album.artist, caller = "saveAlbum")
+                    _savedAlbumSongs.value = _savedAlbumSongs.value + (album.id to songs)
+                    saveSavedAlbumSongs()
                     songs.forEach { song ->
                         cacheSemaphore.withPermit { cacheSongSilently(song) }
                     }
@@ -1048,6 +1061,25 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /**
+     * Repairs a saved album's stored metadata (title/artist/thumbnail/year) in place, keeping
+     * the same id. Used when a live lookup reveals better data than what was originally saved
+     * (e.g. an album saved before a metadata-resolution bug fix, or saved with a placeholder
+     * title from an incomplete nav source).
+     */
+    fun refreshSavedAlbumMetadata(resolved: Album) {
+        val existing = _savedAlbums.value.firstOrNull { it.id == resolved.id } ?: return
+        if (existing.title == resolved.title &&
+            existing.artist == resolved.artist &&
+            existing.thumbnail == resolved.thumbnail &&
+            existing.year == resolved.year
+        ) return // already up to date, avoid redundant writes
+        _savedAlbums.value = _savedAlbums.value.map {
+            if (it.id == resolved.id) resolved.copy(id = it.id) else it
+        }
+        saveSavedAlbums()
     }
 
     fun unsaveAlbum(album: Album) {
@@ -1060,11 +1092,18 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _savedAlbums.value = _savedAlbums.value.filterNot { it in toRemove }
         saveSavedAlbums()
         Toast.makeText(getApplication(), "Album removed", Toast.LENGTH_SHORT).show()
-        // Remove cached songs that aren't liked or in custom playlists
+        // Remove cached songs that aren't liked or in custom playlists, using the persisted
+        // tracklist (falls back to a live lookup only if we never had one cached).
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 toRemove.forEach { removedAlbum ->
-                    val (_, songs) = Innertube.getAlbumSongs(removedAlbum.id, removedAlbum.artist, caller = "unsaveAlbum")
+                    val songs = _savedAlbumSongs.value[removedAlbum.id]
+                        ?: try {
+                            Innertube.getAlbumSongs(removedAlbum.id, removedAlbum.artist, caller = "unsaveAlbum").second
+                        } catch (e: Exception) {
+                            Log.e("YTLite", "unsaveAlbum: live lookup failed: ${e.message}")
+                            emptyList()
+                        }
                     songs.forEach { song ->
                         val liked = isLiked(song.id)
                         val inPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
@@ -1072,7 +1111,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             CacheManager.removeCachedSong(getApplication(), song.id)
                         }
                     }
+                    _savedAlbumSongs.value = _savedAlbumSongs.value - removedAlbum.id
                 }
+                saveSavedAlbumSongs()
                 refreshCacheSize()
             } catch (e: Exception) {
                 Log.e("YTLite", "Failed to clean album cache: ${e.message}")
@@ -1256,6 +1297,50 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         } catch (_: Exception) { emptyList() }
+    }
+
+    private fun saveSavedAlbumSongs() {
+        val root = JSONObject()
+        _savedAlbumSongs.value.forEach { (albumId, songs) ->
+            val arr = JSONArray()
+            songs.forEach { song ->
+                arr.put(JSONObject().apply {
+                    put("id", song.id)
+                    put("title", song.title)
+                    put("artist", song.artist)
+                    put("thumbnail", song.thumbnail)
+                    put("duration", song.duration)
+                    put("albumId", song.albumId)
+                    put("isExplicit", song.isExplicit)
+                    put("year", song.year)
+                })
+            }
+            root.put(albumId, arr)
+        }
+        prefs.edit().putString("saved_album_songs", root.toString()).apply()
+    }
+
+    private fun loadSavedAlbumSongs(): Map<String, List<Song>> {
+        return try {
+            val root = JSONObject(prefs.getString("saved_album_songs", "{}") ?: "{}")
+            val map = mutableMapOf<String, List<Song>>()
+            root.keys().forEach { albumId ->
+                val arr = root.getJSONArray(albumId)
+                val songs = (0 until arr.length()).map { i ->
+                    val obj = arr.getJSONObject(i)
+                    Song(
+                        id = obj.getString("id"), title = obj.getString("title"),
+                        artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
+                        duration = obj.optLong("duration", 0L),
+                        albumId = obj.optString("albumId", ""),
+                        isExplicit = obj.optBoolean("isExplicit", false),
+                        year = obj.optString("year", "")
+                    )
+                }
+                map[albumId] = songs
+            }
+            map
+        } catch (_: Exception) { emptyMap() }
     }
 
     fun exportData(context: Context, uri: Uri) {
