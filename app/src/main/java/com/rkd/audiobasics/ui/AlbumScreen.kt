@@ -110,7 +110,7 @@ fun AlbumScreen(
         // this is what lets a saved album open fully offline.
         val persisted = savedAlbumSongsMap[album.id]
         if (persisted != null) {
-            albumSongs = persisted
+            albumSongs = persisted.map { it.copy(albumTitle = album.title.ifBlank { it.albumTitle }) }
             isLoading = false
         }
 
@@ -127,8 +127,15 @@ fun AlbumScreen(
             // Innertube.getAlbumSongs fails silently (returns null/empty) rather than
             // throwing on network errors — don't let a failed live refresh clobber a
             // working persisted tracklist with an empty one.
+            val resolvedTitle = (meta?.title?.ifBlank { null } ?: album.title)
             if (songs.isNotEmpty() || persisted == null) {
-                albumSongs = songs
+                // Stamp the album's own title directly onto each song — this is what Song
+                // Info reads immediately, with no separate browse-id lookup needed.
+                albumSongs = songs.map { it.copy(albumTitle = resolvedTitle) }
+            } else if (persisted != null) {
+                // Live fetch failed but we still have persisted songs shown — make sure
+                // they at least carry the most accurate title we have.
+                albumSongs = albumSongs.map { it.copy(albumTitle = resolvedTitle) }
             }
             if (meta != null) {
                 enrichedAlbum = album.copy(
@@ -149,7 +156,9 @@ fun AlbumScreen(
         } catch (e: Exception) {
             android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
             // Network failed — fall back to whatever we have persisted, if anything.
-            if (persisted != null) albumSongs = persisted
+            if (persisted != null) {
+                albumSongs = persisted.map { it.copy(albumTitle = album.title.ifBlank { it.albumTitle }) }
+            }
         } finally {
             isLoading = false
         }
