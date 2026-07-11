@@ -46,18 +46,24 @@ fun SongInfoScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
 
-    // Resolve the album title from its id — check saved albums / already-resolved cache
-    // first (instant, no network), then fall back to a network lookup only once per album.
+    // Resolve the album title. Fastest path: the song itself already carries its album's
+    // title (stamped on by whichever screen loaded it — Album screen, search, etc.) — use
+    // that immediately with zero lookup. Only fall back to the resolved-album cache / a live
+    // network call for songs that don't have it (e.g. loaded before this field existed, or
+    // from a source that doesn't know the album title).
     // Tapping the title searches for it by name instead of browsing this specific id, since
     // YTM itself (confirmed against the official app) sometimes has two separate catalog
     // entries for what's really the same album — search reliably lands on one canonical
     // result instead of risking opening a different, possibly-incomplete duplicate.
-    var albumTitle by remember(song.albumId) { mutableStateOf<String?>(null) }
-    var albumTitleLoading by remember(song.albumId) { mutableStateOf(song.albumId.isNotBlank()) }
+    var albumTitle by remember(song.albumId) { mutableStateOf(song.albumTitle.ifBlank { null }) }
+    var albumTitleLoading by remember(song.albumId) {
+        mutableStateOf(song.albumId.isNotBlank() && song.albumTitle.isBlank())
+    }
 
     // React immediately to any cache/savedAlbums entry that already exists or arrives later
     // (e.g. a background resolve kicked off by playback finishing after this screen opened).
     LaunchedEffect(song.albumId, savedAlbums, resolvedAlbumCache) {
+        if (song.albumTitle.isNotBlank()) return@LaunchedEffect // already have it directly
         if (song.albumId.isBlank()) {
             albumTitleLoading = false
             return@LaunchedEffect
@@ -70,9 +76,10 @@ fun SongInfoScreen(
         }
     }
 
-    // One-shot live fallback lookup, only if nothing turns up from cache/savedAlbums shortly
-    // after this screen opens. Runs once per song (not re-triggered by cache updates above).
+    // One-shot live fallback lookup, only if nothing turns up from the song itself or
+    // cache/savedAlbums shortly after this screen opens. Runs once per song.
     LaunchedEffect(song.albumId) {
+        if (song.albumTitle.isNotBlank()) return@LaunchedEffect // already have it directly
         if (song.albumId.isBlank()) return@LaunchedEffect
         val alreadyCached = savedAlbums.firstOrNull { it.id == song.albumId }?.title?.isNotBlank() == true
                 || resolvedAlbumCache[song.albumId]?.title?.isNotBlank() == true
