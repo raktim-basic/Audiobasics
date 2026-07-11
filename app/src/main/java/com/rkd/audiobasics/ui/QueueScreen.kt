@@ -55,6 +55,7 @@ fun QueueScreen(
     val queue by vm.queue.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
+    val cachingSongIds by vm.cachingSongIds.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
     val currentPosition by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
@@ -313,7 +314,8 @@ fun QueueScreen(
                             onRetryCache = { vm.retryCache(song) },
                             onRemoveLike = { vm.toggleLike(song) },
                             onAddTo = { onAddTo(song) },
-                            isDragging = isDragging
+                            isDragging = isDragging,
+                            isCaching = song.id in cachingSongIds
                         )
                     }
                 }
