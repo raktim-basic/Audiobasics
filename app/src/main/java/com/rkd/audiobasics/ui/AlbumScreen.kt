@@ -124,7 +124,12 @@ fun AlbumScreen(
                 fallbackArtist = album.artist,
                 caller = "AlbumScreen"
             )
-            albumSongs = songs
+            // Innertube.getAlbumSongs fails silently (returns null/empty) rather than
+            // throwing on network errors — don't let a failed live refresh clobber a
+            // working persisted tracklist with an empty one.
+            if (songs.isNotEmpty() || persisted == null) {
+                albumSongs = songs
+            }
             if (meta != null) {
                 enrichedAlbum = album.copy(
                     title = meta.title.ifBlank { album.title },
@@ -164,7 +169,7 @@ fun AlbumScreen(
         if (cacheProgress == null) cacheRefreshTick++
     }
 
-    val uncachedInAlbumCount = remember(albumSongs, cacheRefreshTick, isSaved) {
+    val uncachedInAlbumCount = remember(albumSongs, cacheRefreshTick, isSaved, cachingSongIds) {
         if (!isSaved) 0
         else albumSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.id) }
     }
@@ -446,7 +451,8 @@ fun AlbumScreen(
                     itemsIndexed(filteredSongs) { index, song ->
                         val isLiked = likedSongs.any { it.id == song.id }
                         val isPlaying = currentSong?.id == song.id
-                        val songIsCached = remember(song.id, cacheRefreshTick, isSaved) {
+                        val thisSongCaching = song.id in cachingSongIds
+                        val songIsCached = remember(song.id, cacheRefreshTick, isSaved, thisSongCaching) {
                             !isSaved || com.rkd.audiobasics.cache.CacheManager.isCached(context, song.id)
                         }
                         AlbumSongRow(
@@ -467,7 +473,7 @@ fun AlbumScreen(
                                 vm.retryCacheStandalone(song)
                                 cacheRefreshTick++
                             },
-                            isCaching = song.id in cachingSongIds
+                            isCaching = thisSongCaching
                         )
                     }
                 }
