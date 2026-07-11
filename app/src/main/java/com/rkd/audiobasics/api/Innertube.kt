@@ -42,35 +42,15 @@ object Innertube {
      * Extracts individual artist names from a raw "runs" list (the artist-credit portion of a
      * song/album subtitle, already truncated to before the first "•").
      *
-     * Deliberately does NOT treat a comma as a separator between artists, even when YouTube
-     * sends it as its own literal run (e.g. "Tyler" / ", " / "The Creator" as three runs) —
-     * YouTube uses a comma-run between names in both cases: genuinely distinct co-artists, AND
-     * as an internal rendering detail of a single artist's own name. There's no reliable way to
-     * tell these apart from the runs alone, so treating comma as a hard separator is unsafe.
-     * Only "&" (as its own run) and "•" reliably mean "next artist" — those are split on;
-     * comma-adjacent runs are instead re-joined with ", " to preserve names like
-     * "Tyler, The Creator" or "Earth, Wind & Fire" intact.
+     * Reconstructs the segment's full text (including any comma runs, e.g. "Tyler" / ", " /
+     * "The Creator" → "Tyler, The Creator") and delegates to [splitArtistNames], so both the
+     * "never split on a bare comma" rule and the [COMMA_IS_SEPARATOR_IN] allowlist for known
+     * genuine multi-artist comma credits apply consistently, whether the source data gave us
+     * the credit as separate runs or as one already-joined string.
      */
     private fun extractArtistNamesFromRuns(runs: List<JSONObject>): List<String> {
-        val names = mutableListOf<String>()
-        val current = StringBuilder()
-        fun flush() {
-            val name = current.toString().trim().trim(',').trim()
-            if (name.isNotBlank()) names.add(name)
-            current.clear()
-        }
-        runs.forEach { run ->
-            val t = run.optString("text", "")
-            val trimmed = t.trim()
-            when {
-                trimmed == "&" || trimmed == "•" || trimmed.equals("and", ignoreCase = true) -> flush()
-                trimmed == "," -> current.append(", ") // keep as part of the current name, not a split point
-                trimmed.isBlank() -> {}
-                else -> current.append(t)
-            }
-        }
-        flush()
-        return names.filter { it.isNotBlank() }
+        val text = runs.joinToString("") { it.optString("text", "") }
+        return splitArtistNames(text)
     }
 
 
@@ -235,6 +215,27 @@ object Innertube {
         } catch (_: Exception) { "" }
     }
 
+    // Comma-joined phrases where the comma is a genuine separator between two distinct artists
+    // (as opposed to being part of one artist's own name, e.g. "Tyler, The Creator"). These are
+    // checked first and replaced with "&" before the general split below, so both halves come
+    // out as separate artists. Kanye West releases in particular are often credited under
+    // multiple names/aliases for the same person or collective (DONDA, Kanye West, Ye) joined
+    // by a bare comma in YouTube's own data, which the generic no-comma-split rule can't
+    // distinguish from a name like "Tyler, The Creator" — so these need to be listed explicitly.
+    private val COMMA_IS_SEPARATOR_IN = listOf(
+        "DONDA, Kanye West" to "DONDA & Kanye West",
+        "Kanye West, Ye" to "Kanye West & Ye",
+        "DONDA, Ye" to "DONDA & Ye"
+    )
+
+    private fun normalizeKnownCommaSeparators(artist: String): String {
+        var result = artist
+        COMMA_IS_SEPARATOR_IN.forEach { (from, to) ->
+            result = result.replace(from, to, ignoreCase = true)
+        }
+        return result
+    }
+
     // Splits an artist credit string like "Future & Metro Boomin" or "Future and Metro Boomin"
     // into individual, trimmed names. Deliberately does NOT split on comma — YouTube uses a
     // comma both between genuinely separate co-artists (rare; usually they use "&" or "and")
@@ -243,8 +244,10 @@ object Innertube {
     // word "and" are safe, unambiguous separators. Also doesn't try to detect "(feat. ...)" —
     // YTM doesn't consistently mark guest features that way, so callers should instead use this
     // to intersect names across every track on an album and keep only the ones present on all.
+    // A short explicit allowlist (see [COMMA_IS_SEPARATOR_IN]) covers known cases where a comma
+    // really does separate two distinct artist credits.
     fun splitArtistNames(artist: String): List<String> {
-        return artist.trim()
+        return normalizeKnownCommaSeparators(artist).trim()
             .split(Regex("\\s*&\\s*|\\s+and\\s+", RegexOption.IGNORE_CASE))
             .map { it.trim().trim(',').trim() }
             .filter { it.isNotBlank() }
@@ -252,9 +255,9 @@ object Innertube {
 
     /** Same as [splitArtistNames] but also splits on "feat." — used where a full song credit
      *  string (e.g. "Tyler, The Creator feat. Kali Uchis") needs breaking into individual
-     *  artist names for display/linking. Still never splits on comma alone. */
+     *  artist names for display/linking. Still never splits on a bare, unlisted comma. */
     fun splitArtistNamesWithFeat(artist: String): List<String> {
-        return artist.trim()
+        return normalizeKnownCommaSeparators(artist).trim()
             .split(Regex("\\s*&\\s*|\\s+and\\s+|\\s*feat\\.\\s*", RegexOption.IGNORE_CASE))
             .map { it.trim().trim(',').trim() }
             .filter { it.isNotBlank() }
