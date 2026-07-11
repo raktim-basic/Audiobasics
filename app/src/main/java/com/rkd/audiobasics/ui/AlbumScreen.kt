@@ -135,12 +135,16 @@ fun AlbumScreen(
     }
 
     val cacheProgress by vm.cacheProgress.collectAsState()
+    val cachingSongIds by vm.cachingSongIds.collectAsState()
     LaunchedEffect(cacheProgress) {
         if (cacheProgress == null) cacheRefreshTick++
     }
 
     val uncachedInAlbumCount = remember(albumSongs, cacheRefreshTick) {
         albumSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.id) }
+    }
+    val isAlbumCaching = remember(albumSongs, cachingSongIds) {
+        albumSongs.any { it.id in cachingSongIds }
     }
 
     val totalRegularItems = filteredSongs.size + 1
@@ -358,13 +362,14 @@ fun AlbumScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "This album isn't available offline. ",
+                                    text = if (isAlbumCaching) "Downloading songs. "
+                                           else "This album isn't available offline. ",
                                     fontFamily = NothingFont,
                                     fontSize = 13.sp,
                                     color = Color.Gray
                                 )
                                 Text(
-                                    text = "Download now?",
+                                    text = if (isAlbumCaching) "See progress" else "Download now?",
                                     fontFamily = NothingFont,
                                     fontSize = 13.sp,
                                     color = Color(0xFF1565C0),
@@ -423,7 +428,8 @@ fun AlbumScreen(
                             onRetryCache = {
                                 vm.retryCacheStandalone(song)
                                 cacheRefreshTick++
-                            }
+                            },
+                            isCaching = song.id in cachingSongIds
                         )
                     }
                 }
@@ -528,7 +534,8 @@ fun AlbumSongRow(
     onPlayNext: () -> Unit,
     onLike: () -> Unit,
     onAddTo: (() -> Unit)? = null,
-    onRetryCache: (() -> Unit)? = null
+    onRetryCache: (() -> Unit)? = null,
+    isCaching: Boolean = false
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -561,29 +568,15 @@ fun AlbumSongRow(
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = song.title,
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = titleColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                if (!isCached) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "💔",
-                        fontSize = 13.sp,
-                        modifier = Modifier.clickable {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showBrokenHeartDialog = true
-                        }
-                    )
-                }
-            }
+            Text(
+                text = song.title,
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = titleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = song.artist,
@@ -592,6 +585,19 @@ fun AlbumSongRow(
                 color = subTextColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (!isCached) {
+            Text(
+                text = if (isCaching) "❤️‍🩹" else "💔",
+                fontSize = 20.sp,
+                modifier = Modifier
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        if (!isCaching) showBrokenHeartDialog = true
+                    }
+                    .padding(8.dp)
             )
         }
 
