@@ -55,7 +55,9 @@ fun SongInfoScreen(
     var albumTitle by remember(song.albumId) { mutableStateOf<String?>(null) }
     var albumTitleLoading by remember(song.albumId) { mutableStateOf(song.albumId.isNotBlank()) }
 
-    LaunchedEffect(song.albumId) {
+    // React immediately to any cache/savedAlbums entry that already exists or arrives later
+    // (e.g. a background resolve kicked off by playback finishing after this screen opened).
+    LaunchedEffect(song.albumId, savedAlbums, resolvedAlbumCache) {
         if (song.albumId.isBlank()) {
             albumTitleLoading = false
             return@LaunchedEffect
@@ -65,16 +67,25 @@ fun SongInfoScreen(
         if (cached != null && cached.title.isNotBlank()) {
             albumTitle = cached.title
             albumTitleLoading = false
-            return@LaunchedEffect
         }
+    }
+
+    // One-shot live fallback lookup, only if nothing turns up from cache/savedAlbums shortly
+    // after this screen opens. Runs once per song (not re-triggered by cache updates above).
+    LaunchedEffect(song.albumId) {
+        if (song.albumId.isBlank()) return@LaunchedEffect
+        val alreadyCached = savedAlbums.firstOrNull { it.id == song.albumId }?.title?.isNotBlank() == true
+                || resolvedAlbumCache[song.albumId]?.title?.isNotBlank() == true
+        if (alreadyCached) return@LaunchedEffect
         try {
-            val (meta, _) = Innertube.getAlbumSongs(song.albumId, caller = "SongInfoScreen")
-            albumTitle = meta?.title?.takeIf { it.isNotBlank() }
+            val (meta, _) = Innertube.getAlbumSongs(song.albumId, fallbackArtist = song.artist, caller = "SongInfoScreen")
             if (meta != null && meta.title.isNotBlank()) {
-                onCacheResolvedAlbum(meta)
+                albumTitle = meta.title
+                onCacheResolvedAlbum(meta.copy(id = song.albumId))
             }
         } catch (_: Exception) {
-            albumTitle = null
+            // Leave as null — will show "Unknown"; a later background resolve (if one is
+            // in flight elsewhere) will still update the title via the effect above.
         } finally {
             albumTitleLoading = false
         }
