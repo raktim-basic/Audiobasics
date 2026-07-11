@@ -1210,6 +1210,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 put("cacheFailed", song.cacheFailed)
                 put("isExplicit", song.isExplicit)
                 put("albumId", song.albumId)
+                put("albumTitle", song.albumTitle)
                 put("year", song.year)
             })
         }
@@ -1230,6 +1231,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     cacheFailed = if (isCached) false else obj.optBoolean("cacheFailed", false),
                     isExplicit = obj.optBoolean("isExplicit", false),
                     albumId = obj.optString("albumId", ""),
+                    albumTitle = obj.optString("albumTitle", ""),
                     year = obj.optString("year", "")
                 )
             }
