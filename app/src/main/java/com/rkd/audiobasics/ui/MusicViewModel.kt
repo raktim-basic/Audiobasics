@@ -59,6 +59,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var cacheAllJob: Job? = null
 
     private val cacheSemaphore = Semaphore(3)
+    private val _cachingSongIds = MutableStateFlow<Set<String>>(emptySet())
+    /** Song IDs currently being actively downloaded, across every download source (like, retry, download-all, etc). */
+    val cachingSongIds: StateFlow<Set<String>> = _cachingSongIds
 
     // ── Room DB ───────────────────────────────────────────────────────────────
     private val db = AppDatabase.getInstance(app)
@@ -818,30 +821,35 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         if (song.albumId.isNotBlank()) {
             resolveAlbumInBackground(song.albumId, song.artist)
         }
-        return try {
-            when (val result = CacheManager.cacheSong(getApplication(), song)) {
-                is CacheResult.Success -> {
-                    updateLikedSongCacheStatus(song.id, isCached = true, cacheFailed = false)
-                    refreshCacheSize()
-                    // Cache lyrics in background
-                    viewModelScope.launch(Dispatchers.IO) { cacheLyricsForSong(song) }
-                    true
+        _cachingSongIds.value = _cachingSongIds.value + song.id
+        try {
+            return try {
+                when (val result = CacheManager.cacheSong(getApplication(), song)) {
+                    is CacheResult.Success -> {
+                        updateLikedSongCacheStatus(song.id, isCached = true, cacheFailed = false)
+                        refreshCacheSize()
+                        // Cache lyrics in background
+                        viewModelScope.launch(Dispatchers.IO) { cacheLyricsForSong(song) }
+                        true
+                    }
+                    is CacheResult.StorageLow -> {
+                        _showStorageLow.value = true
+                        updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
+                        false
+                    }
+                    is CacheResult.Failed -> {
+                        updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
+                        Log.e("YTLite", "Cache failed ${song.title}: ${result.reason}")
+                        false
+                    }
                 }
-                is CacheResult.StorageLow -> {
-                    _showStorageLow.value = true
-                    updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
-                    false
-                }
-                is CacheResult.Failed -> {
-                    updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
-                    Log.e("YTLite", "Cache failed ${song.title}: ${result.reason}")
-                    false
-                }
+            } catch (e: Exception) {
+                updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
+                Log.e("YTLite", "Cache exception ${song.title}: ${e.message}")
+                false
             }
-        } catch (e: Exception) {
-            updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
-            Log.e("YTLite", "Cache exception ${song.title}: ${e.message}")
-            false
+        } finally {
+            _cachingSongIds.value = _cachingSongIds.value - song.id
         }
     }
 
