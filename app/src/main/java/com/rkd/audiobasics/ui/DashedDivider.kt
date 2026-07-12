@@ -17,10 +17,10 @@ fun DashedDivider(
 ) {
     val grayColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val redColor = Color.Red
-    val strokeWidth = 2f
+    val strokeWidth = 4f
     val dashPathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
 
-    Canvas(modifier = modifier.height(2.dp)) {
+    Canvas(modifier = modifier.height(4.dp)) {
         val width = size.width
         val y = size.height / 2
 
