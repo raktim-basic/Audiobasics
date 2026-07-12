@@ -767,6 +767,25 @@ object Innertube {
         } catch (e: Exception) { Log.e("Innertube", "Metadata error: ${e.message}"); null }
     }
 
+    /**
+     * Re-resolves a song through the YTM search path (the same one used for browsing/search
+     * results) rather than the plain video extractor, so it picks up the correct multi-artist
+     * splitting and album linkage that older library exports may be missing or have wrong.
+     * Matches the result back to [song] by video ID so the original song's identity is never
+     * lost; falls back to the original untouched [song] if no confident match is found or the
+     * lookup fails, so refreshing metadata can never destroy an existing library entry.
+     */
+    suspend fun refreshSongMetadata(song: Song): Song = withContext(Dispatchers.IO) {
+        try {
+            val results = search("${song.title} ${song.artist}".trim())
+            results.firstOrNull { it.id == song.id }
+                ?: song // no confident match — keep what we already had rather than guess
+        } catch (e: Exception) {
+            Log.e("Innertube", "refreshSongMetadata error for ${song.id}: ${e.message}")
+            song
+        }
+    }
+
     // ─── Stream resolution ───────────────────────────────────────────────────────
 
     private data class YTClient(
