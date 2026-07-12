@@ -34,9 +34,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
-import kotlinx.coroutines.delay
 
-private fun formatCountdown(remainingMs: Long): String {
+fun formatCountdown(remainingMs: Long): String {
     val totalSec = (remainingMs / 1000).coerceAtLeast(0)
     val m = totalSec / 60
     val s = totalSec % 60
@@ -71,70 +70,9 @@ fun QueueScreen(
     var targetIndex by remember { mutableStateOf<Int?>(null) }
     var itemHeightPx by remember { mutableStateOf(80f) }
 
-    var sleepTimerEndsAt by remember { mutableStateOf<Long?>(null) }
-    var sleepTimerRemaining by remember { mutableStateOf(0L) }
+    val sleepTimerMode by vm.sleepTimerMode.collectAsState()
+    val sleepTimerRemaining by vm.sleepTimerRemaining.collectAsState()
     var showSleepDialog by remember { mutableStateOf(false) }
-    var endOfSongMode by remember { mutableStateOf(false) }
-    var timerPausedAt by remember { mutableStateOf<Long?>(null) }
-
-    LaunchedEffect(isPlaying, sleepTimerEndsAt, endOfSongMode) {
-        if (endOfSongMode) return@LaunchedEffect // position-based, no deadline to pause/resume
-        val endAt = sleepTimerEndsAt ?: return@LaunchedEffect
-        if (!isPlaying) {
-            timerPausedAt = endAt - System.currentTimeMillis()
-            return@LaunchedEffect
-        }
-        val pausedRemaining = timerPausedAt
-        if (pausedRemaining != null) {
-            sleepTimerEndsAt = System.currentTimeMillis() + pausedRemaining
-            timerPausedAt = null
-        }
-    }
-
-    LaunchedEffect(sleepTimerEndsAt, isPlaying, endOfSongMode) {
-        val endAt = sleepTimerEndsAt ?: return@LaunchedEffect
-        if (endOfSongMode) return@LaunchedEffect // handled by the position-watching effect below
-        if (!isPlaying) return@LaunchedEffect
-        while (true) {
-            val remaining = endAt - System.currentTimeMillis()
-            if (remaining <= 0) {
-                sleepTimerRemaining = 0L
-                sleepTimerEndsAt = null
-                if (isPlaying) vm.togglePlayPause()
-                break
-            }
-            sleepTimerRemaining = remaining
-            delay(1000)
-        }
-    }
-
-    // End-of-song mode: instead of a fixed deadline, watch actual playback position against
-    // duration so scrubbing (forward or backward) doesn't desync the timer from the real
-    // end of the track.
-    LaunchedEffect(endOfSongMode, isPlaying, currentPosition, duration) {
-        if (!endOfSongMode) return@LaunchedEffect
-        if (!isPlaying) return@LaunchedEffect
-        if (duration <= 0L) return@LaunchedEffect
-
-        val remaining = duration - currentPosition
-        sleepTimerRemaining = remaining.coerceAtLeast(0L)
-
-        if (remaining <= 300L) { // small threshold: position updates aren't frame-exact
-            sleepTimerRemaining = 0L
-            sleepTimerEndsAt = null
-            endOfSongMode = false
-            if (isPlaying) vm.togglePlayPause()
-        }
-    }
-
-    val currentSongId = currentSong?.id
-    LaunchedEffect(currentSongId) {
-        if (endOfSongMode) {
-            sleepTimerEndsAt = null
-            sleepTimerRemaining = 0L
-            endOfSongMode = false
-        }
-    }
 
     val listState = rememberLazyListState()
 
@@ -160,13 +98,11 @@ fun QueueScreen(
             onDismiss = { showSleepDialog = false },
             onEndOfSong = {
                 showSleepDialog = false
-                sleepTimerRemaining = (duration - currentPosition).coerceAtLeast(0L)
-                endOfSongMode = true
+                vm.startEndOfSongSleepTimer()
             },
             onCustom = { minutes ->
                 showSleepDialog = false
-                sleepTimerEndsAt = System.currentTimeMillis() + minutes * 60_000L
-                endOfSongMode = false
+                vm.startCustomSleepTimer(minutes)
             }
         )
     }
@@ -368,10 +304,14 @@ fun QueueScreen(
                 )
             }
 
-            val timerActive = sleepTimerEndsAt != null || endOfSongMode
+            val timerActive = sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF
             val queueNotEmpty = queue.isNotEmpty()
             Text(
-                text = if (timerActive) "Sleep timer (${formatCountdown(sleepTimerRemaining)})" else "Sleep timer",
+                text = when (sleepTimerMode) {
+                    MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "Sleep timer (end of this song)"
+                    MusicViewModel.SLEEP_TIMER_CUSTOM -> "Sleep timer (${formatCountdown(sleepTimerRemaining)})"
+                    else -> "Sleep timer"
+                },
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
@@ -383,10 +323,7 @@ fun QueueScreen(
                         return@clickable
                     }
                     if (timerActive) {
-                        sleepTimerEndsAt = null
-                        sleepTimerRemaining = 0L
-                        endOfSongMode = false
-                        timerPausedAt = null
+                        vm.cancelSleepTimer()
                     } else {
                         showSleepDialog = true
                     }
