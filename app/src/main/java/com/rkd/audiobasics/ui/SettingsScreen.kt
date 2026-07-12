@@ -25,6 +25,9 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Upload
@@ -52,6 +55,7 @@ sealed class SettingsPage {
     object Cache : SettingsPage()
     object Library : SettingsPage()
     object DevTools : SettingsPage()
+    object EngineInfo : SettingsPage()
 }
 
 @Composable
@@ -77,7 +81,7 @@ fun SettingsScreen(
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        currentPage = SettingsPage.Main
+        currentPage = if (currentPage == SettingsPage.EngineInfo) SettingsPage.DevTools else SettingsPage.Main
     }
 
     AnimatedContent(
@@ -121,7 +125,12 @@ fun SettingsScreen(
             is SettingsPage.DevTools -> DevToolsPage(
                 vm = vm,
                 isDarkMode = isDarkMode,
-                onBack = { currentPage = SettingsPage.Main }
+                onBack = { currentPage = SettingsPage.Main },
+                onNavigateEngineInfo = { currentPage = SettingsPage.EngineInfo }
+            )
+            is SettingsPage.EngineInfo -> EngineInfoScreen(
+                isDarkMode = isDarkMode,
+                onBack = { currentPage = SettingsPage.DevTools }
             )
         }
     }
@@ -404,6 +413,7 @@ private fun AppearancePage(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val themeMode by vm.themeMode.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Row(
@@ -423,41 +433,74 @@ private fun AppearancePage(
 
         StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 20.dp, vertical = 14.dp)
         ) {
-            Icon(
-                Icons.Default.Palette,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(Modifier.width(16.dp))
-            Text(
-                text = "Dark mode",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = textColor,
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = isDarkMode,
-                onCheckedChange = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    vm.toggleDarkMode()
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color.Red,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.Gray
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Palette,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
                 )
-            )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = "Theme",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                val options = listOf(
+                    Triple(MusicViewModel.THEME_SYSTEM, "System", Icons.Default.Palette),
+                    Triple(MusicViewModel.THEME_LIGHT, "Light", Icons.Default.LightMode),
+                    Triple(MusicViewModel.THEME_DARK, "Dark", Icons.Default.DarkMode)
+                )
+                options.forEach { (mode, label, icon) ->
+                    val isSelected = themeMode == mode
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) Color.Red else Color.Transparent)
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                vm.setThemeMode(mode)
+                            }
+                            .padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = if (isSelected) Color.White else textColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = label,
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = if (isSelected) Color.White else textColor
+                        )
+                    }
+                }
+            }
         }
 
         Row(
@@ -899,7 +942,8 @@ fun SettingsDivider(isDarkMode: Boolean) {
 private fun DevToolsPage(
     vm: MusicViewModel,
     isDarkMode: Boolean,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateEngineInfo: () -> Unit
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -926,6 +970,24 @@ private fun DevToolsPage(
         }
 
         StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+
+        SettingsRow(
+            isDarkMode = isDarkMode,
+            title = "Engine info",
+            subtitle = "Extractor and Innertube versions",
+            icon = {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            },
+            onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onNavigateEngineInfo()
+            }
+        )
 
         Row(
             modifier = Modifier
