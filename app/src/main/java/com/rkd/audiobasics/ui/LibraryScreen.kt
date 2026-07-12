@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,52 +80,71 @@ fun LibraryScreen(
     val showLiked = searchQuery.isBlank() || "liked songs".contains(searchQuery, ignoreCase = true)
     val showAlbums = searchQuery.isBlank() || "saved albums".contains(searchQuery, ignoreCase = true)
 
+    val listState = rememberLazyListState()
+    val totalItems = remember(showLiked, showAlbums, filteredCustom) {
+        (if (showLiked) 1 else 0) + (if (showAlbums) 1 else 0) + filteredCustom.size
+    }
+    val scrollProgress = remember(listState) {
+        derivedStateOf {
+            if (totalItems <= 1) return@derivedStateOf 0f
+            val max = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0
+            (max.toFloat() / totalItems).coerceIn(0f, 1f)
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().background(bgColor)
     ) {
-        // ── Header ─────────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 24.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Your Library",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
-                    color = textColor
-                )
-                if (cacheSize.isNotBlank()) {
-                    Text(
-                        text = cacheSize,
-                        fontFamily = NothingFont,
-                        fontSize = 14.sp,
-                        color = Color.Gray
+        // ── List ───────────────────────────────────────────────────────────
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState) {
+            stickyHeader {
+                Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 24.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Your Library",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 22.sp,
+                                color = textColor
+                            )
+                            if (cacheSize.isNotBlank()) {
+                                Text(
+                                    text = cacheSize,
+                                    fontFamily = NothingFont,
+                                    fontSize = 14.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                        // + button in header
+                        IconButton(onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            showCreateDialog = true
+                        }) {
+                            Text(
+                                text = "+",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 28.sp,
+                                color = textColor
+                            )
+                        }
+                    }
+
+                    DashedDivider(
+                        modifier = Modifier.fillMaxWidth(),
+                        isDarkMode = isDarkMode,
+                        scrollProgress = scrollProgress.value
                     )
                 }
             }
-            // + button in header
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                showCreateDialog = true
-            }) {
-                Text(
-                    text = "+",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp,
-                    color = textColor
-                )
-            }
-        }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-
-        // ── List ───────────────────────────────────────────────────────────
-        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
             if (showLiked) {
                 item {
                     LibraryRow(
