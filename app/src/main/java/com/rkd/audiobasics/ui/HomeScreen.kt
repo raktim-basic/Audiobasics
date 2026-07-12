@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
-import com.rkd.audiobasics.utils.MigrationMessageProvider
 
 @Composable
 fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
@@ -85,29 +84,19 @@ fun HomeScreen(
                     color = textColor
                 )
             } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "⚠️ ", fontSize = 22.sp)
-                    Text(
-                        text = MigrationMessageProvider.sloganTitle(),
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp,
-                        color = textColor
-                    )
-                }
                 Text(
-                    text = MigrationMessageProvider.sloganSubtitle(),
+                    text = "No recommendation bs",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
                     color = textColor
                 )
-                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = MigrationMessageProvider.sloganFooter(),
+                    text = "Own your taste",
                     fontFamily = NothingFont,
-                    fontSize = 13.sp,
-                    color = subTextColor
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    color = textColor
                 )
             }
         }
