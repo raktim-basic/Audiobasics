@@ -225,6 +225,27 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _isDarkMode.value = resolveDarkMode(mode)
     }
 
+    // Only relevant while themeMode == THEME_SYSTEM: re-resolves isDarkMode whenever the
+    // system's night-mode setting changes (e.g. scheduled dark mode, quick-settings toggle,
+    // battery saver auto dark mode) without requiring the app/ViewModel to restart.
+    private val systemThemeCallback = object : android.content.ComponentCallbacks2 {
+        override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+            if (_themeMode.value == THEME_SYSTEM) {
+                val nowDark = (newConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+                if (_isDarkMode.value != nowDark) {
+                    _isDarkMode.value = nowDark
+                }
+            }
+        }
+        override fun onLowMemory() {}
+        override fun onTrimMemory(level: Int) {}
+    }
+
+    init {
+        getApplication<Application>().registerComponentCallbacks(systemThemeCallback)
+    }
+
     private val _hapticsEnabled = MutableStateFlow(prefs.getBoolean("haptics_enabled", true))
     val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled
 
@@ -891,6 +912,52 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _likedSongs.value.forEach { combined[it.id] = it }
             playlistSongs.forEach { if (it.id !in combined) combined[it.id] = it }
 
+            // One-time cleanup for libraries imported from an older app version: those
+            // exports predate the multi-artist comma-splitting and album-title fixes, so
+            // their metadata may be stale or wrong. Saved-album songs already come from a
+            // fresh Innertube.getAlbumSongs() call below and don't need this — only liked
+            // songs and custom-playlist songs, which may carry whatever was in the import.
+            if (prefs.getBoolean("needs_metadata_refresh", false)) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Cleaning up your library's metadata…", Toast.LENGTH_SHORT).show()
+                }
+
+                val refreshed = coroutineScope {
+                    combined.values.map { song ->
+                        async { song.id to Innertube.refreshSongMetadata(song) }
+                    }.map { it.await() }
+                }.toMap()
+
+                _likedSongs.value = _likedSongs.value.map { refreshed[it.id] ?: it }
+                saveLikedSongs()
+
+                val allPlaylists = playlistDao.getPlaylists()
+                allPlaylists.forEach { playlist ->
+                    val existing = playlistDao.getPlaylistSongs(playlist.id)
+                    existing.forEach { entity ->
+                        val fresh = refreshed[entity.songId] ?: return@forEach
+                        playlistDao.insertSong(
+                            entity.copy(
+                                title = fresh.title,
+                                artist = fresh.artist,
+                                thumbnail = fresh.thumbnail,
+                                isExplicit = fresh.isExplicit,
+                                albumId = fresh.albumId
+                            )
+                        )
+                    }
+                }
+                if (_openPlaylistId.value != null) {
+                    _openPlaylistSongs.value = playlistDao.getPlaylistSongs(_openPlaylistId.value!!)
+                }
+
+                // Rebuild `combined` with the refreshed metadata so the download pass below
+                // caches songs under their corrected names/thumbnails/album links.
+                refreshed.forEach { (id, song) -> combined[id] = song }
+
+                prefs.edit().putBoolean("needs_metadata_refresh", false).apply()
+            }
+
             // Use persisted tracklists for saved albums where available; only hit the
             // network for albums we don't have a persisted tracklist for yet.
             val albumSongLists = coroutineScope {
@@ -1526,8 +1593,27 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         put("youtubeUrl", album.youtubeUrl); put("year", album.year)
                     })
                 }
+                val playlistsArr = JSONArray()
+                withContext(Dispatchers.IO) {
+                    playlistDao.getPlaylists().forEach { playlist ->
+                        val playlistSongs = playlistDao.getPlaylistSongs(playlist.id)
+                        val playlistSongsArr = JSONArray()
+                        playlistSongs.forEach { song ->
+                            playlistSongsArr.put(JSONObject().apply {
+                                put("id", song.songId); put("title", song.title)
+                                put("artist", song.artist); put("thumbnail", song.thumbnail)
+                                put("isExplicit", song.isExplicit); put("albumId", song.albumId)
+                            })
+                        }
+                        playlistsArr.put(JSONObject().apply {
+                            put("id", playlist.id); put("name", playlist.name)
+                            put("emoji", playlist.emoji); put("songs", playlistSongsArr)
+                        })
+                    }
+                }
                 root.put("liked_songs", songsArr)
                 root.put("saved_albums", albumsArr)
+                root.put("custom_playlists", playlistsArr)
                 context.contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(root.toString(2).toByteArray())
                 }
@@ -1562,15 +1648,62 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         youtubeUrl = obj.optString("youtubeUrl", "")
                     )
                 }
+
+                // Exports from before custom playlists were included won't have this key at
+                // all — that also tells us the export predates this version's metadata fixes
+                // (multi-artist comma splitting, album title stamping), so flag a one-time
+                // refresh the next time the user downloads their library.
+                val hasCustomPlaylists = root.has("custom_playlists")
+                var importedPlaylistCount = 0
+                var importedPlaylistSongCount = 0
+                if (hasCustomPlaylists) {
+                    withContext(Dispatchers.IO) {
+                        val playlistsArr = root.getJSONArray("custom_playlists")
+                        for (i in 0 until playlistsArr.length()) {
+                            val pObj = playlistsArr.getJSONObject(i)
+                            val playlistId = pObj.getString("id")
+                            playlistDao.insertPlaylist(
+                                PlaylistEntity(
+                                    id = playlistId,
+                                    name = pObj.getString("name"),
+                                    emoji = pObj.optString("emoji", "🎵")
+                                )
+                            )
+                            importedPlaylistCount++
+                            val songsArr = pObj.getJSONArray("songs")
+                            for (j in 0 until songsArr.length()) {
+                                val sObj = songsArr.getJSONObject(j)
+                                playlistDao.insertSong(
+                                    PlaylistSongEntity(
+                                        playlistId = playlistId,
+                                        songId = sObj.getString("id"),
+                                        title = sObj.getString("title"),
+                                        artist = sObj.getString("artist"),
+                                        thumbnail = sObj.getString("thumbnail"),
+                                        isExplicit = sObj.optBoolean("isExplicit", false),
+                                        albumId = sObj.optString("albumId", "")
+                                    )
+                                )
+                                importedPlaylistSongCount++
+                            }
+                        }
+                    }
+                }
+
                 _likedSongs.value = songs
                 _savedAlbums.value = albums
                 saveLikedSongs()
                 saveSavedAlbums()
-                Toast.makeText(
-                    context,
-                    "Imported :)  ${songs.size} songs, ${albums.size} albums",
-                    Toast.LENGTH_LONG
-                ).show()
+
+                if (!hasCustomPlaylists) {
+                    prefs.edit().putBoolean("needs_metadata_refresh", true).apply()
+                }
+
+                val summary = buildString {
+                    append("Imported :)  ${songs.size} songs, ${albums.size} albums")
+                    if (hasCustomPlaylists) append(", $importedPlaylistCount playlists ($importedPlaylistSongCount songs)")
+                }
+                Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Import failed :( ${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -1595,6 +1728,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         cacheAllJob?.cancel()
         sleepTimerJob?.cancel()
         sleepTimerSongWatcherJob?.cancel()
+        getApplication<Application>().unregisterComponentCallbacks(systemThemeCallback)
         controller?.removeListener(listener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
