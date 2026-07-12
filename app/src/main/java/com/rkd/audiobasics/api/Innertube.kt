@@ -351,35 +351,49 @@ object Innertube {
                         val col1 = flexCols.optJSONObject(1)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
                         val runs = col1?.optJSONObject("text")?.optJSONArray("runs")
                         var artist = ""; var durationMs = 0L
+                        var artistNames: List<String> = emptyList()
                         if (runs != null) {
                             val artistParts = mutableListOf<String>()
+                            val artistRunObjs = mutableListOf<JSONObject>()
                             var hitDot = false
                             for (r in 0 until runs.length()) {
-                                val t = runs.optJSONObject(r)?.optString("text", "") ?: ""
+                                val runObj = runs.optJSONObject(r)
+                                val t = runObj?.optString("text", "") ?: ""
                                 if (t == " • " || t == "•") {
                                     if (!hitDot) { hitDot = true; continue } else break
                                 }
                                 if (t.isBlank()) continue
-                                if (!hitDot) artistParts.add(t)
+                                if (!hitDot) {
+                                    artistParts.add(t)
+                                    if (runObj != null) artistRunObjs.add(runObj)
+                                }
                                 else if (t.contains(":") && t.length <= 7) durationMs = parseDurationString(t)
                             }
                             artist = artistParts.joinToString("")
+                            artistNames = extractArtistNamesFromRuns(artistRunObjs)
                         }
-                        // Extract albumId from album-name run's navigation endpoint (segment 1)
+                        // Extract albumId (and the album name text itself) from the album-name
+                        // run's segment (segment 1) — previously only browseId was captured,
+                        // leaving albumTitle blank for every song from this search path.
                         var albumId = ""
+                        var albumTitle = ""
                         if (runs != null) {
                             var seg = 0
+                            val albumRunTexts = mutableListOf<String>()
                             for (r in 0 until runs.length()) {
                                 val runObj = runs.optJSONObject(r) ?: continue
                                 val t = runObj.optString("text", "")
                                 if (t == " • " || t == "•") { seg++; continue }
                                 if (t.isBlank()) continue
                                 if (seg == 1) {
-                                    albumId = runObj.optJSONObject("navigationEndpoint")
-                                        ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
-                                    break
+                                    albumRunTexts.add(t)
+                                    if (albumId.isBlank()) {
+                                        albumId = runObj.optJSONObject("navigationEndpoint")
+                                            ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
+                                    }
                                 }
                             }
+                            albumTitle = albumRunTexts.joinToString("")
                             if (albumId.isBlank()) {
                                 val segments = mutableListOf<String>()
                                 var cur = StringBuilder()
@@ -393,8 +407,9 @@ object Innertube {
                             }
                         }
                         out.add(Song(id = videoId, title = title, artist = artist,
+                            artistNames = artistNames,
                             thumbnail = ytThumbnail(videoId), duration = durationMs,
-                            albumId = albumId,
+                            albumId = albumId, albumTitle = albumTitle,
                             isExplicit = parseExplicit(item.optJSONArray("badges"))))
                     } catch (_: Exception) {}
                 }
@@ -774,12 +789,26 @@ object Innertube {
      * Matches the result back to [song] by video ID so the original song's identity is never
      * lost; falls back to the original untouched [song] if no confident match is found or the
      * lookup fails, so refreshing metadata can never destroy an existing library entry.
+     *
+     * The search-results subtitle line doesn't always carry every field (duration in
+     * particular is frequently missing there, unlike in an album tracklist), so this merges
+     * the refreshed values onto the original song rather than replacing it outright — a field
+     * the fresh result left blank/zero keeps whatever the original song already had.
      */
     suspend fun refreshSongMetadata(song: Song): Song = withContext(Dispatchers.IO) {
         try {
             val results = search("${song.title} ${song.artist}".trim())
-            results.firstOrNull { it.id == song.id }
-                ?: song // no confident match — keep what we already had rather than guess
+            val fresh = results.firstOrNull { it.id == song.id } ?: return@withContext song
+            song.copy(
+                title = fresh.title.ifBlank { song.title },
+                artist = fresh.artist.ifBlank { song.artist },
+                artistNames = fresh.artistNames.ifEmpty { song.artistNames },
+                thumbnail = fresh.thumbnail.ifBlank { song.thumbnail },
+                duration = if (fresh.duration > 0) fresh.duration else song.duration,
+                albumId = fresh.albumId.ifBlank { song.albumId },
+                albumTitle = fresh.albumTitle.ifBlank { song.albumTitle },
+                isExplicit = fresh.isExplicit || song.isExplicit
+            )
         } catch (e: Exception) {
             Log.e("Innertube", "refreshSongMetadata error for ${song.id}: ${e.message}")
             song
