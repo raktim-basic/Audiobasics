@@ -988,10 +988,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // ─────────────────────────────────────────────────────────────────────────
 
     fun createPlaylist(name: String, emoji: String) {
+        val trimmed = name.trim()
+        val isDuplicate = customPlaylists.value.any { it.name.equals(trimmed, ignoreCase = true) }
+        if (isDuplicate) return
         viewModelScope.launch(Dispatchers.IO) {
             val entity = PlaylistEntity(
                 id = UUID.randomUUID().toString(),
-                name = name.trim(),
+                name = trimmed,
                 emoji = emoji
             )
             playlistDao.insertPlaylist(entity)
@@ -1017,8 +1020,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun renamePlaylist(playlistId: String, name: String, emoji: String) {
+        val trimmed = name.trim()
+        val isDuplicate = customPlaylists.value.any {
+            it.id != playlistId && it.name.equals(trimmed, ignoreCase = true)
+        }
+        if (isDuplicate) return
         viewModelScope.launch(Dispatchers.IO) {
-            playlistDao.renamePlaylist(playlistId, name.trim(), emoji)
+            playlistDao.renamePlaylist(playlistId, trimmed, emoji)
         }
     }
 
