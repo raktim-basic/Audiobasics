@@ -133,7 +133,7 @@ fun AddToPlaylistSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = { onDismiss(); onCreateNew() }) {
+                TextButton(onClick = { onCreateNew() }) {
                     Text(
                         "Create a new playlist",
                         fontFamily = NothingFont,
