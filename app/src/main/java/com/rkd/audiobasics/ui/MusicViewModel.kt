@@ -92,6 +92,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _repeatMode = MutableStateFlow(prefs.getInt("repeat_mode", 0))
     val repeatMode: StateFlow<Int> = _repeatMode
 
+    // ── Sleep timer ──────────────────────────────────────────────────────────
+    // SLEEP_TIMER_OFF: no timer running.
+    // SLEEP_TIMER_CUSTOM: counting down to a fixed wall-clock deadline (sleepTimerEndsAt).
+    // SLEEP_TIMER_END_OF_SONG: pauses when the current song finishes; tracked by watching
+    // currentPosition vs duration rather than a deadline, so scrubbing doesn't desync it.
+    private val _sleepTimerMode = MutableStateFlow(SLEEP_TIMER_OFF)
+    val sleepTimerMode: StateFlow<Int> = _sleepTimerMode
+
+    private val _sleepTimerRemaining = MutableStateFlow(0L)
+    val sleepTimerRemaining: StateFlow<Long> = _sleepTimerRemaining
+
+    private var sleepTimerEndsAt: Long? = null
+    private var sleepTimerPausedRemaining: Long? = null
+    private var sleepTimerJob: Job? = null
+    private var sleepTimerSongWatcherJob: Job? = null
+
     // ── Search ────────────────────────────────────────────────────────────────
     private val _searchResults = MutableStateFlow<List<Song>>(emptyList())
     val searchResults: StateFlow<List<Song>> = _searchResults
@@ -639,6 +655,108 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             1 -> Player.REPEAT_MODE_ALL
             2 -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Sleep timer
+    // ─────────────────────────────────────────────────────────────────────────
+
+    fun startCustomSleepTimer(minutes: Long) {
+        cancelSleepTimer()
+        _sleepTimerMode.value = SLEEP_TIMER_CUSTOM
+        sleepTimerEndsAt = System.currentTimeMillis() + minutes * 60_000L
+        runCustomSleepTimerLoop()
+    }
+
+    fun startEndOfSongSleepTimer() {
+        cancelSleepTimer()
+        _sleepTimerMode.value = SLEEP_TIMER_END_OF_SONG
+        _sleepTimerRemaining.value = (_duration.value - _currentPosition.value).coerceAtLeast(0L)
+        runEndOfSongSleepTimerWatcher()
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepTimerSongWatcherJob?.cancel()
+        sleepTimerSongWatcherJob = null
+        sleepTimerEndsAt = null
+        sleepTimerPausedRemaining = null
+        _sleepTimerMode.value = SLEEP_TIMER_OFF
+        _sleepTimerRemaining.value = 0L
+    }
+
+    private fun runCustomSleepTimerLoop() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = viewModelScope.launch {
+            while (true) {
+                val endAt = sleepTimerEndsAt
+                if (endAt == null || _sleepTimerMode.value != SLEEP_TIMER_CUSTOM) return@launch
+
+                if (!_isPlaying.value) {
+                    // Paused: freeze the remaining time instead of letting it drain.
+                    if (sleepTimerPausedRemaining == null) {
+                        sleepTimerPausedRemaining = (endAt - System.currentTimeMillis()).coerceAtLeast(0L)
+                    }
+                    delay(300)
+                    continue
+                }
+                val paused = sleepTimerPausedRemaining
+                if (paused != null) {
+                    sleepTimerEndsAt = System.currentTimeMillis() + paused
+                    sleepTimerPausedRemaining = null
+                    continue
+                }
+
+                val remaining = endAt - System.currentTimeMillis()
+                if (remaining <= 0) {
+                    _sleepTimerRemaining.value = 0L
+                    if (_isPlaying.value) togglePlayPause()
+                    cancelSleepTimer()
+                    return@launch
+                }
+                _sleepTimerRemaining.value = remaining
+                delay(1000)
+            }
+        }
+    }
+
+    private fun runEndOfSongSleepTimerWatcher() {
+        sleepTimerSongWatcherJob?.cancel()
+        val watchedSongId = _currentSong.value?.id
+        sleepTimerSongWatcherJob = viewModelScope.launch {
+            while (true) {
+                if (_sleepTimerMode.value != SLEEP_TIMER_END_OF_SONG) return@launch
+
+                // If the track changes (skip, autoplay-next, etc.) the "end of song" the user
+                // meant has already passed — cancel rather than carry the timer into the next song.
+                if (_currentSong.value?.id != watchedSongId) {
+                    cancelSleepTimer()
+                    return@launch
+                }
+
+                if (!_isPlaying.value) {
+                    delay(300)
+                    continue
+                }
+
+                val dur = _duration.value
+                if (dur <= 0L) {
+                    delay(300)
+                    continue
+                }
+
+                val remaining = dur - _currentPosition.value
+                _sleepTimerRemaining.value = remaining.coerceAtLeast(0L)
+
+                if (remaining <= 300L) { // small threshold: position updates aren't frame-exact
+                    if (_isPlaying.value) togglePlayPause()
+                    cancelSleepTimer()
+                    return@launch
+                }
+                delay(500)
+            }
         }
     }
 
@@ -1446,6 +1564,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         stopProgressTracking()
         syncJob?.cancel()
         cacheAllJob?.cancel()
+        sleepTimerJob?.cancel()
+        sleepTimerSongWatcherJob?.cancel()
         controller?.removeListener(listener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
@@ -1453,5 +1573,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         const val LIKED_PLAYLIST_ID = "__liked__"
+        const val SLEEP_TIMER_OFF = 0
+        const val SLEEP_TIMER_CUSTOM = 1
+        const val SLEEP_TIMER_END_OF_SONG = 2
     }
 }
