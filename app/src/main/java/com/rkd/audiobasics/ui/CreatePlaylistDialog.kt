@@ -35,6 +35,7 @@ fun CreatePlaylistDialog(
     initialEmoji: String = "🎵",
     title: String = "Create playlist",
     confirmLabel: String = "Create",
+    existingNames: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onCreate: (name: String, emoji: String) -> Unit
 ) {
@@ -45,6 +46,13 @@ fun CreatePlaylistDialog(
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+
+    // A rename against its own unchanged name shouldn't count as a duplicate — callers
+    // exclude the current playlist's own name from existingNames for that case.
+    val isDuplicate = remember(name, existingNames) {
+        val trimmed = name.trim()
+        trimmed.isNotEmpty() && existingNames.any { it.equals(trimmed, ignoreCase = true) }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -130,15 +138,29 @@ fun CreatePlaylistDialog(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                isError = isDuplicate,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color.Red,
                     unfocusedBorderColor = Color.Red,
                     focusedTextColor = textColor,
                     unfocusedTextColor = textColor,
-                    cursorColor = Color.Red
+                    cursorColor = Color.Red,
+                    errorBorderColor = Color.Red,
+                    errorCursorColor = Color.Red
                 ),
                 shape = RoundedCornerShape(12.dp)
             )
+
+            if (isDuplicate) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "A playlist with this name already exists",
+                    fontFamily = NothingFont,
+                    fontSize = 12.sp,
+                    color = Color.Red,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             Spacer(Modifier.height(24.dp))
 
@@ -153,9 +175,9 @@ fun CreatePlaylistDialog(
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (name.isNotBlank()) onCreate(name.trim(), selectedEmoji)
+                        if (name.isNotBlank() && !isDuplicate) onCreate(name.trim(), selectedEmoji)
                     },
-                    enabled = name.isNotBlank(),
+                    enabled = name.isNotBlank() && !isDuplicate,
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
                     shape = RoundedCornerShape(12.dp)
                 ) {
