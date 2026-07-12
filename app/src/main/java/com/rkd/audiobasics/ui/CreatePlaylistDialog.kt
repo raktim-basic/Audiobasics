@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -77,11 +78,13 @@ fun CreatePlaylistDialog(
             // Emoji selector — tapping focuses a hidden text field so the keyboard's own
             // emoji picker opens; only the most recently typed emoji is kept, and the app's
             // reserved emojis (used elsewhere for Liked Songs) are rejected.
+            var isEmojiFieldFocused by remember { mutableStateOf(false) }
+
             Box(
                 modifier = Modifier
                     .size(64.dp)
                     .clip(CircleShape)
-                    .border(2.dp, subColor, CircleShape)
+                    .border(2.dp, if (isEmojiFieldFocused) Color.Red else subColor, CircleShape)
                     .clickable { emojiFocusRequester.requestFocus() },
                 contentAlignment = Alignment.Center
             ) {
@@ -106,7 +109,8 @@ fun CreatePlaylistDialog(
                     },
                     modifier = Modifier
                         .matchParentSize()
-                        .focusRequester(emojiFocusRequester),
+                        .focusRequester(emojiFocusRequester)
+                        .onFocusChanged { isEmojiFieldFocused = it.isFocused },
                     textStyle = TextStyle(
                         fontSize = 32.sp,
                         textAlign = TextAlign.Center,
