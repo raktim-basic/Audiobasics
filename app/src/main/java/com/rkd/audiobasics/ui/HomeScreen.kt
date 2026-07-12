@@ -112,7 +112,7 @@ fun HomeScreen(
             }
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         Spacer(Modifier.weight(1f))
 
@@ -266,7 +266,7 @@ fun HomeBottomBar(
 }
 
 @Composable
-fun DashedDivider(
+fun StaticDashedDivider(
     modifier: Modifier = Modifier,
     isDarkMode: Boolean = false,
     scrollProgress: Float? = null
