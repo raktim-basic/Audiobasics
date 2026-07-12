@@ -175,7 +175,7 @@ private fun SettingsMainPage(
             }
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -421,7 +421,7 @@ private fun AppearancePage(
             )
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         Row(
             modifier = Modifier
@@ -555,7 +555,7 @@ private fun CachePage(
             )
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -760,7 +760,7 @@ private fun LibraryPage(
             )
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -925,7 +925,7 @@ private fun DevToolsPage(
             )
         }
 
-        DashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
 
         Row(
             modifier = Modifier
