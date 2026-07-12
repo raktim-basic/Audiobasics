@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -49,12 +50,12 @@ fun LikedScreen(
 ) {
     val context = LocalContext.current
     val likedSongs by vm.likedSongs.collectAsState()
-    val cacheSize by vm.cacheSize.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
+    var removeConfirm by remember { mutableStateOf<Song?>(null) }
 
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = savedLikedIndex,
@@ -155,15 +156,6 @@ fun LikedScreen(
                             fontSize = 18.sp,
                             color = textColor
                         )
-                        if (cacheSize.isNotBlank()) {
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = cacheSize,
-                                fontFamily = NothingFont,
-                                fontSize = 14.sp,
-                                color = Color.Gray
-                            )
-                        }
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -237,7 +229,7 @@ fun LikedScreen(
                     onLike = { vm.toggleLike(song) },
                     onShare = {},
                     onRetryCache = { vm.retryCache(song) },
-                    onRemoveLike = { vm.toggleLike(song) },
+                    onRemoveLike = { removeConfirm = song },
                     onAddTo = { onAddTo(song) },
                     isCaching = song.id in cachingSongIds
                 )
@@ -361,5 +353,28 @@ fun LikedScreen(
                 }
             }
         }
+    }
+
+    // ── Remove confirmation ────────────────────────────────────────────────
+    removeConfirm?.let { song ->
+        AlertDialog(
+            onDismissRequest = { removeConfirm = null },
+            title = { Text("Are you sure?", fontFamily = NothingFont, fontWeight = FontWeight.Bold) },
+            text = { Text("Remove \"${song.title}\" from \"Liked Songs\"?", fontFamily = NothingFont) },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.toggleLike(song)
+                    removeConfirm = null
+                }) {
+                    Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { removeConfirm = null }) {
+                    Text("No", fontFamily = NothingFont, fontSize = 18.sp)
+                }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }
