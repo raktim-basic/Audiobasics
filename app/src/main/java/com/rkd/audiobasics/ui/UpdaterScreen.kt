@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -230,21 +229,6 @@ fun UpdaterScreen(
             fontSize = 12.sp,
             color = subTextColor,
             textAlign = TextAlign.Center
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        Text(
-            text = "Engine info.",
-            fontFamily = NothingFont,
-            fontWeight = FontWeight.Bold,
-            fontSize = 14.sp,
-            color = Color.Red,
-            textDecoration = TextDecoration.Underline,
-            modifier = Modifier.clickable {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onEngineInfo()
-            }
         )
 
         Spacer(Modifier.height(32.dp))
