@@ -1050,15 +1050,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
      * Otherwise → custom playlist in Room
      * Returns true if added, false if removed.
      */
-    fun toggleSongInPlaylist(song: Song, playlistId: String): Boolean {
+    suspend fun toggleSongInPlaylist(song: Song, playlistId: String): Boolean {
         return if (playlistId == LIKED_PLAYLIST_ID) {
             val wasLiked = isLiked(song.id)
             toggleLike(song)
             !wasLiked
         } else {
-            var added = false
-            viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.IO) {
                 val already = playlistDao.isSongInPlaylist(playlistId, song.id)
+                val added: Boolean
                 if (already) {
                     playlistDao.removeSong(playlistId, song.id)
                     // Remove cache if not liked and not in other playlists
@@ -1089,8 +1089,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 if (_openPlaylistId.value == playlistId) {
                     _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
                 }
+                added
             }
-            added
         }
     }
 
