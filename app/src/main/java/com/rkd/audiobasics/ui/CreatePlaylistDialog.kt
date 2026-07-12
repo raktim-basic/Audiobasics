@@ -4,29 +4,28 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.ui.theme.NothingFont
 
-private val EMOJI_OPTIONS = listOf(
-    "🎵", "🎶", "🔥", "💜", "⭐", "🌙", "☀️",
-    "🎸", "🎹", "🥁", "🎺", "🎻", "🎤", "🎧", "🎼",
-    "😎", "🤩", "😭", "💀", "🌹", "🌊", "🏆", "💎",
-    "🚀", "🌈", "⚡", "🎃", "🍀", "🦋", "🐉", "🎯"
-)
+// Emojis already used elsewhere in the app to represent Liked Songs' download state —
+// reserved so playlists can't be confused with that UI.
+private val RESERVED_EMOJIS = setOf("❤️", "💔", "❤️\u200D🩹")
 
 @Composable
 fun CreatePlaylistDialog(
@@ -41,7 +40,9 @@ fun CreatePlaylistDialog(
 ) {
     var name by remember { mutableStateOf(initialName) }
     var selectedEmoji by remember { mutableStateOf(initialEmoji) }
-    var showEmojiPicker by remember { mutableStateOf(false) }
+    var emojiFieldValue by remember { mutableStateOf("") }
+    var showReservedWarning by remember { mutableStateOf(false) }
+    val emojiFocusRequester = remember { FocusRequester() }
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -73,57 +74,66 @@ fun CreatePlaylistDialog(
 
             Spacer(Modifier.height(20.dp))
 
-            // Emoji selector
-            if (showEmojiPicker) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(8),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
-                    contentPadding = PaddingValues(4.dp)
-                ) {
-                    items(EMOJI_OPTIONS) { emoji ->
-                        Box(
-                            modifier = Modifier
-                                .padding(2.dp)
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (emoji == selectedEmoji) Color.Red.copy(alpha = 0.2f)
-                                    else Color.Transparent
-                                )
-                                .clickable {
-                                    selectedEmoji = emoji
-                                    showEmojiPicker = false
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = emoji, fontSize = 20.sp)
+            // Emoji selector — tapping focuses a hidden text field so the keyboard's own
+            // emoji picker opens; only the most recently typed emoji is kept, and the app's
+            // reserved emojis (used elsewhere for Liked Songs) are rejected.
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .border(2.dp, subColor, CircleShape)
+                    .clickable { emojiFocusRequester.requestFocus() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = selectedEmoji, fontSize = 32.sp)
+
+                BasicTextField(
+                    value = emojiFieldValue,
+                    onValueChange = { newValue ->
+                        val candidate = newValue.trim()
+                        if (candidate.isBlank()) return@BasicTextField
+
+                        if (candidate in RESERVED_EMOJIS) {
+                            showReservedWarning = true
+                        } else {
+                            showReservedWarning = false
+                            selectedEmoji = candidate
                         }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-            } else {
-                // Emoji circle tap to open picker
-                Box(
+                        // Clear the field immediately after every pick so the *next* emoji the
+                        // keyboard inserts lands in an empty field instead of being appended
+                        // after the previous one — keeps exactly one emoji selected at a time.
+                        emojiFieldValue = ""
+                    },
                     modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .border(2.dp, subColor, CircleShape)
-                        .clickable { showEmojiPicker = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = selectedEmoji, fontSize = 32.sp)
-                }
+                        .matchParentSize()
+                        .focusRequester(emojiFocusRequester),
+                    textStyle = TextStyle(
+                        fontSize = 32.sp,
+                        textAlign = TextAlign.Center,
+                        color = Color.Transparent
+                    ),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Color.Transparent),
+                    singleLine = true
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Tap to choose an emoji",
+                fontFamily = NothingFont,
+                fontSize = 12.sp,
+                color = subColor
+            )
+            if (showReservedWarning) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Select an emoji",
+                    text = "That emoji is reserved for Liked Songs — pick another",
                     fontFamily = NothingFont,
                     fontSize = 12.sp,
-                    color = subColor
+                    color = Color.Red,
+                    textAlign = TextAlign.Center
                 )
-                Spacer(Modifier.height(16.dp))
             }
+            Spacer(Modifier.height(16.dp))
 
             // Name field
             OutlinedTextField(
