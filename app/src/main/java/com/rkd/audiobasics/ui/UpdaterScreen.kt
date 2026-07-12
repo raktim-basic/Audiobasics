@@ -33,7 +33,6 @@ import okhttp3.Request
 import org.json.JSONArray
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
-import com.rkd.audiobasics.utils.MigrationMessageProvider
 
 const val APP_CURRENT_VERSION = "2.4"
 const val APP_GITHUB_RELEASES_API =
@@ -72,7 +71,6 @@ fun UpdaterScreen(
     var isChecking by remember { mutableStateOf(false) }
     var latestVersion by remember { mutableStateOf<String?>(null) }
     var checked by remember { mutableStateOf(false) }
-    var showMigrationDialog by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -157,37 +155,6 @@ fun UpdaterScreen(
 
         Spacer(Modifier.height(28.dp))
 
-        Column(modifier = Modifier.padding(horizontal = 28.dp)) {
-            Row {
-                Text(text = "⚠️", fontSize = 16.sp)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = MigrationMessageProvider.updaterWarning(),
-                    fontFamily = NothingFont,
-                    fontSize = 14.sp,
-                    color = textColor,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "export library",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = Color.Red,
-                textDecoration = TextDecoration.Underline,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateLibrary()
-                    }
-            )
-        }
-
         Spacer(Modifier.height(36.dp))
 
         Column(modifier = Modifier.padding(horizontal = 28.dp)) {
@@ -234,7 +201,12 @@ fun UpdaterScreen(
                         .background(Color.Red)
                         .clickable {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showMigrationDialog = true
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse(APP_GITHUB_RELEASES_URL)
+                            )
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
                         }
                         .padding(vertical = 16.dp),
                     contentAlignment = Alignment.Center
@@ -276,26 +248,5 @@ fun UpdaterScreen(
         )
 
         Spacer(Modifier.height(32.dp))
-    }
-
-    if (showMigrationDialog) {
-        MigrationConfirmDialog(
-            onDismiss = { showMigrationDialog = false },
-            onExportLibrary = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                showMigrationDialog = false
-                onNavigateLibrary()
-            },
-            onProceed = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                showMigrationDialog = false
-                val intent = Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse(APP_GITHUB_RELEASES_URL)
-                )
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-            }
-        )
     }
 }
