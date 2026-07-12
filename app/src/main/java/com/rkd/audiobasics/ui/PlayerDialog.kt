@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -19,9 +20,9 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,6 +62,9 @@ fun PlayerDialog(
     val duration by vm.duration.collectAsState()
     val savedAlbums by vm.savedAlbums.collectAsState()
     val resolvedAlbumCache by vm.resolvedAlbumCache.collectAsState()
+    val sleepTimerMode by vm.sleepTimerMode.collectAsState()
+    val sleepTimerRemaining by vm.sleepTimerRemaining.collectAsState()
+    val repeatMode by vm.repeatMode.collectAsState()
 
     var showLyrics by remember { mutableStateOf(false) }
     var showSongInfo by remember { mutableStateOf(false) }
@@ -351,8 +355,24 @@ fun PlayerDialog(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Default.Timer, contentDescription = null) },
-                                    text = { Text("Sleep timer", fontFamily = NothingFont) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Bedtime,
+                                            contentDescription = null,
+                                            tint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else textColor
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = when (sleepTimerMode) {
+                                                MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "Sleep timer (end of this song)"
+                                                MusicViewModel.SLEEP_TIMER_CUSTOM -> "Sleep timer (${formatCountdown(sleepTimerRemaining)})"
+                                                else -> "Sleep timer"
+                                            },
+                                            fontFamily = NothingFont,
+                                            color = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else textColor
+                                        )
+                                    },
                                     onClick = {
                                         showThreeDotMenu = false
                                         onDismiss()
@@ -360,8 +380,24 @@ fun PlayerDialog(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Default.Repeat, contentDescription = null) },
-                                    text = { Text("Repeat", fontFamily = NothingFont) },
+                                    leadingIcon = {
+                                        Icon(
+                                            if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                                            contentDescription = null,
+                                            tint = if (repeatMode == 0) textColor else Color.Red
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = when (repeatMode) {
+                                                1 -> "Repeat list"
+                                                2 -> "Repeat one"
+                                                else -> "Repeat"
+                                            },
+                                            fontFamily = NothingFont,
+                                            color = if (repeatMode == 0) textColor else Color.Red
+                                        )
+                                    },
                                     onClick = {
                                         showThreeDotMenu = false
                                         onDismiss()
