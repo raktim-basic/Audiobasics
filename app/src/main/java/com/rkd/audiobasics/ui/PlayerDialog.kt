@@ -61,6 +61,7 @@ fun PlayerDialog(
     val position by vm.currentPosition.collectAsState()
     val duration by vm.duration.collectAsState()
     val savedAlbums by vm.savedAlbums.collectAsState()
+    val customPlaylists by vm.customPlaylists.collectAsState()
     val resolvedAlbumCache by vm.resolvedAlbumCache.collectAsState()
     val sleepTimerMode by vm.sleepTimerMode.collectAsState()
     val sleepTimerRemaining by vm.sleepTimerRemaining.collectAsState()
@@ -215,7 +216,8 @@ fun PlayerDialog(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 hapticsEnabled = hapticsEnabled,
-                                context = context
+                                context = context,
+                                isDarkMode = isDarkMode
                             )
                         }
                         Spacer(Modifier.width(8.dp))
@@ -359,7 +361,7 @@ fun PlayerDialog(
                                         Icon(
                                             Icons.Default.Bedtime,
                                             contentDescription = null,
-                                            tint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else textColor
+                                            tint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else LocalContentColor.current
                                         )
                                     },
                                     text = {
@@ -370,7 +372,7 @@ fun PlayerDialog(
                                                 else -> "Sleep timer"
                                             },
                                             fontFamily = NothingFont,
-                                            color = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else textColor
+                                            color = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified
                                         )
                                     },
                                     onClick = {
@@ -384,7 +386,7 @@ fun PlayerDialog(
                                         Icon(
                                             if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
                                             contentDescription = null,
-                                            tint = if (repeatMode == 0) textColor else Color.Red
+                                            tint = if (repeatMode == 0) LocalContentColor.current else Color.Red
                                         )
                                     },
                                     text = {
@@ -395,7 +397,7 @@ fun PlayerDialog(
                                                 else -> "Repeat"
                                             },
                                             fontFamily = NothingFont,
-                                            color = if (repeatMode == 0) textColor else Color.Red
+                                            color = if (repeatMode == 0) Color.Unspecified else Color.Red
                                         )
                                     },
                                     onClick = {
@@ -427,6 +429,7 @@ fun PlayerDialog(
     if (showCreatePlaylist) {
         CreatePlaylistDialog(
             isDarkMode = isDarkMode,
+            existingNames = customPlaylists.map { it.name },
             onDismiss = { showCreatePlaylist = false },
             onCreate = { name, emoji ->
                 vm.createPlaylist(name, emoji)
@@ -466,7 +469,8 @@ fun DashedProgressBar(
     onDragging: (Float) -> Unit,
     modifier: Modifier = Modifier,
     hapticsEnabled: Boolean,
-    context: android.content.Context
+    context: android.content.Context,
+    isDarkMode: Boolean = true
 ) {
     val totalDashes = 30
     var barWidthPx by remember { mutableStateOf(0f) }
@@ -482,6 +486,8 @@ fun DashedProgressBar(
             lastFilled = displayFilled
         }
     }
+
+    val unfilledColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFBDBDBD)
 
     Row(
         modifier = modifier
@@ -521,7 +527,7 @@ fun DashedProgressBar(
                     .height(3.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(
-                        if (index < displayFilled) Color(0xFFFF0000) else Color(0xFF333333)
+                        if (index < displayFilled) Color(0xFFFF0000) else unfilledColor
                     )
                     .clickable(
                         indication = null,
