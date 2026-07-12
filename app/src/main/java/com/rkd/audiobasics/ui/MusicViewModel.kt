@@ -197,8 +197,33 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         title.lowercase().replace(Regex("[^a-z0-9]"), "")
 
     // ── Settings ──────────────────────────────────────────────────────────────
-    private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", true))
+    // Theme: stored preference is one of THEME_SYSTEM / THEME_LIGHT / THEME_DARK.
+    // isDarkMode stays the resolved boolean every screen already reads — screens never
+    // need to know about "system" mode, they just get the effective light/dark value.
+    private fun systemIsDarkMode(): Boolean {
+        val uiMode = getApplication<Application>().resources.configuration.uiMode
+        return (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+
+    private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", THEME_SYSTEM) ?: THEME_SYSTEM)
+    val themeMode: StateFlow<String> = _themeMode
+
+    private val _isDarkMode = MutableStateFlow(resolveDarkMode(_themeMode.value))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
+
+    private fun resolveDarkMode(mode: String): Boolean = when (mode) {
+        THEME_LIGHT -> false
+        THEME_DARK -> true
+        else -> systemIsDarkMode() // THEME_SYSTEM or any unrecognized value
+    }
+
+    fun setThemeMode(mode: String) {
+        if (mode != THEME_SYSTEM && mode != THEME_LIGHT && mode != THEME_DARK) return
+        _themeMode.value = mode
+        prefs.edit().putString("theme_mode", mode).apply()
+        _isDarkMode.value = resolveDarkMode(mode)
+    }
 
     private val _hapticsEnabled = MutableStateFlow(prefs.getBoolean("haptics_enabled", true))
     val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled
@@ -1295,10 +1320,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // Settings
     // ─────────────────────────────────────────────────────────────────────────
 
-    fun toggleDarkMode() {
-        _isDarkMode.value = !_isDarkMode.value
-        prefs.edit().putBoolean("dark_mode", _isDarkMode.value).apply()
-    }
 
     fun toggleHaptics() {
         _hapticsEnabled.value = !_hapticsEnabled.value
@@ -1584,5 +1605,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         const val SLEEP_TIMER_OFF = 0
         const val SLEEP_TIMER_CUSTOM = 1
         const val SLEEP_TIMER_END_OF_SONG = 2
+        const val THEME_SYSTEM = "system"
+        const val THEME_LIGHT = "light"
+        const val THEME_DARK = "dark"
     }
 }
