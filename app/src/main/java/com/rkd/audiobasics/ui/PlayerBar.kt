@@ -94,8 +94,11 @@ fun PlayerBar(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        val cachedThumbPath = remember(song.id) {
+            com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, song.id)
+        }
         AsyncImage(
-            model = song.thumbnail,
+            model = cachedThumbPath ?: song.thumbnail,
             contentDescription = null,
             modifier = Modifier
                 .size(44.dp)
