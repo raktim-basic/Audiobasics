@@ -147,8 +147,11 @@ fun PlayerDialog(
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
                     ) {
+                        val cachedThumbPath = remember(song?.id) {
+                            song?.id?.let { com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, it) }
+                        }
                         AsyncImage(
-                            model = song?.thumbnail,
+                            model = cachedThumbPath ?: song?.thumbnail,
                             contentDescription = null,
                             modifier = Modifier
                                 .size(110.dp)
