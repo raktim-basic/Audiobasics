@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
 
 object Innertube {
     /**
-     * Extracts individual artist names from a raw "runs" JSONArray (the artist-credit portion
+     * Extracts individual artist names from a raw "runs" list (the artist-credit portion
      * of a song/album subtitle, already truncated to before the first "•"), treating run
      * boundaries as the only source of truth for where one artist name ends and another
      * begins — never re-splitting a single run's own text on comma/ampersand.
@@ -38,19 +38,43 @@ object Innertube {
      * display string by comma after the fact is lossy and can't tell these cases apart; reading
      * the runs directly can.
      */
-    /**
-     * Extracts individual artist names from a raw "runs" list (the artist-credit portion of a
-     * song/album subtitle, already truncated to before the first "•").
-     *
-     * Reconstructs the segment's full text (including any comma runs, e.g. "Tyler" / ", " /
-     * "The Creator" → "Tyler, The Creator") and delegates to [splitArtistNames], so both the
-     * "never split on a bare comma" rule and the [COMMA_IS_SEPARATOR_IN] allowlist for known
-     * genuine multi-artist comma credits apply consistently, whether the source data gave us
-     * the credit as separate runs or as one already-joined string.
-     */
     private fun extractArtistNamesFromRuns(runs: List<JSONObject>): List<String> {
-        val text = runs.joinToString("") { it.optString("text", "") }
-        return splitArtistNames(text)
+        if (runs.isEmpty()) return emptyList()
+
+        Timber.tag("ARTISTDEBUG").d(
+            "extractArtistNamesFromRuns raw runs: %s",
+            runs.map { it.optString("text", "") }
+        )
+
+        val names = mutableListOf<String>()
+        val current = StringBuilder()
+        for (run in runs) {
+            val text = run.optString("text", "")
+            if (text.isBlank()) continue
+            val isPureSeparator = text.matches(Regex("\\s*(,|&|\\band\\b)\\s*", RegexOption.IGNORE_CASE))
+            if (isPureSeparator) {
+                // A standalone separator run marks a real boundary between two distinct
+                // artists — never appears as part of a single artist's own run.
+                if (current.isNotBlank()) {
+                    names.add(current.toString().trim())
+                    current.clear()
+                }
+            } else {
+                // Any non-separator run — including one whose own text happens to contain a
+                // comma or ampersand (e.g. "Tyler, The Creator" as a single run) — is part of
+                // the artist name currently being built, never a split point on its own.
+                current.append(text)
+            }
+        }
+        if (current.isNotBlank()) names.add(current.toString().trim())
+
+        val result = names.filter { it.isNotBlank() }.ifEmpty {
+            // No usable run boundaries at all (e.g. everything came back as one big run) —
+            // fall back to the lossy string-splitter, same as when we only have joined text.
+            splitArtistNames(runs.joinToString("") { it.optString("text", "") })
+        }
+        Timber.tag("ARTISTDEBUG").d("extractArtistNamesFromRuns result: %s", result)
+        return result
     }
 
 
@@ -372,38 +396,48 @@ object Innertube {
                             artist = artistParts.joinToString("")
                             artistNames = extractArtistNamesFromRuns(artistRunObjs)
                         }
-                        // Extract albumId (and the album name text itself) from the album-name
-                        // run's segment (segment 1) — previously only browseId was captured,
-                        // leaving albumTitle blank for every song from this search path.
+                        // Find the album segment by its browseId shape (MPREb_... is always an
+                        // album, never an artist/other id) instead of assuming a fixed segment
+                        // position — search-result subtitles aren't consistently laid out as
+                        // "Artist • Album • Duration"; the album segment can shift position or
+                        // be missing entirely, so a positional index (e.g. "always segment 1")
+                        // silently grabs the wrong text or nothing at all.
                         var albumId = ""
                         var albumTitle = ""
                         if (runs != null) {
                             var seg = 0
-                            val albumRunTexts = mutableListOf<String>()
+                            val segmentRunTexts = mutableListOf(mutableListOf<String>())
+                            val segmentRunObjs = mutableListOf(mutableListOf<JSONObject>())
                             for (r in 0 until runs.length()) {
                                 val runObj = runs.optJSONObject(r) ?: continue
                                 val t = runObj.optString("text", "")
-                                if (t == " • " || t == "•") { seg++; continue }
+                                if (t == " • " || t == "•") {
+                                    seg++
+                                    segmentRunTexts.add(mutableListOf())
+                                    segmentRunObjs.add(mutableListOf())
+                                    continue
+                                }
                                 if (t.isBlank()) continue
-                                if (seg == 1) {
-                                    albumRunTexts.add(t)
-                                    if (albumId.isBlank()) {
-                                        albumId = runObj.optJSONObject("navigationEndpoint")
-                                            ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
-                                    }
+                                segmentRunTexts[seg].add(t)
+                                segmentRunObjs[seg].add(runObj)
+                            }
+                            for (s in segmentRunObjs.indices) {
+                                val browseId = segmentRunObjs[s].firstNotNullOfOrNull { runObj ->
+                                    runObj.optJSONObject("navigationEndpoint")
+                                        ?.optJSONObject("browseEndpoint")?.optString("browseId")
+                                        ?.takeIf { it.startsWith("MPREb_") }
+                                }
+                                if (browseId != null) {
+                                    albumId = browseId
+                                    albumTitle = segmentRunTexts[s].joinToString("")
+                                    break
                                 }
                             }
-                            albumTitle = albumRunTexts.joinToString("")
                             if (albumId.isBlank()) {
-                                val segments = mutableListOf<String>()
-                                var cur = StringBuilder()
-                                for (r in 0 until runs.length()) {
-                                    val t = runs.optJSONObject(r)?.optString("text", "") ?: ""
-                                    if (t == " • " || t == "•") { segments.add(cur.toString()); cur = StringBuilder() }
-                                    else cur.append(t)
-                                }
-                                segments.add(cur.toString())
-                                Timber.tag("AlbumIdDebug").d("parseSongsFromYTM song='%s' albumId BLANK, segments=%s", title, segments)
+                                Timber.tag("AlbumIdDebug").d(
+                                    "parseSongsFromYTM song='%s' albumId BLANK, segments=%s",
+                                    title, segmentRunTexts.map { it.joinToString("") }
+                                )
                             }
                         }
                         out.add(Song(id = videoId, title = title, artist = artist,
