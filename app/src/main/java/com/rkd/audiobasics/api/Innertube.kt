@@ -41,11 +41,6 @@ object Innertube {
     private fun extractArtistNamesFromRuns(runs: List<JSONObject>): List<String> {
         if (runs.isEmpty()) return emptyList()
 
-        Timber.tag("ARTISTDEBUG").d(
-            "extractArtistNamesFromRuns raw runs: %s",
-            runs.map { it.optString("text", "") }
-        )
-
         val names = mutableListOf<String>()
         val current = StringBuilder()
         for (run in runs) {
@@ -68,13 +63,11 @@ object Innertube {
         }
         if (current.isNotBlank()) names.add(current.toString().trim())
 
-        val result = names.filter { it.isNotBlank() }.ifEmpty {
+        return names.filter { it.isNotBlank() }.ifEmpty {
             // No usable run boundaries at all (e.g. everything came back as one big run) —
             // fall back to the lossy string-splitter, same as when we only have joined text.
             splitArtistNames(runs.joinToString("") { it.optString("text", "") })
         }
-        Timber.tag("ARTISTDEBUG").d("extractArtistNamesFromRuns result: %s", result)
-        return result
     }
 
 
@@ -433,12 +426,6 @@ object Innertube {
                                     break
                                 }
                             }
-                            if (albumId.isBlank()) {
-                                Timber.tag("AlbumIdDebug").d(
-                                    "parseSongsFromYTM song='%s' albumId BLANK, segments=%s",
-                                    title, segmentRunTexts.map { it.joinToString("") }
-                                )
-                            }
                         }
                         out.add(Song(id = videoId, title = title, artist = artist,
                             artistNames = artistNames,
@@ -574,7 +561,6 @@ object Innertube {
                 } else browseId
                 val step1 = ytmPost("browse", JSONObject().put("browseId", effectiveBrowseId))
                     ?: return@withContext Pair(null, emptyList())
-                Timber.tag("AlbumIdDebug").d("getAlbumSongs[%s] INPUT browseId='%s' effectiveBrowseId='%s' topLevelKeys=%s", caller, browseId, effectiveBrowseId, step1.keys().asSequence().toList())
 
                 // ── Metadata: album browse responses (MPREb_ ids) don't return a header
                 // renderer at all — the only reliable source of title/artist/thumbnail is
@@ -717,14 +703,6 @@ object Innertube {
                         firstSection.optJSONObject("musicShelfRenderer")?.optJSONArray("contents")
                             ?: firstSection.optJSONObject("musicPlaylistShelfRenderer")?.optJSONArray("contents")
                     }
-                Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' shelfContentsFound=%s shelfLen=%s", browseId, shelfContents != null, shelfContents?.length())
-                if (shelfContents == null) {
-                    Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' NO SHELF. topLevelKeys=%s twoColKeys=%s", browseId, step1.keys().asSequence().toList(), step1.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")?.keys()?.asSequence()?.toList())
-                    val singleCol = step1.optJSONObject("contents")?.optJSONObject("singleColumnBrowseResultsRenderer")
-                    if (singleCol != null) {
-                        Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' HAS singleColumnBrowseResultsRenderer, keys=%s", browseId, singleCol.keys().asSequence().toList())
-                    }
-                }
                 if (shelfContents != null) {
                     for (i in 0 until shelfContents.length()) {
                         try {
@@ -795,11 +773,11 @@ object Innertube {
                                 .maxByOrNull { it.value.size }?.key ?: fallbackArtist
                         }
                     } catch (e: Exception) {
-                        Timber.tag("AlbumIdDebug").d("getAlbumSongs browseId='%s' artist intersection FAILED: %s", browseId, e.message)
+                        // Intersection/ordering best-effort only; fall through with whatever
+                        // albumArtist was already resolved to.
                     }
                 }
             } catch (e: Exception) { Log.e("Innertube", "getAlbumSongs error: ${e.message}") }
-            Timber.tag("AlbumIdDebug").d("getAlbumSongs[%s] RESULT browseId='%s' albumTitle='%s' albumArtist='%s' albumYear='%s' songCount=%d", caller, browseId, albumTitle, albumArtist, albumYear, songs.size)
             Pair(Album(id = browseId, title = albumTitle, artist = albumArtist,
                 thumbnail = albumThumb, year = albumYear), songs)
         }
