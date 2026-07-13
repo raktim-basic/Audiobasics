@@ -809,8 +809,15 @@ object Innertube {
      */
     suspend fun refreshSongMetadata(song: Song): Song = withContext(Dispatchers.IO) {
         try {
-            val results = search("${song.title} ${song.artist}".trim())
-            val fresh = results.firstOrNull { it.id == song.id } ?: return@withContext song
+            val query = "${song.title} ${song.artist}".trim()
+            val results = search(query)
+            val fresh = results.firstOrNull { it.id == song.id }
+            Timber.tag("RefreshDebug").d(
+                "refreshSongMetadata song='%s' id='%s' oldArtist='%s' query='%s' resultsCount=%d matchFound=%s freshAlbumId='%s' freshAlbumTitle='%s' freshDuration=%d",
+                song.title, song.id, song.artist, query, results.size, fresh != null,
+                fresh?.albumId ?: "", fresh?.albumTitle ?: "", fresh?.duration ?: -1L
+            )
+            if (fresh == null) return@withContext song
             song.copy(
                 title = fresh.title.ifBlank { song.title },
                 artist = fresh.artist.ifBlank { song.artist },
