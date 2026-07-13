@@ -664,6 +664,15 @@ private fun CachePage(
                         color = Color.Red,
                         trackColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
                     )
+                    Text(
+                        text = "Starting the download.. do not close the app",
+                        fontFamily = NothingFont,
+                        fontSize = 12.sp,
+                        color = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 2.dp)
+                    )
                 }
             }
         }
