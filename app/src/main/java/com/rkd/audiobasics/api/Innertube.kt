@@ -783,15 +783,24 @@ object Innertube {
         }
     suspend fun getVideoMetadata(videoId: String): Song? = withContext(Dispatchers.IO) {
         initNewPipe()
-        try {
-            val extractor = ServiceList.YouTube
-                .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
-            extractor.fetchPage()
-            val title = extractor.name ?: return@withContext null
-            Song(id = videoId, title = title, artist = extractor.uploaderName ?: "",
-                thumbnail = ytThumbnail(videoId), duration = extractor.length * 1000L,
-                isExplicit = title.lowercase().contains("explicit"))
-        } catch (e: Exception) { Log.e("Innertube", "Metadata error: ${e.message}"); null }
+        repeat(2) { attempt ->
+            try {
+                val extractor = ServiceList.YouTube
+                    .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
+                extractor.fetchPage()
+                val title = extractor.name
+                if (title.isNullOrBlank()) {
+                    Log.e("Innertube", "getVideoMetadata: extractor returned blank title for $videoId (attempt ${attempt + 1})")
+                    return@repeat
+                }
+                return@withContext Song(id = videoId, title = title, artist = extractor.uploaderName ?: "",
+                    thumbnail = ytThumbnail(videoId), duration = extractor.length * 1000L,
+                    isExplicit = title.lowercase().contains("explicit"))
+            } catch (e: Exception) {
+                Log.e("Innertube", "getVideoMetadata error for $videoId (attempt ${attempt + 1}): ${e.message}")
+            }
+        }
+        null
     }
 
     /**
