@@ -153,7 +153,7 @@ fun QueueScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Queue is empty\nSearch for songs to play",
+                    text = "Queue is empty",
                     fontFamily = NothingFont,
                     color = Color.Gray,
                     textAlign = TextAlign.Center
