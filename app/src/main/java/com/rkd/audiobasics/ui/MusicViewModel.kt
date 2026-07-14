@@ -568,22 +568,29 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun playByUrl(url: String) {
+        val videoId = extractVideoId(url)
+        if (videoId == null) {
+            Toast.makeText(getApplication(), "Invalid YouTube URL", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Stop whatever's currently playing and flip to a loading state immediately,
+        // synchronously, before any suspending/network work starts. Previously the old
+        // song kept audibly playing while its title stayed on screen during resolution,
+        // which looked like the tap silently did nothing.
+        fallbackRetryCount = 0
+        controller?.pause()
+        _isLoading.value = true
+        val placeholder = Song(
+            id = videoId, title = "Loading...", artist = "",
+            // hqdefault always exists; maxresdefault 404s for many videos, which was
+            // causing cover art to intermittently stay blank on Play with Link.
+            thumbnail = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+        )
+        _currentSong.value = placeholder
+        _queue.value = listOf(placeholder)
+
         viewModelScope.launch {
-            fallbackRetryCount = 0
-            val videoId = extractVideoId(url)
-            if (videoId == null) {
-                Toast.makeText(getApplication(), "Invalid YouTube URL", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            _isLoading.value = true
-            val placeholder = Song(
-                id = videoId, title = "Loading...", artist = "",
-                // hqdefault always exists; maxresdefault 404s for many videos, which was
-                // causing cover art to intermittently stay blank on Play with Link.
-                thumbnail = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
-            )
-            _currentSong.value = placeholder
-            _queue.value = listOf(placeholder)
             try {
                 val metadata = Innertube.getVideoMetadata(videoId)
                 val streamUrl = Innertube.getStreamUrl(getApplication(), videoId)?.first
