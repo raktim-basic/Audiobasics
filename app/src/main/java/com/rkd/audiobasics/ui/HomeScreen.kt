@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
+import com.rkd.audiobasics.utils.MigrationMessageProvider
 
 @Composable
 fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
@@ -50,6 +51,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val isDarkMode by vm.isDarkMode.collectAsState()
     val updateAvailable by vm.updateAvailable.collectAsState()
+    val homeHeaderReady by vm.homeHeaderReady.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
@@ -84,15 +86,23 @@ fun HomeScreen(
                     color = textColor
                 )
             } else {
+                // Remote header (ab-configs/header.json, via MigrationMessageProvider)
+                // takes over from the static slogan once fetched; the provider's getters
+                // fall back to their hardcoded defaults automatically if the fetch hasn't
+                // resolved yet or failed, so there's never a blank header. Reading
+                // homeHeaderReady here (even though it's unused beyond that) ties this
+                // block to the StateFlow so it recomposes the instant the fetch resolves,
+                // rather than only showing fresh text on the next screen visit.
+                @Suppress("UNUSED_EXPRESSION") homeHeaderReady
                 Text(
-                    text = "No recommendation bs",
+                    text = MigrationMessageProvider.homeHeaderLine1(),
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
                     color = textColor
                 )
                 Text(
-                    text = "Own your taste",
+                    text = MigrationMessageProvider.homeHeaderLine2(),
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
