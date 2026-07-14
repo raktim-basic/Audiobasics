@@ -7,9 +7,12 @@ import com.rkd.audiobasics.api.cipher.CipherDeobfuscator
 import com.rkd.audiobasics.api.cipher.FunctionNameExtractor
 import com.rkd.audiobasics.api.cipher.PlayerJsFetcher
 import com.rkd.audiobasics.api.potoken.PoTokenGenerator
+import com.rkd.audiobasics.api.potoken.PoTokenResult
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -94,6 +97,68 @@ object Innertube {
     // Using a real YouTube visitor ID gives BotGuard enough entropy to produce
     // valid 110-128 byte tokens. Random UUIDs can produce short tokens for some videos.
     @Volatile var visitorData: String? = null
+
+    // ─── Stale-visitorData 403 mitigation ──────────────────────────────────────────
+    // When YouTube's bot detection stops trusting the current visitorData identity,
+    // every stream resolution attempt starts returning 403 — previously this meant
+    // every song got stuck loading forever until the user manually cleared the cache
+    // (which forces a fresh visitorData fetch on next use). This tracks 403s across
+    // distinct videos and, once enough have piled up, refreshes visitorData itself.
+    //
+    // Deliberately keyed on distinct videoIds, not raw attempt count: a single video
+    // can be legitimately blocked/403'd on its own (age-restricted, region-locked
+    // CDN edge, etc.) without that meaning the whole identity is stale. Only when
+    // several different videos in a row all 403 does that look like an identity
+    // problem rather than a per-video one.
+    private const val CONSECUTIVE_DISTINCT_403_THRESHOLD = 3
+    private val recent403VideoIds = LinkedHashSet<String>()
+    private val visitorRefreshMutex = Mutex()
+
+    // Rate-limits the refresh itself — if the refresh doesn't actually fix things
+    // (e.g. no network at all), we don't want every subsequent song to re-trigger it.
+    private const val VISITOR_REFRESH_COOLDOWN_MS = 2 * 60 * 1000L
+    @Volatile private var lastVisitorRefreshAttemptMs = 0L
+
+    private fun record403(videoId: String) {
+        synchronized(recent403VideoIds) { recent403VideoIds.add(videoId) }
+    }
+
+    private fun resetRecent403s() {
+        synchronized(recent403VideoIds) { recent403VideoIds.clear() }
+    }
+
+    private fun shouldRefreshVisitorIdentity(): Boolean =
+        synchronized(recent403VideoIds) { recent403VideoIds.size >= CONSECUTIVE_DISTINCT_403_THRESHOLD }
+
+    /**
+     * Forces a fresh visitorData fetch — the same call startup makes, just re-run on
+     * demand. Rate-limited so a still-broken network doesn't cause a refresh attempt
+     * on every single song. Clears the 403 tracker regardless of outcome, so a bad
+     * refresh doesn't immediately re-trigger on the very next video.
+     */
+    private suspend fun refreshVisitorIdentityIfNeeded(): Boolean {
+        if (!shouldRefreshVisitorIdentity()) return false
+        return visitorRefreshMutex.withLock {
+            // Re-check inside the lock — another coroutine may have already refreshed
+            // while we were waiting.
+            if (!shouldRefreshVisitorIdentity()) return@withLock false
+
+            val now = System.currentTimeMillis()
+            if (now - lastVisitorRefreshAttemptMs < VISITOR_REFRESH_COOLDOWN_MS) {
+                Timber.tag("Innertube").d("visitorData refresh skipped (cooldown)")
+                return@withLock false
+            }
+            lastVisitorRefreshAttemptMs = now
+
+            Timber.tag("Innertube").w(
+                "3+ distinct videos hit 403 — refreshing visitorData identity"
+            )
+            visitorData = null
+            fetchVisitorData()
+            resetRecent403s()
+            visitorData != null
+        }
+    }
 
     // Cached signature timestamp from player.js — required for WEB_REMIX to return OK.
     // Changes when YouTube updates their player JS (every few days/weeks).
@@ -939,20 +1004,41 @@ object Innertube {
         return best
     }
 
+    private sealed class ValidateResult {
+        object Ok : ValidateResult()
+        object Forbidden : ValidateResult()
+        object OtherFailure : ValidateResult()
+    }
+
     // Validate stream URL with a HEAD request before using it.
-    // Catches URLs that resolve but are already expired or geo-blocked.
-    private fun validateStreamUrl(url: String, clientName: String): Boolean {
+    // Catches URLs that resolve but are already expired, geo-blocked, or 403'd due to a
+    // stale visitorData identity.
+    private fun validateStreamUrl(url: String, clientName: String): ValidateResult {
         return try {
             val response = httpClient.newCall(
                 Request.Builder().url(url).head().build()
             ).execute()
             val ok = response.isSuccessful
             Timber.d("$clientName: stream validate HTTP ${response.code} → ${if (ok) "✅" else "❌"}")
-            ok
+            when {
+                ok -> ValidateResult.Ok
+                response.code == 403 -> ValidateResult.Forbidden
+                else -> ValidateResult.OtherFailure
+            }
         } catch (e: Exception) {
             Timber.w("$clientName: stream validate exception: ${e.message}")
-            false
+            ValidateResult.OtherFailure
         }
+    }
+
+    private sealed class StreamAttemptResult {
+        data class Success(val url: String) : StreamAttemptResult()
+        // Player endpoint or CDN URL rejected the request with 403 — usually means
+        // visitorData/BotGuard identity YouTube no longer trusts, not a per-video block.
+        object Forbidden : StreamAttemptResult()
+        // Any other failure (bad playabilityStatus, no formats, network error, etc.) —
+        // may well be a legitimately unavailable video, not an identity problem.
+        object OtherFailure : StreamAttemptResult()
     }
 
     private suspend fun tryClientForStream(
@@ -961,7 +1047,7 @@ object Innertube {
         playerRequestPoToken: String?,
         streamingDataPoToken: String?,
         sigTimestamp: Int?
-    ): String? {
+    ): StreamAttemptResult {
         val clientContext = JSONObject()
             .put("clientName", client.clientName)
             .put("clientVersion", client.clientVersion)
@@ -1004,18 +1090,22 @@ object Innertube {
             .build()
 
         val response = httpClient.newCall(request).execute()
-        val text = response.body?.string() ?: return null
+        if (response.code == 403) {
+            Timber.w("${client.clientName}: player endpoint returned 403")
+            return StreamAttemptResult.Forbidden
+        }
+        val text = response.body?.string() ?: return StreamAttemptResult.OtherFailure
         val json = JSONObject(text)
 
         val status = json.optJSONObject("playabilityStatus")?.optString("status")
         if (status != "OK") {
             Timber.w("${client.clientName}: playabilityStatus=$status")
-            return null
+            return StreamAttemptResult.OtherFailure
         }
 
         val adaptiveFormats = json.optJSONObject("streamingData")
-            ?.optJSONArray("adaptiveFormats") ?: return null
-        if (adaptiveFormats.length() == 0) return null
+            ?.optJSONArray("adaptiveFormats") ?: return StreamAttemptResult.OtherFailure
+        if (adaptiveFormats.length() == 0) return StreamAttemptResult.OtherFailure
 
         // Pre-resolve all URLs in suspend context (cipher deobfuscation is suspend)
         val resolvedFormats = mutableListOf<ResolvedFormat>()
@@ -1042,9 +1132,9 @@ object Innertube {
             ))
         }
 
-        if (resolvedFormats.isEmpty()) return null
+        if (resolvedFormats.isEmpty()) return StreamAttemptResult.OtherFailure
 
-        val best = selectBestAudioFormat(resolvedFormats, client) ?: return null
+        val best = selectBestAudioFormat(resolvedFormats, client) ?: return StreamAttemptResult.OtherFailure
 
         // Remove alr=yes — ExoPlayer can't handle YouTube's adaptive loading protocol
         var finalUrl = best.url
@@ -1062,7 +1152,55 @@ object Innertube {
             Timber.d("${client.clientName}: appended pot= ✅")
         }
 
-        return finalUrl
+        return StreamAttemptResult.Success(finalUrl)
+    }
+
+    // Tries every native client in STREAM_CLIENTS in order. Returns the resolved URL on
+    // success, or null if all of them failed — and reports via [sawForbidden] whether any
+    // of those failures was specifically a 403 (as opposed to e.g. a legitimately
+    // unavailable video), so the caller can decide whether this looks like a stale
+    // visitorData identity rather than a per-video problem.
+    private suspend fun tryNativeClients(
+        videoId: String,
+        sigTimestamp: Int?,
+        poToken: PoTokenResult?
+    ): Pair<String?, Boolean> {
+        var sawForbidden = false
+        for (client in STREAM_CLIENTS) {
+            try {
+                Timber.d("Trying client: ${client.clientName} sigTs=$sigTimestamp poToken=${poToken?.playerRequestPoToken?.take(10)}...")
+                val result = tryClientForStream(
+                    videoId, client,
+                    poToken?.playerRequestPoToken,
+                    poToken?.streamingDataPoToken,
+                    if (client.useSignatureTimestamp) sigTimestamp else null
+                )
+                val url = when (result) {
+                    is StreamAttemptResult.Forbidden -> { sawForbidden = true; continue }
+                    is StreamAttemptResult.OtherFailure -> continue
+                    is StreamAttemptResult.Success -> result.url
+                }
+
+                // Validate stream URL before caching — skip validation for last client
+                val isLastClient = client == STREAM_CLIENTS.last()
+                if (!isLastClient) {
+                    when (validateStreamUrl(url, client.clientName)) {
+                        ValidateResult.Forbidden -> { sawForbidden = true; continue }
+                        ValidateResult.OtherFailure -> {
+                            Timber.w("${client.clientName}: stream validation failed, trying next")
+                            continue
+                        }
+                        ValidateResult.Ok -> {}
+                    }
+                }
+
+                Timber.d("Stream resolved via ${client.clientName} ✅")
+                return url to sawForbidden
+            } catch (e: Exception) {
+                Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
+            }
+        }
+        return null to sawForbidden
     }
 
     // Returns Pair(streamUrl, expiryMs) or null.
@@ -1083,8 +1221,8 @@ object Innertube {
         // Generate poToken — use visitorData as session ID for consistent entropy
         // Use first 36 chars of visitorData as session ID — full string causes 598-byte tokens
         // 36 chars gives same entropy as a UUID while staying within BotGuard expected range
-        val sessionId = visitorData?.take(36) ?: java.util.UUID.randomUUID().toString()
-        val poToken = try {
+        var sessionId = visitorData?.take(36) ?: java.util.UUID.randomUUID().toString()
+        var poToken = try {
             poTokenGenerator.getWebClientPoToken(videoId, sessionId)
         } catch (e: Exception) {
             Log.w("Innertube", "PoToken generation failed: ${e.message}")
@@ -1094,28 +1232,41 @@ object Innertube {
         poToken?.let { NewPipeDownloader.poToken = it.playerRequestPoToken }
 
         if (!forceFallback) {
-            for (client in STREAM_CLIENTS) {
-                try {
-                    Timber.d("Trying client: ${client.clientName} sigTs=$sigTimestamp poToken=${poToken?.playerRequestPoToken?.take(10)}...")
-                    val url = tryClientForStream(
-                        videoId, client,
-                        poToken?.playerRequestPoToken,
-                        poToken?.streamingDataPoToken,
-                        if (client.useSignatureTimestamp) sigTimestamp else null
-                    ) ?: continue
+            val (firstUrl, sawForbidden) = tryNativeClients(videoId, sigTimestamp, poToken)
+            if (firstUrl != null) {
+                resetRecent403s()
+                return@withContext firstUrl to parseExpiry(firstUrl)
+            }
 
-                    // Validate stream URL before caching — skip validation for last client
-                    val isLastClient = client == STREAM_CLIENTS.last()
-                    if (!isLastClient && !validateStreamUrl(url, client.clientName)) {
-                        Timber.w("${client.clientName}: stream validation failed, trying next")
-                        continue
+            if (sawForbidden) {
+                record403(videoId)
+                Timber.w("videoId=$videoId hit 403 (${synchronized(recent403VideoIds) { recent403VideoIds.size }} distinct so far)")
+
+                // Enough different videos have 403'd in a row that this looks like a
+                // stale visitorData identity, not a handful of individually blocked
+                // videos — refresh it and retry this video once with the new identity.
+                if (refreshVisitorIdentityIfNeeded()) {
+                    Timber.w("visitorData refreshed — retrying videoId=$videoId")
+                    sessionId = visitorData?.take(36) ?: java.util.UUID.randomUUID().toString()
+                    poToken = try {
+                        poTokenGenerator.getWebClientPoToken(videoId, sessionId)
+                    } catch (e: Exception) {
+                        Log.w("Innertube", "PoToken generation failed on retry: ${e.message}")
+                        null
                     }
+                    poToken?.let { NewPipeDownloader.poToken = it.playerRequestPoToken }
 
-                    Timber.d("Stream resolved via ${client.clientName} ✅")
-                    return@withContext url to parseExpiry(url)
-                } catch (e: Exception) {
-                    Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
+                    val (retryUrl, _) = tryNativeClients(videoId, sigTimestamp, poToken)
+                    if (retryUrl != null) {
+                        resetRecent403s()
+                        return@withContext retryUrl to parseExpiry(retryUrl)
+                    }
                 }
+            } else {
+                // Failures that weren't 403s (e.g. a legitimately region-locked or
+                // age-restricted video) shouldn't count toward the identity-refresh
+                // threshold — only a run of unbroken 403s should.
+                resetRecent403s()
             }
             Timber.e("All native clients FAILED for videoId=$videoId ❌")
         }
