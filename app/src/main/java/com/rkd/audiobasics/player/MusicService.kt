@@ -98,10 +98,11 @@ class MusicService : MediaSessionService() {
                             Timber.d("Resolver: waiting for pre-resolve of $videoId (forceFallback=$forceFallback)...")
                             preResolveUrl(videoId, force = forceFallback)
                             var waited = 0
-                            // 30s timeout — enough for cold CipherWebView + poToken + API call
-                            // In practice warmUp() means WebView is already ready, so this
-                            // resolves in ~5-7 seconds (poToken + player API only)
-                            while (waited < 30000) {
+                            // 12s timeout — in practice warmUp() means WebView is already
+                            // ready, so resolution typically finishes in ~5-7 seconds
+                            // (poToken + player API only). A genuinely slow cold-start or
+                            // bad network can still exceed this and throw below.
+                            while (waited < 12000) {
                                 val ready = songUrlCache[videoId]
                                 if (ready != null && ready.second > System.currentTimeMillis()) {
                                     Timber.d("Resolver: pre-resolve ready for $videoId ✅")
