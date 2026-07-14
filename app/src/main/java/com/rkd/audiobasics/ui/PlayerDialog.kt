@@ -170,15 +170,37 @@ fun PlayerDialog(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = song?.artist ?: "Artist",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp,
-                                color = subTextColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (song?.isExplicit == true) {
+                                    val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
+                                    val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(explicitBgColor)
+                                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "E",
+                                            fontFamily = NothingFont,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 9.sp,
+                                            color = explicitTextColor
+                                        )
+                                    }
+                                    Spacer(Modifier.width(5.dp))
+                                }
+                                Text(
+                                    text = song?.artist ?: "Artist",
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = 13.sp,
+                                    color = subTextColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
 
