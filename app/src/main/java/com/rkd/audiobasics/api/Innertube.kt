@@ -248,10 +248,39 @@ object Innertube {
         "DONDA, Ye" to "DONDA & Ye"
     )
 
+    // The mirror-image problem: some acts have "&" baked into their own single name
+    // (bands, duos), so a plain "split on &" rule wrongly breaks them into two artists —
+    // e.g. "Earth, Wind & Fire" becoming ["Earth, Wind", "Fire"]. These names are protected
+    // by swapping their "&" for a placeholder before the separator split runs, then swapping
+    // it back afterward. Only matters for the string-based fallback below — the run-boundary
+    // based [extractArtistNamesFromRuns] doesn't have this problem, since it only treats "&"
+    // as a split point when it's YouTube's own standalone separator run, never when it's
+    // embedded inside a single artist's run text.
+    private val AMPERSAND_IS_PART_OF_NAME = listOf(
+        "Earth, Wind & Fire",
+        "Simon & Garfunkel",
+        "Hall & Oates",
+        "Ike & Tina Turner",
+        "Chic & Sister Sledge",
+        "Florence & The Machine",
+        "Emerson, Lake & Palmer"
+    )
+
+    private const val AMPERSAND_PLACEHOLDER = "\u0000AMP\u0000"
+
     private fun normalizeKnownCommaSeparators(artist: String): String {
         var result = artist
         COMMA_IS_SEPARATOR_IN.forEach { (from, to) ->
             result = result.replace(from, to, ignoreCase = true)
+        }
+        return result
+    }
+
+    private fun protectKnownAmpersandNames(artist: String): String {
+        var result = artist
+        AMPERSAND_IS_PART_OF_NAME.forEach { name ->
+            val protectedName = name.replace("&", AMPERSAND_PLACEHOLDER)
+            result = result.replace(name, protectedName, ignoreCase = true)
         }
         return result
     }
@@ -267,9 +296,9 @@ object Innertube {
     // A short explicit allowlist (see [COMMA_IS_SEPARATOR_IN]) covers known cases where a comma
     // really does separate two distinct artist credits.
     fun splitArtistNames(artist: String): List<String> {
-        return normalizeKnownCommaSeparators(artist).trim()
+        return protectKnownAmpersandNames(normalizeKnownCommaSeparators(artist)).trim()
             .split(Regex("\\s*&\\s*|\\s+and\\s+", RegexOption.IGNORE_CASE))
-            .map { it.trim().trim(',').trim() }
+            .map { it.trim().trim(',').trim().replace(AMPERSAND_PLACEHOLDER, "&") }
             .filter { it.isNotBlank() }
     }
 
@@ -277,9 +306,9 @@ object Innertube {
      *  string (e.g. "Tyler, The Creator feat. Kali Uchis") needs breaking into individual
      *  artist names for display/linking. Still never splits on a bare, unlisted comma. */
     fun splitArtistNamesWithFeat(artist: String): List<String> {
-        return normalizeKnownCommaSeparators(artist).trim()
+        return protectKnownAmpersandNames(normalizeKnownCommaSeparators(artist)).trim()
             .split(Regex("\\s*&\\s*|\\s+and\\s+|\\s*feat\\.\\s*", RegexOption.IGNORE_CASE))
-            .map { it.trim().trim(',').trim() }
+            .map { it.trim().trim(',').trim().replace(AMPERSAND_PLACEHOLDER, "&") }
             .filter { it.isNotBlank() }
     }
 
