@@ -578,7 +578,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _isLoading.value = true
             val placeholder = Song(
                 id = videoId, title = "Loading...", artist = "",
-                thumbnail = "https://img.youtube.com/vi/$videoId/maxresdefault.jpg"
+                // hqdefault always exists; maxresdefault 404s for many videos, which was
+                // causing cover art to intermittently stay blank on Play with Link.
+                thumbnail = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
             )
             _currentSong.value = placeholder
             _queue.value = listOf(placeholder)
