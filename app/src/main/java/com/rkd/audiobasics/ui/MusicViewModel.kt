@@ -392,6 +392,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         )
         refreshCacheSize()
         checkForUpdate()
+        MigrationMessageProvider.loadCache(app)
         fetchHomeHeader()
     }
 
@@ -1439,7 +1440,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun fetchHomeHeader() {
         viewModelScope.launch(Dispatchers.IO) {
-            MigrationMessageProvider.fetchRemoteMessages()
+            MigrationMessageProvider.fetchRemoteMessages(getApplication())
             _homeHeaderReady.value = true
         }
     }
