@@ -16,16 +16,16 @@ import okhttp3.Request
  *   2. Remote custom message (fetched from REMOTE_CONTENT_URL)
  *   3. Default hardcoded fallback
  *
- * For 2.3.1 the remote fetch is wired in but not actively used — every slot just
- * returns its hardcoded fallback. A future release can start populating the remote
- * repo and this will pick it up with no app update needed.
+ * Backed by ab-configs/header.json — a small, dedicated config repo (raktim-basic/ab-configs)
+ * separate from the main app repo. Currently used by the homescreen header (line1/line2);
+ * the migration-message fields below remain wired in for any future migration banner but
+ * aren't populated by header.json today, so they'll keep resolving to their defaults until
+ * ab-configs adds those keys.
  */
 object MigrationMessageProvider {
 
-    // Placeholder URL for a small content-only repo, e.g.:
-    // https://raw.githubusercontent.com/<user>/audiobasics-content/main/messages.json
     private const val REMOTE_CONTENT_URL =
-        "https://raw.githubusercontent.com/raktim-basic/audiobasics-content/main/messages.json"
+        "https://raw.githubusercontent.com/raktim-basic/ab-configs/main/header.json"
 
     // --- Default fallback copy -------------------------------------------------
 
@@ -45,7 +45,12 @@ object MigrationMessageProvider {
             "This is a one-time change and won't happen again.\n\n" +
             "(Uninstall the current version before installing the new one)"
 
-    // --- Remote fetch (not yet used, kept ready for future releases) -----------
+    // Homescreen header defaults — matches the slogan the header used before it became
+    // remotely editable.
+    const val HOME_HEADER_LINE1_DEFAULT = "No recommendation bs"
+    const val HOME_HEADER_LINE2_DEFAULT = "Own your taste"
+
+    // --- Remote fetch ------------------------------------------------------------
 
     private var cachedRemote: RemoteMessages? = null
 
@@ -54,13 +59,14 @@ object MigrationMessageProvider {
         val sloganSubtitle: String?,
         val sloganFooter: String?,
         val updaterWarning: String?,
-        val popupWarning: String?
+        val popupWarning: String?,
+        val homeHeaderLine1: String?,
+        val homeHeaderLine2: String?
     )
 
     /**
      * Attempts to fetch remote message overrides. Returns null on any failure,
      * in which case callers should fall back to the hardcoded defaults.
-     * Not called anywhere yet in 2.3.1 — reserved for future use.
      */
     suspend fun fetchRemoteMessages(): RemoteMessages? = withContext(Dispatchers.IO) {
         try {
@@ -74,7 +80,9 @@ object MigrationMessageProvider {
                 sloganSubtitle = json.optString("sloganSubtitle").takeIf { it.isNotBlank() },
                 sloganFooter = json.optString("sloganFooter").takeIf { it.isNotBlank() },
                 updaterWarning = json.optString("updaterWarning").takeIf { it.isNotBlank() },
-                popupWarning = json.optString("popupWarning").takeIf { it.isNotBlank() }
+                popupWarning = json.optString("popupWarning").takeIf { it.isNotBlank() },
+                homeHeaderLine1 = json.optString("line1").takeIf { it.isNotBlank() },
+                homeHeaderLine2 = json.optString("line2").takeIf { it.isNotBlank() }
             ).also { cachedRemote = it }
         } catch (_: Exception) {
             null
@@ -88,4 +96,6 @@ object MigrationMessageProvider {
     fun sloganFooter(): String = cachedRemote?.sloganFooter ?: SLOGAN_FOOTER_DEFAULT
     fun updaterWarning(): String = cachedRemote?.updaterWarning ?: UPDATER_WARNING_DEFAULT
     fun popupWarning(): String = cachedRemote?.popupWarning ?: POPUP_WARNING_DEFAULT
+    fun homeHeaderLine1(): String = cachedRemote?.homeHeaderLine1 ?: HOME_HEADER_LINE1_DEFAULT
+    fun homeHeaderLine2(): String = cachedRemote?.homeHeaderLine2 ?: HOME_HEADER_LINE2_DEFAULT
 }
