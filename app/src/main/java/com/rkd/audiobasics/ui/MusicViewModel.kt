@@ -1179,6 +1179,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
      * If playlistId == LIKED_PLAYLIST_ID → toggleLike
      * Otherwise → custom playlist in Room
      * Returns true if added, false if removed.
+     *
+     * Caching (when adding) is fired on viewModelScope rather than awaited here — the same
+     * pattern like() uses. Previously this suspended until cacheSongSilently finished before
+     * returning, so callers on a UI-scoped coroutine (e.g. AddToPlaylistSheet's
+     * rememberCoroutineScope) never saw the "added" result if the sheet was dismissed first,
+     * since dismissal cancels that scope mid-download — the song's playlist membership was
+     * already written to Room, but the download got killed and the checkmark never appeared.
+     * Now the membership write + return happen first (fast, reflects immediately), and the
+     * cache download runs independently on the ViewModel's own scope so it survives the
+     * sheet closing, exactly like liking a song already does.
      */
     suspend fun toggleSongInPlaylist(song: Song, playlistId: String): Boolean {
         return if (playlistId == LIKED_PLAYLIST_ID) {
@@ -1211,8 +1221,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             albumId = song.albumId
                         )
                     )
-                    // Trigger cache for this song
-                    cacheSemaphore.withPermit { cacheSongSilently(song) }
+                    // Fire caching independently on viewModelScope — do not await it here,
+                    // so this function returns as soon as the playlist membership itself is
+                    // written, and the download survives even if the caller's own scope
+                    // (e.g. the Add to Playlist sheet) gets torn down right after.
+                    viewModelScope.launch {
+                        cacheSemaphore.withPermit { cacheSongSilently(song) }
+                    }
                     added = true
                 }
                 // Refresh open playlist if it's this one
@@ -1438,7 +1453,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun fetchHomeHeader() {
+    fun fetchHomeHeader() {
         viewModelScope.launch(Dispatchers.IO) {
             MigrationMessageProvider.fetchRemoteMessages(getApplication())
             _homeHeaderReady.value = true
