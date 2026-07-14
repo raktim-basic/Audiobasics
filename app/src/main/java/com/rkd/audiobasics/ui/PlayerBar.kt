@@ -118,15 +118,37 @@ fun PlayerBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = song.artist,
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Normal,
-                fontSize = 12.sp,
-                color = subTextColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (song.isExplicit) {
+                    val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
+                    val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(explicitBgColor)
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "E",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 8.sp,
+                            color = explicitTextColor
+                        )
+                    }
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(
+                    text = song.artist,
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 12.sp,
+                    color = subTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         // + button (Add to playlist)
