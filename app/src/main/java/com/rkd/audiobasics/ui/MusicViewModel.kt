@@ -30,6 +30,7 @@ import com.rkd.audiobasics.data.db.AppDatabase
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.data.db.PlaylistSongEntity
 import com.rkd.audiobasics.player.MusicService
+import com.rkd.audiobasics.utils.MigrationMessageProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -258,6 +259,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _updateAvailable = MutableStateFlow(false)
     val updateAvailable: StateFlow<Boolean> = _updateAvailable
 
+    // True once the ab-configs fetch (MigrationMessageProvider.fetchRemoteMessages) has
+    // resolved — success or failure — so HomeScreen knows it's safe to read
+    // homeHeaderLine1()/homeHeaderLine2(), which fall back to their hardcoded defaults
+    // automatically if the fetch failed. Fetched once per app open.
+    private val _homeHeaderReady = MutableStateFlow(false)
+    val homeHeaderReady: StateFlow<Boolean> = _homeHeaderReady
+
     // ── "Add to..." sheet ─────────────────────────────────────────────────────
     private val _addToSheetSong = MutableStateFlow<Song?>(null)
     val addToSheetSong: StateFlow<Song?> = _addToSheetSong
@@ -384,6 +392,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         )
         refreshCacheSize()
         checkForUpdate()
+        fetchHomeHeader()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1425,6 +1434,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val latest = fetchLatestAppVersion()
             _updateAvailable.value = latest != null && latest != APP_CURRENT_VERSION
+        }
+    }
+
+    private fun fetchHomeHeader() {
+        viewModelScope.launch(Dispatchers.IO) {
+            MigrationMessageProvider.fetchRemoteMessages()
+            _homeHeaderReady.value = true
         }
     }
 
