@@ -157,7 +157,7 @@ fun SavedAlbumsScreen(
                     ) {
                         Text(
                             text = if (searchQuery.isBlank())
-                                "No saved albums yet\nSearch for albums to save"
+                                "No saved albums yet"
                             else "No albums found",
                             fontFamily = NothingFont,
                             color = Color.Gray,
