@@ -220,7 +220,7 @@ fun LikedScreen(
                     isLiked = true,
                     isInQueue = false,
                     isPlaying = isPlaying,
-                    showExplicit = false,
+                    showExplicit = true,
                     hapticsEnabled = hapticsEnabled,
                     context = context,
                     onClick = { vm.playWithQueue(song, filteredSongs) },
