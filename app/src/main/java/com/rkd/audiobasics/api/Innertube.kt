@@ -890,13 +890,13 @@ object Innertube {
                     Log.e("Innertube", "getVideoMetadata: extractor returned blank title for $videoId (attempt ${attempt + 1})")
                     return@repeat
                 }
-                val realThumb = try {
-                    extractor.thumbnails.maxByOrNull { it.width * it.height }?.url
-                } catch (e: Exception) {
-                    null
-                }
+                // Use the same hqdefault.jpg thumbnail as regular search results
+                // (ytThumbnail below). The extractor's own thumbnails list is a 16:9
+                // video-frame grab, not the square album-art crop YouTube's thumbnail
+                // service returns — using it here made Play with Link's cover art look
+                // visibly cropped compared to every other song in the app.
                 return@withContext Song(id = videoId, title = title, artist = extractor.uploaderName ?: "",
-                    thumbnail = realThumb?.takeIf { it.isNotBlank() } ?: ytThumbnail(videoId),
+                    thumbnail = ytThumbnail(videoId),
                     duration = extractor.length * 1000L,
                     isExplicit = title.lowercase().contains("explicit"))
             } catch (e: Exception) {
