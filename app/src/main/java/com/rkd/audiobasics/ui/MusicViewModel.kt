@@ -264,6 +264,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private var fallbackRetryCount = 0
 
+    // True from the moment "Play with Link" is tapped until the new MediaItem is actually
+    // handed to the controller. While true, syncStateFromController() must not overwrite
+    // _currentSong/_isLoading from the controller's still-stale (old song, paused) state —
+    // otherwise onEvents()'s periodic sync stomps the placeholder/loading UI we just set,
+    // making the tap look like it did nothing.
+    private var isResolvingPlayByUrl = false
+
     // ─────────────────────────────────────────────────────────────────────────
     // Player listener
     // ─────────────────────────────────────────────────────────────────────────
@@ -386,6 +393,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun syncState() { syncStateFromController() }
 
     private fun syncStateFromController() {
+        if (isResolvingPlayByUrl) return
         val ctrl = controller ?: return
         val mediaId = ctrl.currentMediaItem?.mediaId
         if (mediaId != null) {
@@ -579,6 +587,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         // song kept audibly playing while its title stayed on screen during resolution,
         // which looked like the tap silently did nothing.
         fallbackRetryCount = 0
+        isResolvingPlayByUrl = true
         controller?.pause()
         _isLoading.value = true
         val placeholder = Song(
@@ -609,6 +618,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 handlePlaybackError(e)
+            } finally {
+                isResolvingPlayByUrl = false
             }
         }
     }
