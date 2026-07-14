@@ -524,9 +524,22 @@ object Innertube {
                                 }
                             }
                         }
+                        // Prefer the real thumbnail array YouTube returns for this item —
+                        // proper square-ish album art, not a 16:9 video-frame grab. Only
+                        // fall back to ytThumbnail() (hqdefault.jpg) if that's missing;
+                        // that fallback is otherwise reserved for Play with Link, where
+                        // there's no search-result item to pull a thumbnail array from.
+                        val thumbArr = item.optJSONObject("thumbnail")
+                            ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
+                            ?.optJSONArray("thumbnails")
+                        val songThumb = thumbArr
+                            ?.takeIf { it.length() > 0 }
+                            ?.optJSONObject(thumbArr.length() - 1)?.optString("url")
+                            ?.takeIf { it.isNotBlank() }
+                            ?: ytThumbnail(videoId)
                         out.add(Song(id = videoId, title = title, artist = artist,
                             artistNames = artistNames,
-                            thumbnail = ytThumbnail(videoId), duration = durationMs,
+                            thumbnail = songThumb, duration = durationMs,
                             albumId = albumId, albumTitle = albumTitle,
                             isExplicit = parseExplicit(item.optJSONArray("badges"))))
                     } catch (_: Exception) {}
@@ -631,6 +644,12 @@ object Innertube {
                         is org.schabi.newpipe.extractor.stream.StreamInfoItem -> {
                             val dur = item.duration; if (dur < 60 || dur > 900) continue
                             val title = item.name ?: continue
+                            // NewPipeExtractor's own thumbnails here are the generic 16:9
+                            // video-frame thumbnail, not YTM's square album-art crop (that
+                            // only comes from musicThumbnailRenderer in the YTM JSON API,
+                            // which this NewPipe-based fallback path doesn't have access
+                            // to) — so ytThumbnail() is the right choice here, same as
+                            // getVideoMetadata's Play with Link path.
                             songs.add(Song(id = extractIdFromUrl(item.url), title = title,
                                 artist = item.uploaderName ?: "", thumbnail = ytThumbnail(extractIdFromUrl(item.url)),
                                 duration = dur * 1000,
@@ -838,9 +857,22 @@ object Innertube {
                                 if (parts.isNotEmpty()) songArtist = parts.joinToString("")
                                 songArtistNames = extractArtistNamesFromRuns(preDotRuns)
                             }
+                            // Album tracklist items sometimes carry their own thumbnail array
+                            // (rare — usually they don't, since every track shares the album
+                            // cover), so prefer it when present rather than always guessing
+                            // via ytThumbnail(); this matches the fix applied to regular
+                            // search results and NewPipe fallback search above.
+                            val trackThumbArr = item.optJSONObject("thumbnail")
+                                ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
+                                ?.optJSONArray("thumbnails")
+                            val trackThumb = trackThumbArr
+                                ?.takeIf { it.length() > 0 }
+                                ?.optJSONObject(trackThumbArr.length() - 1)?.optString("url")
+                                ?.takeIf { it.isNotBlank() }
+                                ?: ytThumbnail(videoId)
                             songs.add(Song(id = videoId, title = songTitle, artist = songArtist,
                                 artistNames = songArtistNames,
-                                thumbnail = ytThumbnail(videoId), duration = parseDurationMs(item),
+                                thumbnail = trackThumb, duration = parseDurationMs(item),
                                 albumId = browseId, albumTitle = albumTitle,
                                 isExplicit = parseExplicit(item.optJSONArray("badges"))))
                         } catch (_: Exception) {}
@@ -1302,6 +1334,9 @@ object Innertube {
                         if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
                             val dur = item.duration; if (dur < 60 || dur > 900) continue
                             val id = extractIdFromUrl(item.url)
+                            // Same reasoning as fallbackSearch above: NewPipe's own
+                            // thumbnails are 16:9 video frames, not YTM's square crop —
+                            // ytThumbnail() is the correct (already-square-ish) choice here.
                             results.add(Song(id = id, title = item.name ?: continue,
                                 artist = item.uploaderName ?: "", thumbnail = ytThumbnail(id),
                                 duration = dur * 1000))
