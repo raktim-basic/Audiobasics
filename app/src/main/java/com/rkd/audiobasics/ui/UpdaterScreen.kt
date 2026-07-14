@@ -35,9 +35,9 @@ import com.rkd.audiobasics.utils.HapticUtils
 
 const val APP_CURRENT_VERSION = "2.4"
 const val APP_GITHUB_RELEASES_API =
-    ""
+    "https://api.github.com/repos/raktim-basic/Audiobasics/releases?per_page=5"
 const val APP_GITHUB_RELEASES_URL =
-    ""
+    "https://github.com/raktim-basic/Audiobasics/releases/latest"
 
 suspend fun fetchLatestAppVersion(): String? = withContext(Dispatchers.IO) {
     try {
