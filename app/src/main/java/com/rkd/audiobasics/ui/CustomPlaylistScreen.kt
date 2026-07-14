@@ -182,15 +182,14 @@ fun CustomPlaylistScreen(
             }
 
             // ── Empty state ────────────────────────────────────────────────
-            if (filteredSongs.isEmpty()) {
+            if (filteredSongs.isEmpty() && searchQuery.isNotBlank()) {
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(top = 60.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (searchQuery.isBlank()) "No songs yet. Tap + on any song to add."
-                                   else "No results for \"$searchQuery\"",
+                            text = "No results for \"$searchQuery\"",
                             fontFamily = NothingFont,
                             color = Color.Gray,
                             fontSize = 15.sp
