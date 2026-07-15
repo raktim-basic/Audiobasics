@@ -34,6 +34,13 @@
 -keep class org.mozilla.classfile.ClassFileWriter
 -dontwarn org.mozilla.javascript.tools.**
 
+# Rhino's optional javax.script (JSR-223) bridge references JDK classes
+# that don't exist on Android (java.beans.*, javax.script.*, jdk.dynalink.*).
+# This bridge is never invoked on Android — safe to ignore at build time.
+-dontwarn java.beans.**
+-dontwarn javax.script.**
+-dontwarn jdk.dynalink.**
+
 # 6. OkHttp references optional platform providers not present on Android
 -dontwarn okhttp3.internal.platform.**
 -dontwarn org.conscrypt.**
