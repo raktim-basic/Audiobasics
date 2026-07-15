@@ -3,8 +3,12 @@ package com.rkd.audiobasics.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -227,27 +231,50 @@ fun SearchScreen(
                         modifier = Modifier.fillMaxSize(),
                         reverseLayout = true
                     ) {
-                        items(results) { song ->
+                        itemsIndexed(results, key = { _, song -> song.id }) { index, song ->
                             val isLiked = likedSongs.any { it.id == song.id }
                             val isPlaying = currentSong?.id == song.id
-                            SongItem(
-                                song = song,
-                                isDarkMode = isDarkMode,
-                                isLiked = isLiked,
-                                isInQueue = false,
-                                isPlaying = isPlaying,
-                                showMenu = true,
-                                hapticsEnabled = hapticsEnabled,
-                                context = context,
-                                onClick = { vm.play(song) },
-                                onAddToQueue = { vm.addToQueue(song) },
-                                onPlayNext = { vm.playNext(song) },
-                                onLike = { vm.toggleLike(song) },
-                                onShare = {},
-                                onRetryCache = { vm.retryCache(song) },
-                                onRemoveLike = { vm.toggleLike(song) },
-                                onAddTo = { onAddTo(song) }
-                            )
+
+                            // Fade-in-from-bottom stagger: with reverseLayout = true, index 0
+                            // is the item rendered closest to the search bar at the bottom of
+                            // the screen, so it gets the shortest delay and animates in first,
+                            // with each item above it following ~24ms later — communicating
+                            // that results originate from the search bar without any text.
+                            // Keyed on song.id (via `remember`) so this only plays once per
+                            // item's first appearance, not on every recomposition/scroll.
+                            val alpha = remember(song.id) { Animatable(0f) }
+                            val offsetY = remember(song.id) { Animatable(12f) }
+                            LaunchedEffect(song.id) {
+                                delay((index * 24L).coerceAtMost(600L))
+                                launch { alpha.animateTo(1f, tween(durationMillis = 180)) }
+                                launch { offsetY.animateTo(0f, tween(durationMillis = 180)) }
+                            }
+
+                            Box(
+                                modifier = Modifier.graphicsLayer {
+                                    this.alpha = alpha.value
+                                    translationY = offsetY.value
+                                }
+                            ) {
+                                SongItem(
+                                    song = song,
+                                    isDarkMode = isDarkMode,
+                                    isLiked = isLiked,
+                                    isInQueue = false,
+                                    isPlaying = isPlaying,
+                                    showMenu = true,
+                                    hapticsEnabled = hapticsEnabled,
+                                    context = context,
+                                    onClick = { vm.play(song) },
+                                    onAddToQueue = { vm.addToQueue(song) },
+                                    onPlayNext = { vm.playNext(song) },
+                                    onLike = { vm.toggleLike(song) },
+                                    onShare = {},
+                                    onRetryCache = { vm.retryCache(song) },
+                                    onRemoveLike = { vm.toggleLike(song) },
+                                    onAddTo = { onAddTo(song) }
+                                )
+                            }
                         }
                     }
                 }
