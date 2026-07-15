@@ -572,7 +572,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _duration.value = 0L
             if (song.albumId.isNotBlank()) resolveAlbumInBackground(song.albumId, song.artist)
             try {
-                val songIndex = queue.indexOf(song).takeIf { it >= 0 } ?: 0
+                val songIndex = queue.indexOfFirst { it.id == song.id }.takeIf { it >= 0 } ?: 0
                 val mediaItems = queue.map { s -> buildMediaItem(s, resolveUri(s)) }
                 controller?.run {
                     setMediaItems(mediaItems, songIndex, 0L)
