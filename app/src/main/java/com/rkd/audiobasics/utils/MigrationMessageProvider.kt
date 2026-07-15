@@ -36,9 +36,9 @@ object MigrationMessageProvider {
 
     // --- Default fallback copy -------------------------------------------------
 
-    const val SLOGAN_TITLE_DEFAULT = "A big change is coming"
-    const val SLOGAN_SUBTITLE_DEFAULT = "Check the updater for details"
-    const val SLOGAN_FOOTER_DEFAULT = "one-time change, won't happen again"
+    const val SLOGAN_TITLE_DEFAULT = "No recommendation bs"
+    const val SLOGAN_SUBTITLE_DEFAULT = "Own your taste"
+    const val SLOGAN_FOOTER_DEFAULT = ""
 
     const val UPDATER_WARNING_DEFAULT =
         "A major update is coming. You'll need to uninstall this app and install the new one.\n\n" +
