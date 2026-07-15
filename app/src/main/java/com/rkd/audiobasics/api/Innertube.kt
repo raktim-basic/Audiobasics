@@ -276,6 +276,22 @@ object Innertube {
     private fun ytThumbnail(videoId: String) =
         "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
 
+    // YTM's own thumbnail URLs (lh3.googleusercontent.com/<id>=w120-h120-l90-rj, etc.) are
+    // live-resizable — the =w{N}-h{N}-... suffix is a request parameter, not a fixed asset,
+    // so the same image can be fetched at any size up to its original resolution just by
+    // rewriting that suffix. Search-result responses in particular often only include small
+    // sizes in their thumbnails array (as small as 60x60/120x120), which is what was causing
+    // official songs to show visibly low-res cover art even after switching from the generic
+    // video-thumbnail fallback to YTM's real per-song thumbnail. This rewrites any such URL
+    // to request a much larger size; non-YTM URLs (e.g. ytThumbnail()'s img.youtube.com ones)
+    // are left untouched since that host doesn't support this parameter.
+    private const val UPSCALED_THUMBNAIL_SIZE = 1200
+
+    private fun upscaleThumbnail(url: String): String {
+        if (url.isBlank() || !url.contains("googleusercontent.com")) return url
+        return url.replace(Regex("=w\\d+-h\\d+.*$"), "=w$UPSCALED_THUMBNAIL_SIZE-h$UPSCALED_THUMBNAIL_SIZE")
+    }
+
     private fun parseExplicit(badges: JSONArray?): Boolean {
         if (badges == null) return false
         for (i in 0 until badges.length()) {
@@ -536,6 +552,7 @@ object Innertube {
                             ?.takeIf { it.length() > 0 }
                             ?.optJSONObject(thumbArr.length() - 1)?.optString("url")
                             ?.takeIf { it.isNotBlank() }
+                            ?.let { upscaleThumbnail(it) }
                             ?: ytThumbnail(videoId)
                         out.add(Song(id = videoId, title = title, artist = artist,
                             artistNames = artistNames,
@@ -608,7 +625,7 @@ object Innertube {
                             ?.optJSONObject("musicThumbnailRenderer")
                             ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                         val thumb = if (thumbnails != null && thumbnails.length() > 0)
-                            thumbnails.getJSONObject(thumbnails.length() - 1).optString("url", "") else ""
+                            upscaleThumbnail(thumbnails.getJSONObject(thumbnails.length() - 1).optString("url", "")) else ""
                         // Extract year from subtitle runs (any 4-digit segment)
                         var albumYear = ""
                         if (runs != null) {
@@ -746,7 +763,7 @@ object Innertube {
                         ?.optJSONObject("musicThumbnailRenderer")
                         ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                     if (headerThumbArr != null && headerThumbArr.length() > 0)
-                        albumThumb = headerThumbArr.getJSONObject(headerThumbArr.length() - 1).optString("url", "")
+                        albumThumb = upscaleThumbnail(headerThumbArr.getJSONObject(headerThumbArr.length() - 1).optString("url", ""))
                     // Subtitle segments: typically "Album • Artist • Year • N songs"
                     val subtitleRuns = detailHeader.optJSONObject("subtitle")?.optJSONArray("runs")
                     if (subtitleRuns != null) {
@@ -869,6 +886,7 @@ object Innertube {
                                 ?.takeIf { it.length() > 0 }
                                 ?.optJSONObject(trackThumbArr.length() - 1)?.optString("url")
                                 ?.takeIf { it.isNotBlank() }
+                                ?.let { upscaleThumbnail(it) }
                                 ?: ytThumbnail(videoId)
                             songs.add(Song(id = videoId, title = songTitle, artist = songArtist,
                                 artistNames = songArtistNames,
@@ -1394,7 +1412,7 @@ object Innertube {
                                 ?.optJSONObject("musicThumbnailRenderer")
                                 ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                             val thumb = if (thumbs != null && thumbs.length() > 0)
-                                thumbs.getJSONObject(thumbs.length() - 1).optString("url", "") else ""
+                                upscaleThumbnail(thumbs.getJSONObject(thumbs.length() - 1).optString("url", "")) else ""
                             artists.add(com.rkd.audiobasics.data.Artist(id = browseId, name = name, thumbnail = thumb))
                         } catch (_: Exception) {}
                     }
@@ -1417,7 +1435,7 @@ object Innertube {
                     ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
                     ?.optJSONArray("thumbnails")
                 val artistThumb = if (thumbArr != null && thumbArr.length() > 0)
-                    thumbArr.getJSONObject(thumbArr.length() - 1).optString("url", "") else ""
+                    upscaleThumbnail(thumbArr.getJSONObject(thumbArr.length() - 1).optString("url", "")) else ""
                 val artist = com.rkd.audiobasics.data.Artist(id = browseId, name = artistName, thumbnail = artistThumb)
                 val sections = json.optJSONObject("contents")
                     ?.optJSONObject("singleColumnBrowseResultsRenderer")
@@ -1473,6 +1491,8 @@ object Innertube {
                                 val thumb = r.optJSONObject("thumbnail")
                                     ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
                                     ?.optJSONArray("thumbnails")?.let { t -> t.optJSONObject(t.length() - 1)?.optString("url") }
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let { upscaleThumbnail(it) }
                                     ?: ytThumbnail(videoId)
                                 popularSongs.add(Song(id = videoId, title = title, artist = songArtist,
                                     artistNames = songArtistNames, thumbnail = thumb))
@@ -1576,7 +1596,7 @@ object Innertube {
                                             ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
                                             ?.optJSONArray("thumbnails")
                                     val thumb = if (thumbArr2 != null && thumbArr2.length() > 0)
-                                        thumbArr2.getJSONObject(0).optString("url", "") else ""
+                                        upscaleThumbnail(thumbArr2.getJSONObject(thumbArr2.length() - 1).optString("url", "")) else ""
                                     val album = com.rkd.audiobasics.data.Album(id = albumBrowseId, title = title,
                                         artist = artistName, thumbnail = thumb, year = year)
                                     if (isAlbums) { if (albums.none { it.id == albumBrowseId }) albums.add(album) }
