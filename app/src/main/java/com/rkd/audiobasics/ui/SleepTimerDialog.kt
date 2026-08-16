@@ -3,7 +3,6 @@ package com.rkd.audiobasics.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -22,7 +21,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
-import kotlinx.coroutines.delay
 /**
  * The sleep timer entry dialog: "End of this song" / "Custom timer" / "Cancel".
  *
@@ -192,7 +190,6 @@ private fun CustomSleepTimerContent(
                 context = context,
                 onStep = {
                     if (selectedDots > 1) {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         progress = ((selectedDots - 1).toFloat() / TOTAL_DOTS).coerceAtLeast(1f / TOTAL_DOTS)
                         true
                     } else false
@@ -219,7 +216,6 @@ private fun CustomSleepTimerContent(
                 context = context,
                 onStep = {
                     if (selectedDots < TOTAL_DOTS) {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         progress = ((selectedDots + 1).toFloat() / TOTAL_DOTS).coerceAtMost(1f)
                         true
                     } else false
@@ -259,10 +255,7 @@ private fun CustomSleepTimerContent(
 }
 
 /**
- * +/- stepper button. Tap steps once; press-and-hold repeats rapidly (150ms after an initial
- * 400ms delay) until released, each repeat firing the same haptic as a single tap/dot-cross.
- * [onStep] returns whether a step actually happened (false at the min/max clamp), so the repeat
- * loop can stop itself once it hits the end rather than continuing to fire no-op haptics.
+ * Simple +/- stepper button. One tap = one step (5 minutes), with a haptic pulse per tap.
  */
 @Composable
 private fun DotStepperButton(
@@ -273,32 +266,16 @@ private fun DotStepperButton(
     context: android.content.Context,
     onStep: () -> Boolean
 ) {
-    var isPressed by remember { mutableStateOf(false) }
-
-    LaunchedEffect(isPressed, enabled) {
-        if (isPressed && enabled) {
-            delay(400) // initial delay before repeat kicks in, so a quick tap doesn't double-step
-            while (isPressed) {
-                val moved = onStep()
-                if (!moved) break
-                delay(150)
-            }
-        }
-    }
-
     Box(
         modifier = Modifier
             .size(32.dp)
-            .pointerInput(enabled) {
-                if (!enabled) return@pointerInput
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        onStep()
-                        tryAwaitRelease()
-                        isPressed = false
-                    }
-                )
+            .clickable(
+                enabled = enabled,
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onStep()
             },
         contentAlignment = Alignment.Center
     ) {
