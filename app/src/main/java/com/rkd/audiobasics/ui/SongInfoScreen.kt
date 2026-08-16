@@ -37,6 +37,13 @@ fun SongInfoScreen(
     savedAlbums: List<Album> = emptyList(),
     resolvedAlbumCache: Map<String, Album> = emptyMap(),
     onCacheResolvedAlbum: (Album) -> Unit = {},
+    // The player's own live duration (same value the scrub bar's right-hand label shows),
+    // passed in when this song is the one currently playing. Takes priority over
+    // song.duration, which may be 0 for songs saved/liked before duration was persisted, or
+    // simply hasn't resolved yet — the player already knows the real number by the time this
+    // screen can be opened for the current track, so just use it directly instead of relying
+    // on a separately-stored copy.
+    livePlaybackDurationMs: Long? = null,
     onDismiss: () -> Unit,
     onArtistClick: (String) -> Unit,   // artist name
     onAlbumClick: (String) -> Unit     // album title — searches for it rather than
@@ -107,10 +114,12 @@ fun SongInfoScreen(
         } else "N/A"
     }
 
-    // Duration mm:ss
-    val durationText = remember(song.duration) {
-        if (song.duration > 0) {
-            val totalSeconds = song.duration / 1000
+    // Duration mm:ss — prefer the player's own live duration (see livePlaybackDurationMs doc)
+    // over song.duration, falling back to the latter for anything not currently playing.
+    val durationText = remember(song.duration, livePlaybackDurationMs) {
+        val ms = livePlaybackDurationMs?.takeIf { it > 0 } ?: song.duration
+        if (ms > 0) {
+            val totalSeconds = ms / 1000
             val m = totalSeconds / 60
             val s = totalSeconds % 60
             "%02d:%02d".format(m, s)
