@@ -1612,12 +1612,12 @@ object Innertube {
 
     // ── Search artist by name ─────────────────────────────────────────────────
     // Known cases where YouTube Music's own catalog merges two genuinely distinct artists
-    // under one channel (e.g. reissuing Kanye West's catalog credit under "¥$", or crediting
-    // Madvillain material to "Madlib" alone) — search for the artist's own name then simply
-    // never finds a distinct match, so without this it always resolves to "not found" even
-    // though the *content* the user wants is sitting right there under the other name. This is
-    // a stopgap for specific known collisions, not a general fuzzy-match fallback; if more
-    // turn up, add them here.
+    // under one shared channel (e.g. Kanye West's catalog sitting under a "¥$" channel, or
+    // Madvillain material credited to "Madlib" alone). There's no separate real page for the
+    // "other" name to link to — YTM only has the one channel — so this is a purely cosmetic
+    // and interactive split: whichever name the user actually tapped is what gets displayed
+    // as the artist page's header, even though the underlying content (albums, songs) is the
+    // same shared channel either way. If more merged pairs turn up, add them here.
     private val knownArtistAliases: Map<String, List<String>> = mapOf(
         "kanye west" to listOf("¥$", "ye"),
         "madvillain" to listOf("madlib")
@@ -1642,7 +1642,15 @@ object Innertube {
                 val best = all.firstOrNull { candidate ->
                     acceptableNames.any { candidate.name.trim().equals(it, ignoreCase = true) }
                 } ?: return@withContext null
-                getArtistPage(best.id)
+
+                val page = getArtistPage(best.id) ?: return@withContext null
+                // Display the name the user actually tapped, not whatever YTM's shared channel
+                // happens to be titled — this is the "separate them visually" part.
+                if (!page.artist.name.trim().equals(normalized, ignoreCase = true)) {
+                    page.copy(artist = page.artist.copy(name = normalized))
+                } else {
+                    page
+                }
             } catch (e: Exception) { Log.e("Innertube", "searchArtistByName error: ${e.message}"); null }
         }
 
