@@ -72,6 +72,7 @@ fun PlayerDialog(
     var showAddToSheet by remember { mutableStateOf(false) }
     var showCreatePlaylist by remember { mutableStateOf(false) }
     var showThreeDotMenu by remember { mutableStateOf(false) }
+    var showSleepDialog by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableStateOf<Long?>(null) }
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
@@ -402,8 +403,14 @@ fun PlayerDialog(
                                     },
                                     onClick = {
                                         showThreeDotMenu = false
-                                        onDismiss()
-                                        onNavigateQueue()
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        if (song == null) {
+                                            Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
+                                        } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
+                                            vm.cancelSleepTimer()
+                                        } else {
+                                            showSleepDialog = true
+                                        }
                                     }
                                 )
                                 DropdownMenuItem(
@@ -427,8 +434,8 @@ fun PlayerDialog(
                                     },
                                     onClick = {
                                         showThreeDotMenu = false
-                                        onDismiss()
-                                        onNavigateQueue()
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        vm.toggleRepeatMode()
                                     }
                                 )
                             }
@@ -459,6 +466,25 @@ fun PlayerDialog(
             onCreate = { name, emoji ->
                 vm.createPlaylist(name, emoji)
                 showCreatePlaylist = false
+            }
+        )
+    }
+
+    // ── Sleep timer dialog ─────────────────────────────────────────────────
+    // Controlled directly from here — no need to navigate to the queue screen.
+    if (showSleepDialog) {
+        SleepTimerDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onDismiss = { showSleepDialog = false },
+            onEndOfSong = {
+                showSleepDialog = false
+                vm.startEndOfSongSleepTimer()
+            },
+            onCustom = { minutes ->
+                showSleepDialog = false
+                vm.startCustomSleepTimer(minutes)
             }
         )
     }
