@@ -808,9 +808,23 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private fun runEndOfSongSleepTimerWatcher() {
         sleepTimerSongWatcherJob?.cancel()
         val watchedSongId = _currentSong.value?.id
+        var lastSeenReason = lastTransitionReason
         sleepTimerSongWatcherJob = viewModelScope.launch {
             while (true) {
                 if (_sleepTimerMode.value != SLEEP_TIMER_END_OF_SONG) return@launch
+
+                // Sleep timer takes priority over repeat mode: with REPEAT_MODE_ONE the song
+                // loops back to itself, so the media id never changes and STATE_ENDED never
+                // fires — onMediaItemTransition still fires with reason REPEAT though, and
+                // that loop-restart IS the song ending. Catch it here before it re-plays.
+                if (lastTransitionReason != lastSeenReason) {
+                    lastSeenReason = lastTransitionReason
+                    if (lastTransitionReason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                        controller?.pause()
+                        cancelSleepTimer()
+                        return@launch
+                    }
+                }
 
                 // The watched track changed. If it auto-advanced (the song simply ended),
                 // that IS the "end of song" the user asked for — pause here. Only a
@@ -1229,7 +1243,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             artist = song.artist,
                             thumbnail = song.thumbnail,
                             isExplicit = song.isExplicit,
-                            albumId = song.albumId
+                            albumId = song.albumId,
+                            duration = song.duration
                         )
                     )
                     // Fire caching independently on viewModelScope — do not await it here,
@@ -1293,6 +1308,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private fun PlaylistSongEntity.toSong() = Song(
         id = songId, title = title, artist = artist,
         thumbnail = thumbnail, isExplicit = isExplicit, albumId = albumId,
+        duration = duration,
         isCached = CacheManager.isCached(getApplication(), songId)
     )
 
@@ -1666,6 +1682,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                 put("id", song.songId); put("title", song.title)
                                 put("artist", song.artist); put("thumbnail", song.thumbnail)
                                 put("isExplicit", song.isExplicit); put("albumId", song.albumId)
+                                put("duration", song.duration)
                             })
                         }
                         playlistsArr.put(JSONObject().apply {
@@ -1744,7 +1761,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                         artist = sObj.getString("artist"),
                                         thumbnail = sObj.getString("thumbnail"),
                                         isExplicit = sObj.optBoolean("isExplicit", false),
-                                        albumId = sObj.optString("albumId", "")
+                                        albumId = sObj.optString("albumId", ""),
+                                        duration = sObj.optLong("duration", 0L)
                                     )
                                 )
                                 importedPlaylistSongCount++
