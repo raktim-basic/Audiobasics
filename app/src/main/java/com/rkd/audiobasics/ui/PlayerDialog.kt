@@ -497,6 +497,7 @@ fun PlayerDialog(
             savedAlbums = savedAlbums,
             resolvedAlbumCache = resolvedAlbumCache,
             onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
+            livePlaybackDurationMs = duration,
             onDismiss = { showSongInfo = false },
             onArtistClick = { artistName ->
                 showSongInfo = false
