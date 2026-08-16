@@ -14,5 +14,6 @@ data class PlaylistSongEntity(
     val thumbnail: String,
     val isExplicit: Boolean = false,
     val albumId: String = "",
+    val duration: Long = 0L,
     val addedAt: Long = System.currentTimeMillis()
 )
