@@ -1385,7 +1385,7 @@ object Innertube {
         withContext(Dispatchers.IO) {
             try {
                 val response = ytmPost("search",
-                    JSONObject().put("query", query).put("params", "EgWKAQIgAWoMEA4QChADEAQQCRAF"))
+                    JSONObject().put("query", query).put("params", "EgWKAQIgAWoKEAkQChAFEAMQBA=="))
                     ?: return@withContext emptyList()
                 val artists = mutableListOf<com.rkd.audiobasics.data.Artist>()
                 val tabs = response.optJSONObject("contents")
@@ -1611,17 +1611,14 @@ object Innertube {
         }
 
     // ── Search artist by name ─────────────────────────────────────────────────
-    // Known cases where YouTube Music's own catalog merges two genuinely distinct artists
-    // under one shared channel (e.g. Kanye West's catalog sitting under a "¥$" channel, or
-    // Madvillain material credited to "Madlib" alone). There's no separate real page for the
-    // "other" name to link to — YTM only has the one channel — so this is a purely cosmetic
-    // and interactive split: whichever name the user actually tapped is what gets displayed
-    // as the artist page's header, even though the underlying content (albums, songs) is the
-    // same shared channel either way. If more merged pairs turn up, add them here.
-    private val knownArtistAliases: Map<String, List<String>> = mapOf(
-        "kanye west" to listOf("¥$", "ye"),
-        "madvillain" to listOf("madlib")
-    )
+    // "Kanye West" and "Madvillain" appearing to merge with "¥$"/"Madlib" turned out to be a
+    // bug in our own search filter params (see searchArtists' `params` blob above) — it was
+    // requesting an extra YTM result-type category that isn't part of the real "artist search"
+    // filter, which threw off which channel search actually returned. Fixed there; the
+    // alias/override logic below is kept as a harmless fallback in case any other name
+    // collision turns out to be a genuine shared-channel case on YTM's side rather than a
+    // parsing bug like this one — add entries here only if that's confirmed for a specific pair.
+    private val knownArtistAliases: Map<String, List<String>> = emptyMap()
 
     suspend fun searchArtistByName(name: String): com.rkd.audiobasics.data.ArtistPage? =
         withContext(Dispatchers.IO) {
@@ -1644,8 +1641,8 @@ object Innertube {
                 } ?: return@withContext null
 
                 val page = getArtistPage(best.id) ?: return@withContext null
-                // Display the name the user actually tapped, not whatever YTM's shared channel
-                // happens to be titled — this is the "separate them visually" part.
+                // If an alias match was used (page title differs from what was searched),
+                // display the name the user actually tapped rather than the channel's own title.
                 if (!page.artist.name.trim().equals(normalized, ignoreCase = true)) {
                     page.copy(artist = page.artist.copy(name = normalized))
                 } else {
