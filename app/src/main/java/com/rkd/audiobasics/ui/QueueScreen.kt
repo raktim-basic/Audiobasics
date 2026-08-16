@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.QueueMusic
@@ -24,13 +23,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
@@ -340,158 +336,6 @@ fun QueueScreen(
                     tint = if (repeatMode == 0) textColor else Color.Red,
                     modifier = Modifier.size(26.dp)
                 )
-            }
-        }
-    }
-}
-
-@Composable
-fun SleepTimerDialog(
-    isDarkMode: Boolean,
-    hapticsEnabled: Boolean,
-    context: android.content.Context,
-    onDismiss: () -> Unit,
-    onEndOfSong: () -> Unit,
-    onCustom: (Long) -> Unit
-) {
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
-    val textColor = if (isDarkMode) Color.White else Color.Black
-    val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
-
-    var showCustomInput by remember { mutableStateOf(false) }
-    var customMinutes by remember { mutableStateOf("") }
-
-    Dialog(onDismissRequest = {
-        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        onDismiss()
-    }) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(bgColor, RoundedCornerShape(16.dp))
-                .padding(20.dp)
-        ) {
-            Column {
-                Text(
-                    text = "Sleep timer",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = textColor
-                )
-
-                Spacer(Modifier.height(20.dp))
-
-                if (showCustomInput) {
-                    OutlinedTextField(
-                        value = customMinutes,
-                        onValueChange = { if (it.length <= 3) customMinutes = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
-                            Text("Minutes...", fontFamily = NothingFont, color = Color.Gray)
-                        },
-                        textStyle = TextStyle(fontFamily = NothingFont, color = textColor),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color.Red,
-                            unfocusedBorderColor = Color.Gray,
-                            focusedContainerColor = surfaceColor,
-                            unfocusedContainerColor = surfaceColor
-                        )
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showCustomInput = false
-                        }) {
-                            Text("Back", fontFamily = NothingFont, color = Color.Gray)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(Color.Red, RoundedCornerShape(8.dp))
-                                .clickable {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    val mins = customMinutes.toLongOrNull()
-                                    if (mins != null && mins > 0) onCustom(mins)
-                                }
-                                .padding(horizontal = 20.dp, vertical = 10.dp)
-                        ) {
-                            Text(
-                                "Set",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onEndOfSong()
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "End of this song",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                showCustomInput = true
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Custom timer",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Red, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onDismiss()
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Cancel",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
             }
         }
     }
