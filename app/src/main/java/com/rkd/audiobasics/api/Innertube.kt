@@ -1615,7 +1615,8 @@ object Innertube {
         withContext(Dispatchers.IO) {
             try {
                 val all = searchArtists(name)
-                val best = all.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: all.firstOrNull()
+                
+                val best = all.firstOrNull { it.name.trim().equals(name.trim(), ignoreCase = true) }
                     ?: return@withContext null
                 getArtistPage(best.id)
             } catch (e: Exception) { Log.e("Innertube", "searchArtistByName error: ${e.message}"); null }
