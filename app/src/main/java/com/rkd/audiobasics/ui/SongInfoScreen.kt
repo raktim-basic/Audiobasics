@@ -182,7 +182,9 @@ fun SongInfoScreen(
                                         color = Color.Red,
                                         textDecoration = TextDecoration.Underline
                                     )) { append(artist) }
-                                    if (i < artists.lastIndex) append(", ")
+                                    if (i < artists.lastIndex) {
+                                        withStyle(SpanStyle(color = textColor)) { append(", ") }
+                                    }
                                 },
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
@@ -239,7 +241,7 @@ fun SongInfoScreen(
 
                 InfoRow(label = "Explicit", value = if (song.isExplicit) "Yes" else "No", textColor = textColor)
                 Spacer(Modifier.height(16.dp))
-                InfoRow(label = "Length", value = durationText, textColor = textColor)
+                InfoRow(label = "Duration", value = durationText, textColor = textColor)
                 Spacer(Modifier.height(16.dp))
                 InfoRow(label = "Size", value = fileSizeText, textColor = textColor)
                 Spacer(Modifier.height(16.dp))
