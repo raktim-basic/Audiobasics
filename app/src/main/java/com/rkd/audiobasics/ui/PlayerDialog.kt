@@ -426,14 +426,13 @@ fun PlayerDialog(
                                             text = when (repeatMode) {
                                                 1 -> "Repeat list"
                                                 2 -> "Repeat one"
-                                                else -> "Repeat"
+                                                else -> "Repeat off"
                                             },
                                             fontFamily = NothingFont,
                                             color = if (repeatMode == 0) Color.Unspecified else Color.Red
                                         )
                                     },
                                     onClick = {
-                                        showThreeDotMenu = false
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                         vm.toggleRepeatMode()
                                     }
