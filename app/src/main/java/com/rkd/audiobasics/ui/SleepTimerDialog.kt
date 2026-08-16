@@ -3,6 +3,7 @@ package com.rkd.audiobasics.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -21,7 +22,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
-
+import kotlinx.coroutines.delay
+/**
+ * The sleep timer entry dialog: "End of this song" / "Custom timer" / "Cancel".
+ *
+ * Deliberately standalone (not owned by QueueScreen) so it can be launched from anywhere the
+ * player can be controlled from — the player dialog's overflow menu, the queue screen, etc. —
+ * without those callers needing to navigate to the queue first.
+ */
 @Composable
 fun SleepTimerDialog(
     isDarkMode: Boolean,
@@ -156,7 +164,12 @@ private fun CustomSleepTimerContent(
     onBack: () -> Unit,
     onSet: (Long) -> Unit
 ) {
-    var selectedDots by remember { mutableIntStateOf(DEFAULT_DOTS) }
+    // Progress is tracked as a continuous 0f..1f fraction, exactly like DashedProgressBar's
+    // `progress`/`dragProgress` — dot count is only ever derived from it for display/output,
+    // never fed back in as the source of truth. Rounding a discrete dot count back into a
+    // fraction every drag frame is what made the previous version feel broken.
+    var progress by remember { mutableFloatStateOf(DEFAULT_DOTS.toFloat() / TOTAL_DOTS) }
+    val selectedDots = (progress * TOTAL_DOTS).toInt().coerceIn(1, TOTAL_DOTS)
     val minutes = selectedDots * MINUTES_PER_DOT
 
     Column {
@@ -175,18 +188,21 @@ private fun CustomSleepTimerContent(
                 symbol = "–",
                 enabled = selectedDots > 1,
                 textColor = textColor,
-                onClick = {
+                hapticsEnabled = hapticsEnabled,
+                context = context,
+                onStep = {
                     if (selectedDots > 1) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        selectedDots--
-                    }
+                        progress = ((selectedDots - 1).toFloat() / TOTAL_DOTS).coerceAtLeast(1f / TOTAL_DOTS)
+                        true
+                    } else false
                 }
             )
 
             SleepTimerDotScrubber(
                 totalDots = TOTAL_DOTS,
-                selectedDots = selectedDots,
-                onSelectedDotsChange = { selectedDots = it },
+                progress = progress,
+                onProgressChange = { progress = it },
                 hapticsEnabled = hapticsEnabled,
                 context = context,
                 isDarkMode = isDarkMode,
@@ -199,11 +215,14 @@ private fun CustomSleepTimerContent(
                 symbol = "+",
                 enabled = selectedDots < TOTAL_DOTS,
                 textColor = textColor,
-                onClick = {
+                hapticsEnabled = hapticsEnabled,
+                context = context,
+                onStep = {
                     if (selectedDots < TOTAL_DOTS) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        selectedDots++
-                    }
+                        progress = ((selectedDots + 1).toFloat() / TOTAL_DOTS).coerceAtMost(1f)
+                        true
+                    } else false
                 }
             )
         }
@@ -239,21 +258,48 @@ private fun CustomSleepTimerContent(
     }
 }
 
+/**
+ * +/- stepper button. Tap steps once; press-and-hold repeats rapidly (150ms after an initial
+ * 400ms delay) until released, each repeat firing the same haptic as a single tap/dot-cross.
+ * [onStep] returns whether a step actually happened (false at the min/max clamp), so the repeat
+ * loop can stop itself once it hits the end rather than continuing to fire no-op haptics.
+ */
 @Composable
 private fun DotStepperButton(
     symbol: String,
     enabled: Boolean,
     textColor: Color,
-    onClick: () -> Unit
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
+    onStep: () -> Boolean
 ) {
+    var isPressed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isPressed, enabled) {
+        if (isPressed && enabled) {
+            delay(400) // initial delay before repeat kicks in, so a quick tap doesn't double-step
+            while (isPressed) {
+                val moved = onStep()
+                if (!moved) break
+                delay(150)
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .size(32.dp)
-            .clickable(
-                enabled = enabled,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() }
-            ) { onClick() },
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        onStep()
+                        tryAwaitRelease()
+                        isPressed = false
+                    }
+                )
+            },
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -267,29 +313,37 @@ private fun DotStepperButton(
 }
 
 /**
- * A row of [totalDots] dots, [selectedDots] of them filled from the left. Draggable/scrubable
- * the same way as [DashedProgressBar]: drag position maps to a dot count, with one haptic pulse
- * per dot crossed. Tapping a dot also jumps straight to that count.
+ * A row of [totalDots] dots reflecting a continuous [progress] (0f..1f), draggable/scrubable
+ * with the exact same gesture handling as the player's [DashedProgressBar]: a live [progress]
+ * (or in-drag override) that only ever moves as a continuous fraction — dot count is derived
+ * from it purely for rendering — with one haptic pulse per dot boundary crossed, fired from a
+ * LaunchedEffect watching the derived dot index rather than from inside the drag callback.
  */
 @Composable
 private fun SleepTimerDotScrubber(
     totalDots: Int,
-    selectedDots: Int,
-    onSelectedDotsChange: (Int) -> Unit,
+    progress: Float,
+    onProgressChange: (Float) -> Unit,
     hapticsEnabled: Boolean,
     context: android.content.Context,
     isDarkMode: Boolean,
     modifier: Modifier = Modifier
 ) {
     var barWidthPx by remember { mutableStateOf(0f) }
-    var dragDots by remember { mutableStateOf<Int?>(null) }
-    var lastHapticDots by remember { mutableStateOf(selectedDots) }
+    var dragProgress by remember { mutableStateOf<Float?>(null) }
 
-    val displayDots = dragDots ?: selectedDots
+    val displayProgress = dragProgress ?: progress
+    val displayFilled = (displayProgress * totalDots).toInt().coerceIn(0, totalDots)
+    var lastFilled by remember { mutableStateOf(displayFilled) }
+
+    LaunchedEffect(displayFilled) {
+        if (dragProgress != null && displayFilled != lastFilled && hapticsEnabled) {
+            HapticUtils.performSubtleHaptic(context)
+            lastFilled = displayFilled
+        }
+    }
+
     val unfilledColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFBDBDBD)
-
-    fun dotsFromFraction(fraction: Float): Int =
-        (fraction.coerceIn(0f, 1f) * totalDots).toInt().coerceIn(1, totalDots)
 
     Row(
         modifier = modifier
@@ -300,24 +354,21 @@ private fun SleepTimerDotScrubber(
                     onDragStart = { offset ->
                         if (barWidthPx > 0) {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            val d = dotsFromFraction(offset.x / barWidthPx)
-                            dragDots = d
-                            lastHapticDots = d
-                            onSelectedDotsChange(d)
+                            dragProgress = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                            lastFilled = (dragProgress!! * totalDots).toInt().coerceIn(0, totalDots)
+                            onProgressChange(dragProgress!!)
                         }
                     },
-                    onDragEnd = { dragDots = null },
-                    onDragCancel = { dragDots = null },
+                    onDragEnd = {
+                        dragProgress?.let { onProgressChange(it) }
+                        dragProgress = null
+                    },
+                    onDragCancel = { dragProgress = null },
                     onHorizontalDrag = { _, dragAmount ->
                         if (barWidthPx > 0) {
-                            val currentFraction = (dragDots ?: selectedDots).toFloat() / totalDots
-                            val d = dotsFromFraction(currentFraction + dragAmount / barWidthPx)
-                            dragDots = d
-                            if (d != lastHapticDots) {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                lastHapticDots = d
-                            }
-                            onSelectedDotsChange(d)
+                            val current = dragProgress ?: progress
+                            dragProgress = (current + dragAmount / barWidthPx).coerceIn(0f, 1f)
+                            onProgressChange(dragProgress!!)
                         }
                     }
                 )
@@ -331,16 +382,15 @@ private fun SleepTimerDotScrubber(
                     .weight(1f)
                     .aspectRatio(1f)
                     .clip(CircleShape)
-                    .background(if (index < displayDots) Color.Red else unfilledColor)
+                    .background(if (index < displayFilled) Color.Red else unfilledColor)
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onSelectedDotsChange(index + 1)
+                        onProgressChange((index + 1).toFloat() / totalDots.toFloat())
                     }
             )
         }
     }
 }
-
