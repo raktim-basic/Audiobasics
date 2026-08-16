@@ -271,7 +271,6 @@ fun SearchScreen(
                                     onLike = { vm.toggleLike(song) },
                                     onShare = {},
                                     onRetryCache = { vm.retryCache(song) },
-                                    onRemoveLike = { vm.toggleLike(song) },
                                     onAddTo = { onAddTo(song) }
                                 )
                             }
