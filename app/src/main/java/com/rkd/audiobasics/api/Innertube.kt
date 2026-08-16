@@ -1611,13 +1611,37 @@ object Innertube {
         }
 
     // ── Search artist by name ─────────────────────────────────────────────────
+    // Known cases where YouTube Music's own catalog merges two genuinely distinct artists
+    // under one channel (e.g. reissuing Kanye West's catalog credit under "¥$", or crediting
+    // Madvillain material to "Madlib" alone) — search for the artist's own name then simply
+    // never finds a distinct match, so without this it always resolves to "not found" even
+    // though the *content* the user wants is sitting right there under the other name. This is
+    // a stopgap for specific known collisions, not a general fuzzy-match fallback; if more
+    // turn up, add them here.
+    private val knownArtistAliases: Map<String, List<String>> = mapOf(
+        "kanye west" to listOf("¥$", "ye"),
+        "madvillain" to listOf("madlib")
+    )
+
     suspend fun searchArtistByName(name: String): com.rkd.audiobasics.data.ArtistPage? =
         withContext(Dispatchers.IO) {
             try {
-                val all = searchArtists(name)
-                
-                val best = all.firstOrNull { it.name.trim().equals(name.trim(), ignoreCase = true) }
-                    ?: return@withContext null
+                val normalized = name.trim()
+                val aliases = knownArtistAliases[normalized.lowercase()] ?: emptyList()
+                val acceptableNames = listOf(normalized) + aliases
+
+                // Search under the artist's own name first, then — only for known collision
+                // cases — also search under each alias, since YTM's results for the original
+                // query may never surface the aliased channel at all (not just rank it lower).
+                val queries = listOf(normalized) + aliases
+                val all = queries.flatMap { searchArtists(it) }
+
+                // Only accept an exact (case-insensitive) name match against the artist's own
+                // name or a known alias. Falling back to "whatever search ranked first" (the
+                // old behavior) is how tapping "Kanye West" could land on an unrelated channel.
+                val best = all.firstOrNull { candidate ->
+                    acceptableNames.any { candidate.name.trim().equals(it, ignoreCase = true) }
+                } ?: return@withContext null
                 getArtistPage(best.id)
             } catch (e: Exception) { Log.e("Innertube", "searchArtistByName error: ${e.message}"); null }
         }
