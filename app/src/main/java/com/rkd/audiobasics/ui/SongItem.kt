@@ -293,6 +293,16 @@ fun SongItem(
                                 }
                             )
                         }
+                        onRemoveLike?.let {
+                            DropdownMenuItem(
+                                text = { Text(removeLabel, fontFamily = NothingFont, color = Color.Red) },
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    menuExpanded = false
+                                    it()
+                                }
+                            )
+                        }
                     }
                 }
             }
