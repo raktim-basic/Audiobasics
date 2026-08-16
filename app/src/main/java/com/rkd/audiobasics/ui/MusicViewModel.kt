@@ -109,6 +109,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var sleepTimerJob: Job? = null
     private var sleepTimerSongWatcherJob: Job? = null
 
+    // Set by the player listener's onMediaItemTransition; lets the end-of-song sleep
+    // timer watcher tell a natural auto-advance apart from a user-initiated skip/seek.
+    private var lastTransitionReason: Int = -1
+
     // ── Search ────────────────────────────────────────────────────────────────
     private val _searchResults = MutableStateFlow<List<Song>>(emptyList())
     val searchResults: StateFlow<List<Song>> = _searchResults
@@ -299,6 +303,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             _isLoading.value = true
             _currentPosition.value = 0L
             _duration.value = 0L
+            lastTransitionReason = reason
             val mediaId = mediaItem?.mediaId
             val songFromQueue = if (mediaId != null)
                 _queue.value.firstOrNull { it.id == mediaId }
@@ -469,7 +474,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         val title = meta.title?.toString() ?: return null
         val artist = meta.artist?.toString() ?: ""
         val thumbnail = meta.artworkUri?.toString() ?: ""
-        return Song(id, title, artist, thumbnail)
+        val duration = meta.durationMs?.takeIf { it > 0 } ?: 0L
+        return Song(id, title, artist, thumbnail, duration = duration)
     }
 
     private fun startProgressTracking() {
@@ -663,6 +669,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     .setTitle(song.title)
                     .setArtist(song.artist)
                     .setArtworkUri(resolveArtworkUri(song))
+                    .apply { if (song.duration > 0) setDurationMs(song.duration) }
                     .build()
             )
             .build()
@@ -805,9 +812,13 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             while (true) {
                 if (_sleepTimerMode.value != SLEEP_TIMER_END_OF_SONG) return@launch
 
-                // If the track changes (skip, autoplay-next, etc.) the "end of song" the user
-                // meant has already passed — cancel rather than carry the timer into the next song.
+                // The watched track changed. If it auto-advanced (the song simply ended),
+                // that IS the "end of song" the user asked for — pause here. Only a
+                // user-initiated skip/seek/queue-jump should cancel without pausing.
                 if (_currentSong.value?.id != watchedSongId) {
+                    if (lastTransitionReason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                        controller?.pause()
+                    }
                     cancelSleepTimer()
                     return@launch
                 }
