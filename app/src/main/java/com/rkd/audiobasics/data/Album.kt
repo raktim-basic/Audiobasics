@@ -9,5 +9,6 @@ data class Album(
     val songCount: Int = 0,
     val youtubeUrl: String = "",
     val year: String = "",
+    val artistNames: List<String> = emptyList(),
     val artistIds: Map<String, String> = emptyMap()
 )
