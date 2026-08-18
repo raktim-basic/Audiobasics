@@ -143,6 +143,7 @@ fun AlbumScreen(
                     artist = meta.artist.ifBlank { album.artist },
                     thumbnail = meta.thumbnail.ifBlank { album.thumbnail },
                     year = meta.year.ifBlank { album.year },
+                    artistNames = meta.artistNames.ifEmpty { album.artistNames },
                     artistIds = meta.artistIds.ifEmpty { album.artistIds }
                 )
                 // Share this resolved metadata app-wide so Song Info (and anywhere else
@@ -234,9 +235,16 @@ fun AlbumScreen(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        // Clickable artists (red, underlined)
-                        val displayedArtist = enrichedAlbum.artist.substringBeforeLast("•").trim()
-                        val artistList = com.rkd.audiobasics.api.Innertube.splitArtistNames(displayedArtist)
+                        // Clickable artists (red, underlined) — use the album's own structured
+                        // artistNames (real run boundaries from the response) rather than
+                        // re-splitting the joined display string, which can't tell a genuine
+                        // "Name A, Name B" separator comma apart from a comma that's part of a
+                        // single artist's own name (e.g. "¥$, Kanye West" vs "Tyler, The
+                        // Creator") and would silently re-merge names that are already correct.
+                        val artistList = enrichedAlbum.artistNames.ifEmpty {
+                            val displayedArtist = enrichedAlbum.artist.substringBeforeLast("•").trim()
+                            com.rkd.audiobasics.api.Innertube.splitArtistNames(displayedArtist)
+                        }
 
                         Row(
                             modifier = Modifier.padding(horizontal = 20.dp),
