@@ -1794,10 +1794,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun cacheLyricsForSong(song: Song) {
         try {
             if (CacheManager.isLyricsCached(getApplication(), song.id)) return
+            // LRCLIB's synced-lyrics match requires the duration we send to be within ~2
+            // seconds of the real track — pass it a wrong or missing (0) duration and it
+            // silently falls back to a plain, unsynced result instead of erroring, so this is
+            // easy to get wrong without ever seeing a failure. Songs cached via saveAlbum
+            // always have a correct duration because they come straight from a fresh
+            // Innertube.getAlbumSongs() tracklist parse; songs cached via like/add-to-playlist
+            // carry whatever duration their Song object already happened to have, which may be
+            // stale or 0 depending on where that object originally came from. Re-resolving here
+            // — the same lookup saveAlbum's tracklist fetch effectively does per song — puts
+            // both paths on equal footing instead of only fixing it for albums.
+            val resolvedSong = if (song.duration > 0) song
+                else com.rkd.audiobasics.api.Innertube.refreshSongMetadata(song)
             val result = LyricsRepository.getLyrics(
-                title = song.title,
-                artist = com.rkd.audiobasics.api.Innertube.splitArtistNames(song.artist).firstOrNull() ?: song.artist,
-                duration = song.duration
+                title = resolvedSong.title,
+                artist = com.rkd.audiobasics.api.Innertube.splitArtistNames(resolvedSong.artist).firstOrNull() ?: resolvedSong.artist,
+                duration = resolvedSong.duration
             ) ?: return
             CacheManager.saveLyrics(getApplication(), song.id, LyricsCache.serialize(result))
         } catch (_: Exception) {}
