@@ -29,6 +29,51 @@ import java.util.concurrent.TimeUnit
 
 object Innertube {
     /**
+     * Extracts individual artist names AND, where present, each one's YTM channel browseId,
+     * from a raw "runs" list (the artist-credit portion of a song/album subtitle, already
+     * truncated to before the first "•"). Same run-boundary logic as the name-only version
+     * above — a separator run marks a real boundary, never a comma/ampersand inside a single
+     * run's own text — but this variant also captures each name's navigationEndpoint browseId
+     * when the run is a clickable artist link, so callers that need to navigate to a specific
+     * artist's page can do so directly instead of re-deriving an id via a name search later
+     * (searches are lossy: multiple artists can share ambiguous/similar names, and a wrong
+     * search filter can silently return the wrong channel — see the Kanye West/¥$ mixup this
+     * was added to fix). A run with no navigationEndpoint (plain, non-linked text) yields a
+     * null id at that position rather than dropping the name.
+     */
+    private fun extractArtistNameIdPairsFromRuns(runs: List<JSONObject>): List<Pair<String, String?>> {
+        if (runs.isEmpty()) return emptyList()
+
+        val pairs = mutableListOf<Pair<String, String?>>()
+        val current = StringBuilder()
+        var currentId: String? = null
+        for (run in runs) {
+            val text = run.optString("text", "")
+            if (text.isBlank()) continue
+            val isPureSeparator = text.matches(Regex("\\s*(,|&|\\band\\b)\\s*", RegexOption.IGNORE_CASE))
+            if (isPureSeparator) {
+                if (current.isNotBlank()) {
+                    pairs.add(current.toString().trim() to currentId)
+                    current.clear()
+                    currentId = null
+                }
+            } else {
+                current.append(text)
+                // Take the first browseId seen within this name's run(s); a name is normally
+                // built from a single run, so in practice there's only ever one to consider.
+                if (currentId == null) {
+                    currentId = run.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("browseEndpoint")?.optString("browseId")
+                        ?.takeIf { it.isNotBlank() && it.startsWith("UC") }
+                }
+            }
+        }
+        if (current.isNotBlank()) pairs.add(current.toString().trim() to currentId)
+
+        return pairs.filter { it.first.isNotBlank() }
+    }
+
+    /**
      * Extracts individual artist names from a raw "runs" list (the artist-credit portion
      * of a song/album subtitle, already truncated to before the first "•"), treating run
      * boundaries as the only source of truth for where one artist name ends and another
@@ -482,6 +527,7 @@ object Innertube {
                         val runs = col1?.optJSONObject("text")?.optJSONArray("runs")
                         var artist = ""; var durationMs = 0L
                         var artistNames: List<String> = emptyList()
+                        var artistIds: List<String?> = emptyList()
                         if (runs != null) {
                             val artistParts = mutableListOf<String>()
                             val artistRunObjs = mutableListOf<JSONObject>()
@@ -500,7 +546,9 @@ object Innertube {
                                 else if (t.contains(":") && t.length <= 7) durationMs = parseDurationString(t)
                             }
                             artist = artistParts.joinToString("")
-                            artistNames = extractArtistNamesFromRuns(artistRunObjs)
+                            val nameIdPairs = extractArtistNameIdPairsFromRuns(artistRunObjs)
+                            artistNames = nameIdPairs.map { it.first }
+                            artistIds = nameIdPairs.map { it.second }
                         }
                         // Find the album segment by its browseId shape (MPREb_... is always an
                         // album, never an artist/other id) instead of assuming a fixed segment
@@ -555,7 +603,7 @@ object Innertube {
                             ?.let { upscaleThumbnail(it) }
                             ?: ytThumbnail(videoId)
                         out.add(Song(id = videoId, title = title, artist = artist,
-                            artistNames = artistNames,
+                            artistNames = artistNames, artistIds = artistIds,
                             thumbnail = songThumb, duration = durationMs,
                             albumId = albumId, albumTitle = albumTitle,
                             isExplicit = parseExplicit(item.optJSONArray("badges"))))
@@ -685,6 +733,10 @@ object Innertube {
             var albumArtist = fallbackArtist
             var albumYear = ""
             var albumThumb = ""
+            // Each album-level artist's browseId, keyed by name — populated below from the
+            // tracklist's own structured artist data (see the block near the album-artist
+            // name intersection). Empty if nothing could be resolved this way.
+            var albumArtistIdByName: Map<String, String> = emptyMap()
             try {
                 // Playlist-style ids (e.g. OLAK5uy_..., PL..., RDCLAK...) must be browsed with
                 // a "VL" prefix — passing them bare causes an INVALID_ARGUMENT (400) error.
@@ -857,6 +909,7 @@ object Innertube {
                             val col1Runs = col1?.optJSONObject("text")?.optJSONArray("runs")
                             var songArtist = albumArtist.ifBlank { fallbackArtist.ifBlank { "Unknown Artist" } }
                             var songArtistNames: List<String> = emptyList()
+                            var songArtistIds: List<String?> = emptyList()
                             if (col1Runs != null) {
                                 val parts = mutableListOf<String>()
                                 val preDotRuns = mutableListOf<JSONObject>()
@@ -872,7 +925,9 @@ object Innertube {
                                     }
                                 }
                                 if (parts.isNotEmpty()) songArtist = parts.joinToString("")
-                                songArtistNames = extractArtistNamesFromRuns(preDotRuns)
+                                val nameIdPairs = extractArtistNameIdPairsFromRuns(preDotRuns)
+                                songArtistNames = nameIdPairs.map { it.first }
+                                songArtistIds = nameIdPairs.map { it.second }
                             }
                             // Album tracklist items sometimes carry their own thumbnail array
                             // (rare — usually they don't, since every track shares the album
@@ -889,7 +944,7 @@ object Innertube {
                                 ?.let { upscaleThumbnail(it) }
                                 ?: ytThumbnail(videoId)
                             songs.add(Song(id = videoId, title = songTitle, artist = songArtist,
-                                artistNames = songArtistNames,
+                                artistNames = songArtistNames, artistIds = songArtistIds,
                                 thumbnail = trackThumb, duration = parseDurationMs(item),
                                 albumId = browseId, albumTitle = albumTitle,
                                 isExplicit = parseExplicit(item.optJSONArray("badges"))))
@@ -924,9 +979,28 @@ object Innertube {
                         // albumArtist was already resolved to.
                     }
                 }
+                // ── Album artist IDs: same "appears on every track" rule as above, but using
+                // the structured artistNames/artistIds captured directly from each song's
+                // response runs — never re-derived by splitting a display string, since that
+                // can't carry an id. This is what lets tapping an album-artist's name (e.g.
+                // "Kanye West" on Vultures 1, distinct from "¥$") open the exact channel that
+                // name actually links to on YTM, instead of falling back to a name search that
+                // can land on a different, related artist's page. A name only earns an id here
+                // if the same (name, id) pair is present on every single track — this guards
+                // against a rare case where YTM links the same artist name to different browse
+                // ids across tracks; when that happens we simply leave that name's id unknown
+                // rather than guess which one is "right", and it falls back to name search.
+                val albumArtistIdByNameResult: Map<String, String> = try {
+                    if (songs.isNotEmpty()) {
+                        val perSongPairs = songs.map { s -> s.artistNames.zip(s.artistIds).toSet() }
+                        val commonPairs = perSongPairs.reduce { acc, pairs -> acc.intersect(pairs) }
+                        commonPairs.mapNotNull { (name, id) -> if (id != null) name to id else null }.toMap()
+                    } else emptyMap()
+                } catch (e: Exception) { emptyMap() }
+                albumArtistIdByName = albumArtistIdByNameResult
             } catch (e: Exception) { Log.e("Innertube", "getAlbumSongs error: ${e.message}") }
             Pair(Album(id = browseId, title = albumTitle, artist = albumArtist,
-                thumbnail = albumThumb, year = albumYear), songs)
+                thumbnail = albumThumb, year = albumYear, artistIds = albumArtistIdByName), songs)
         }
     suspend fun getVideoMetadata(videoId: String): Song? = withContext(Dispatchers.IO) {
         initNewPipe()
@@ -984,6 +1058,7 @@ object Innertube {
                 title = fresh.title.ifBlank { song.title },
                 artist = fresh.artist.ifBlank { song.artist },
                 artistNames = fresh.artistNames.ifEmpty { song.artistNames },
+                artistIds = fresh.artistIds.ifEmpty { song.artistIds },
                 thumbnail = fresh.thumbnail.ifBlank { song.thumbnail },
                 duration = if (fresh.duration > 0) fresh.duration else song.duration,
                 albumId = fresh.albumId.ifBlank { song.albumId },
@@ -1472,6 +1547,7 @@ object Innertube {
                                 val col1Runs = col1?.optJSONObject("text")?.optJSONArray("runs")
                                 var songArtist = artistName
                                 var songArtistNames: List<String> = emptyList()
+                                var songArtistIds: List<String?> = emptyList()
                                 if (col1Runs != null) {
                                     val parts = mutableListOf<String>(); var hitDot = false
                                     val preDotRuns = mutableListOf<JSONObject>()
@@ -1486,7 +1562,9 @@ object Innertube {
                                         }
                                     }
                                     if (parts.isNotEmpty()) songArtist = parts.joinToString("")
-                                    songArtistNames = extractArtistNamesFromRuns(preDotRuns)
+                                    val nameIdPairs = extractArtistNameIdPairsFromRuns(preDotRuns)
+                                    songArtistNames = nameIdPairs.map { it.first }
+                                    songArtistIds = nameIdPairs.map { it.second }
                                 }
                                 val thumb = r.optJSONObject("thumbnail")
                                     ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
@@ -1495,7 +1573,7 @@ object Innertube {
                                     ?.let { upscaleThumbnail(it) }
                                     ?: ytThumbnail(videoId)
                                 popularSongs.add(Song(id = videoId, title = title, artist = songArtist,
-                                    artistNames = songArtistNames, thumbnail = thumb))
+                                    artistNames = songArtistNames, artistIds = songArtistIds, thumbnail = thumb))
                             } catch (_: Exception) {}
                         }
                     }
