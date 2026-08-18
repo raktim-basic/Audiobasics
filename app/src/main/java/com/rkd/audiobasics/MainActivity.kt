@@ -245,7 +245,7 @@ fun AudiobasicsApp(
             isDarkMode = isDarkMode,
             onDismiss = { showPlayerDialog = false },
             onNavigateQueue = { showPlayerDialog = false; navigate(Screen.Queue) },
-            onNavigateArtist = { name -> showPlayerDialog = false; navigate(Screen.ArtistDetail(name)) },
+            onNavigateArtist = { name, artistId -> showPlayerDialog = false; navigate(Screen.ArtistDetail(name, artistId ?: "")) },
             onNavigateAlbum = { albumTitle ->
                 showPlayerDialog = false
                 // Search for the album by name rather than browsing this specific id —
@@ -375,7 +375,7 @@ fun AudiobasicsApp(
                         isDarkMode = isDarkMode,
                         onBack = { navigateBack() },
                         onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateArtist = { name -> navigate(Screen.ArtistDetail(name)) },
+                        onNavigateArtist = { name, artistId -> navigate(Screen.ArtistDetail(name, artistId ?: "")) },
                         onAddTo = { song -> addToSheetSong = song },
                         onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) }
                     )
