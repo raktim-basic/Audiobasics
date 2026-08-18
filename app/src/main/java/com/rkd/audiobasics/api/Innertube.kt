@@ -64,7 +64,7 @@ object Innertube {
                 if (currentId == null) {
                     currentId = run.optJSONObject("navigationEndpoint")
                         ?.optJSONObject("browseEndpoint")?.optString("browseId")
-                        ?.takeIf { it.isNotBlank() && it.startsWith("UC") }
+                        ?.takeIf { it.isNotBlank() && (it.startsWith("UC") || it.startsWith("MPLA")) }
                 }
             }
         }
