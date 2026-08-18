@@ -67,7 +67,7 @@ fun AlbumScreen(
     isDarkMode: Boolean,
     onBack: () -> Unit,
     onNavigateQueue: () -> Unit,
-    onNavigateArtist: (String) -> Unit = {},
+    onNavigateArtist: (String, String?) -> Unit = { _, _ -> },
     onAddTo: (Song) -> Unit = {},
     onNavigateCacheSettings: () -> Unit = {}
 ) {
@@ -142,7 +142,8 @@ fun AlbumScreen(
                     title = meta.title.ifBlank { album.title },
                     artist = meta.artist.ifBlank { album.artist },
                     thumbnail = meta.thumbnail.ifBlank { album.thumbnail },
-                    year = meta.year.ifBlank { album.year }
+                    year = meta.year.ifBlank { album.year },
+                    artistIds = meta.artistIds.ifEmpty { album.artistIds }
                 )
                 // Share this resolved metadata app-wide so Song Info (and anywhere else
                 // that looks up album titles by id) benefits immediately, not just this screen.
@@ -257,7 +258,7 @@ fun AlbumScreen(
                                     },
                                     fontFamily = NothingFont,
                                     fontSize = 14.sp,
-                                    modifier = Modifier.clickable { onNavigateArtist(artist) }
+                                    modifier = Modifier.clickable { onNavigateArtist(artist, enrichedAlbum.artistIds[artist]) }
                                 )
                                 if (i < artistList.lastIndex) {
                                     Text(", ", fontFamily = NothingFont, fontSize = 14.sp, color = subTextColor)
