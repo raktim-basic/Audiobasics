@@ -733,6 +733,11 @@ object Innertube {
             var albumArtist = fallbackArtist
             var albumYear = ""
             var albumThumb = ""
+            // The correctly-separated album-artist names in display order, populated below
+            // from the tracklist's own structured artist data — see the block near the
+            // album-artist name intersection. This is the source of truth for individual
+            // artist names/links; albumArtist above is only the joined display string.
+            var albumArtistNames: List<String> = emptyList()
             // Each album-level artist's browseId, keyed by name — populated below from the
             // tracklist's own structured artist data (see the block near the album-artist
             // name intersection). Empty if nothing could be resolved this way.
@@ -957,16 +962,29 @@ object Innertube {
                 // "Future & Metro Boomin" throughout). An artist only belongs in the album
                 // credit if they appear on EVERY track — this naturally excludes one-off
                 // guest features (which show up in the same comma/& format, with no
-                // reliable "feat." marker to detect) while keeping the true core artist(s). ──
+                // reliable "feat." marker to detect) while keeping the true core artist(s).
+                //
+                // Uses each song's structured artistNames (parsed directly from the response's
+                // run boundaries) rather than splitArtistNames(song.artist) — the latter is a
+                // best-effort string splitter that deliberately never splits on a bare comma
+                // (to avoid breaking names like "Tyler, The Creator" apart), so genuinely
+                // separate co-artists joined by a comma in the display string — e.g. "¥$, Kanye
+                // West" — were staying merged into one entry unless hardcoded into an allowlist
+                // by name. artistNames has no such ambiguity: it already knows the real
+                // boundary between every name because it reads it from the run structure
+                // itself, not by guessing at punctuation. ──
                 if (songs.isNotEmpty()) {
                     try {
-                        val perSongNames = songs.map { splitArtistNames(it.artist) }
+                        val perSongNames = songs.map { it.artistNames.ifEmpty { listOf(it.artist) } }
                         val commonNames = perSongNames.reduce { acc, names -> acc.intersect(names.toSet()).toList() }
                         if (commonNames.isNotEmpty()) {
-                            // Preserve the order names appear in the first song's artist string.
+                            // Preserve the order names appear in the first song's artist list.
                             val firstSongOrder = perSongNames.first()
                             val ordered = firstSongOrder.filter { it in commonNames }
-                            if (ordered.isNotEmpty()) albumArtist = ordered.joinToString(" & ")
+                            if (ordered.isNotEmpty()) {
+                                albumArtist = ordered.joinToString(" & ")
+                                albumArtistNames = ordered
+                            }
                         } else if (albumArtist == fallbackArtist) {
                             // No name is common to every track (e.g. a various-artists
                             // compilation) and the header gave us nothing either — fall back
@@ -1000,7 +1018,8 @@ object Innertube {
                 albumArtistIdByName = albumArtistIdByNameResult
             } catch (e: Exception) { Log.e("Innertube", "getAlbumSongs error: ${e.message}") }
             Pair(Album(id = browseId, title = albumTitle, artist = albumArtist,
-                thumbnail = albumThumb, year = albumYear, artistIds = albumArtistIdByName), songs)
+                thumbnail = albumThumb, year = albumYear,
+                artistNames = albumArtistNames, artistIds = albumArtistIdByName), songs)
         }
     suspend fun getVideoMetadata(videoId: String): Song? = withContext(Dispatchers.IO) {
         initNewPipe()
