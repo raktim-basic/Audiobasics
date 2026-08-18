@@ -50,7 +50,7 @@ fun PlayerDialog(
     isDarkMode: Boolean,
     onDismiss: () -> Unit,
     onNavigateQueue: () -> Unit,
-    onNavigateArtist: (String) -> Unit,
+    onNavigateArtist: (String, String?) -> Unit,
     onNavigateAlbum: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -499,10 +499,10 @@ fun PlayerDialog(
             onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
             livePlaybackDurationMs = duration,
             onDismiss = { showSongInfo = false },
-            onArtistClick = { artistName ->
+            onArtistClick = { artistName, artistId ->
                 showSongInfo = false
                 onDismiss()
-                onNavigateArtist(artistName)
+                onNavigateArtist(artistName, artistId)
             },
             onAlbumClick = { albumTitle ->
                 showSongInfo = false
