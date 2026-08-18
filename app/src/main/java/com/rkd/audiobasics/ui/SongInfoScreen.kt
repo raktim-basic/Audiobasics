@@ -45,7 +45,9 @@ fun SongInfoScreen(
     // on a separately-stored copy.
     livePlaybackDurationMs: Long? = null,
     onDismiss: () -> Unit,
-    onArtistClick: (String) -> Unit,   // artist name
+    onArtistClick: (String, String?) -> Unit,   // artist name, and its browseId if known
+                                                  // directly from the song data (avoids a
+                                                  // fallback name search when we already have it)
     onAlbumClick: (String) -> Unit     // album title — searches for it rather than
                                         // browsing a specific (possibly duplicate) id
 ) {
@@ -198,7 +200,7 @@ fun SongInfoScreen(
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
-                                modifier = Modifier.clickable { onArtistClick(artist) }
+                                modifier = Modifier.clickable { onArtistClick(artist, song.artistIdFor(artist)) }
                             )
                         }
                     }
