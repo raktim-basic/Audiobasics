@@ -525,7 +525,7 @@ object Innertube {
                         val title = extractText(col0, "text"); if (title.isBlank()) continue
                         val col1 = flexCols.optJSONObject(1)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
                         val runs = col1?.optJSONObject("text")?.optJSONArray("runs")
-                        var artist = ""; var durationMs = 0L
+                        var artist = ""
                         var artistNames: List<String> = emptyList()
                         var artistIds: List<String?> = emptyList()
                         if (runs != null) {
@@ -543,13 +543,24 @@ object Innertube {
                                     artistParts.add(t)
                                     if (runObj != null) artistRunObjs.add(runObj)
                                 }
-                                else if (t.contains(":") && t.length <= 7) durationMs = parseDurationString(t)
                             }
                             artist = artistParts.joinToString("")
                             val nameIdPairs = extractArtistNameIdPairsFromRuns(artistRunObjs)
                             artistNames = nameIdPairs.map { it.first }
                             artistIds = nameIdPairs.map { it.second }
                         }
+                        // Duration: scan the whole row for a duration-shaped run (mm:ss) via
+                        // parseDurationMs rather than assuming it's whatever comes right after
+                        // the SECOND "•" in the loop above. Search-result subtitles aren't
+                        // consistently "Artist • Duration" (two segments, one dot) the way an
+                        // album tracklist row is — they're commonly "Artist • Album • Duration"
+                        // (three segments, two dots), sometimes more — so stopping at the
+                        // second dot was bailing out before ever reaching the duration segment,
+                        // silently leaving it at 0 for most search results. parseDurationMs
+                        // already handles this correctly (it's what the album tracklist path
+                        // uses) by checking fixedColumns first, then scanning every flexColumns
+                        // run by shape (\d+:\d{2}) instead of by position.
+                        val durationMs = parseDurationMs(item)
                         // Find the album segment by its browseId shape (MPREb_... is always an
                         // album, never an artist/other id) instead of assuming a fixed segment
                         // position — search-result subtitles aren't consistently laid out as
@@ -1687,114 +1698,4 @@ object Innertube {
                                             .firstOrNull { it.length == 4 && it.all { c -> c.isDigit() } }
                                     } ?: ""
                                     val thumbArr2 = r.optJSONObject("thumbnailRenderer")
-                                        ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
-                                        ?.optJSONArray("thumbnails")
-                                        ?: r.optJSONObject("thumbnail")
-                                            ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
-                                            ?.optJSONArray("thumbnails")
-                                    val thumb = if (thumbArr2 != null && thumbArr2.length() > 0)
-                                        upscaleThumbnail(thumbArr2.getJSONObject(thumbArr2.length() - 1).optString("url", "")) else ""
-                                    val album = com.rkd.audiobasics.data.Album(id = albumBrowseId, title = title,
-                                        artist = artistName, thumbnail = thumb, year = year)
-                                    if (isAlbums) { if (albums.none { it.id == albumBrowseId }) albums.add(album) }
-                                    else { if (singles.none { it.id == albumBrowseId }) singles.add(album) }
-                                } catch (_: Exception) {}
-                            }
-                        }
-                    }
-                }
-                com.rkd.audiobasics.data.ArtistPage(artist = artist, popularSongs = popularSongs, albums = albums, singles = singles)
-            } catch (e: Exception) { Log.e("Innertube", "getArtistPage error: ${e.message}"); null }
-        }
-
-    // ── Search artist by name ─────────────────────────────────────────────────
-    // "Kanye West" and "Madvillain" appearing to merge with "¥$"/"Madlib" turned out to be a
-    // bug in our own search filter params (see searchArtists' `params` blob above) — it was
-    // requesting an extra YTM result-type category that isn't part of the real "artist search"
-    // filter, which threw off which channel search actually returned. Fixed there; the
-    // alias/override logic below is kept as a harmless fallback in case any other name
-    // collision turns out to be a genuine shared-channel case on YTM's side rather than a
-    // parsing bug like this one — add entries here only if that's confirmed for a specific pair.
-    private val knownArtistAliases: Map<String, List<String>> = emptyMap()
-
-    suspend fun searchArtistByName(name: String): com.rkd.audiobasics.data.ArtistPage? =
-        withContext(Dispatchers.IO) {
-            try {
-                val normalized = name.trim()
-                val aliases = knownArtistAliases[normalized.lowercase()] ?: emptyList()
-                val acceptableNames = listOf(normalized) + aliases
-
-                // Search under the artist's own name first, then — only for known collision
-                // cases — also search under each alias, since YTM's results for the original
-                // query may never surface the aliased channel at all (not just rank it lower).
-                val queries = listOf(normalized) + aliases
-                val all = queries.flatMap { searchArtists(it) }
-
-                // Only accept an exact (case-insensitive) name match against the artist's own
-                // name or a known alias. Falling back to "whatever search ranked first" (the
-                // old behavior) is how tapping "Kanye West" could land on an unrelated channel.
-                val best = all.firstOrNull { candidate ->
-                    acceptableNames.any { candidate.name.trim().equals(it, ignoreCase = true) }
-                } ?: return@withContext null
-
-                val page = getArtistPage(best.id) ?: return@withContext null
-                // If an alias match was used (page title differs from what was searched),
-                // display the name the user actually tapped rather than the channel's own title.
-                if (!page.artist.name.trim().equals(normalized, ignoreCase = true)) {
-                    page.copy(artist = page.artist.copy(name = normalized))
-                } else {
-                    page
-                }
-            } catch (e: Exception) { Log.e("Innertube", "searchArtistByName error: ${e.message}"); null }
-        }
-
-    private fun initNewPipe() {
-        if (!newPipeInitialized) { NewPipe.init(NewPipeDownloader); newPipeInitialized = true }
-    }
-
-    private fun extractIdFromUrl(url: String): String {
-        Regex("v=([a-zA-Z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
-        Regex("youtu\\.be/([a-zA-Z0-9_-]{11})").find(url)?.let { return it.groupValues[1] }
-        Regex("list=([a-zA-Z0-9_-]+)").find(url)?.let { return it.groupValues[1] }
-        return url.substringAfterLast("/").substringBefore("?")
-    }
-}
-
-// NewPipe downloader
-
-object NewPipeDownloader : Downloader() {
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
-    private const val FIREFOX_UA =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
-
-    @Volatile var visitorData: String? = null
-    @Volatile var poToken: String? = null
-
-    override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): Response {
-        val rb = Request.Builder().url(request.url()).header("User-Agent", FIREFOX_UA)
-        val hdrs = request.headers() ?: emptyMap()
-        hdrs.forEach { (k, v) -> if (!k.equals("User-Agent", ignoreCase = true)) v.forEach { rb.addHeader(k, it) } }
-        if (!hdrs.containsKey("Accept-Language")) rb.addHeader("Accept-Language", "en-US,en;q=0.9")
-        if (!hdrs.containsKey("Cookie"))
-            rb.addHeader("Cookie", "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
-        visitorData?.let { rb.addHeader("X-Visitor-Data", it) }
-        if (request.url().contains("/youtubei/v1/player") || request.url().contains("/youtubei/v1/next"))
-            poToken?.let { rb.addHeader("X-Goog-Visitor-Id", it) }
-        when (request.httpMethod()) {
-            "POST" -> rb.post((request.dataToSend() ?: ByteArray(0))
-                .toRequestBody("application/json".toMediaTypeOrNull()))
-            else -> rb.get()
-        }
-        val response = client.newCall(rb.build()).execute()
-        response.header("X-Visitor-Data")?.let { visitorData = it }
-        val body = response.body?.string() ?: ""
-        val headers = mutableMapOf<String, MutableList<String>>()
-        response.headers.names().forEach { name -> headers[name] = response.headers(name).toMutableList() }
-        return Response(response.code, response.message, headers, body, request.url())
-    }
-}
+                                        ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("t
