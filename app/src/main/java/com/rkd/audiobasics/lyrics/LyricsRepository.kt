@@ -26,14 +26,23 @@ object LyricsRepository {
     suspend fun getLyrics(title: String, artist: String, duration: Long): LyricsResult? {
         return withContext(Dispatchers.IO) {
             try {
+                Log.d("LyricsRepository", "getLyrics: title='$title' artist='$artist' durationMs=$duration")
+
                 // Try synced lyrics first
                 val synced = fetchSynced(title, artist, duration)
-                if (synced != null) return@withContext synced
+                if (synced != null) {
+                    Log.d("LyricsRepository", "getLyrics: fetchSynced returned hasSynced=${synced.hasSynced} for title='$title' artist='$artist'")
+                    return@withContext synced
+                }
 
                 // Fall back to plain lyrics
                 val plain = fetchPlain(title, artist)
-                if (plain != null) return@withContext plain
+                if (plain != null) {
+                    Log.d("LyricsRepository", "getLyrics: fetchSynced found nothing, fetchPlain succeeded (unsynced) for title='$title' artist='$artist'")
+                    return@withContext plain
+                }
 
+                Log.d("LyricsRepository", "getLyrics: no result from either endpoint for title='$title' artist='$artist'")
                 null
             } catch (e: Exception) {
                 Log.e("LyricsRepository", "Error fetching lyrics: ${e.message}")
@@ -48,8 +57,10 @@ object LyricsRepository {
             val encodedArtist = URLEncoder.encode(artist, "UTF-8")
             val durationSecs = duration / 1000
             val url = "$BASE_URL/get?track_name=$encodedTitle&artist_name=$encodedArtist&duration=$durationSecs"
+            Log.d("LyricsRepository", "fetchSynced: GET $url")
 
             val response = URL(url).readText()
+            Log.d("LyricsRepository", "fetchSynced: response=${response.take(300)}")
             val json = JSONObject(response)
 
             val syncedLyrics = json.optString("syncedLyrics", "")
@@ -64,6 +75,7 @@ object LyricsRepository {
 
             val plainLyrics = json.optString("plainLyrics", "")
             if (plainLyrics.isNotBlank()) {
+                Log.d("LyricsRepository", "fetchSynced: /get matched a track but it has no syncedLyrics, only plainLyrics")
                 return LyricsResult(
                     syncedLines = emptyList(),
                     plainText = plainLyrics,
@@ -73,7 +85,14 @@ object LyricsRepository {
 
             null
         } catch (e: Exception) {
-            Log.e("LyricsRepository", "Synced fetch failed: ${e.message}")
+            // A 404 from /get (no exact match found) also lands here, since HttpURLConnection
+            // (via URL.readText()) throws FileNotFoundException on a non-2xx response rather
+            // than returning the error body — so "no match" and "network error" both currently
+            // log the same generic message. That's the most likely explanation for a well-known
+            // song coming back unsynced: an exact track_name/artist_name/duration match failed
+            // on LRCLIB's side, so this whole function returned null and the caller fell back to
+            // the fuzzy /search endpoint below, which never returns synced lyrics at all.
+            Log.e("LyricsRepository", "Synced fetch failed (likely a 404 = no exact match): ${e.message}")
             null
         }
     }
@@ -83,6 +102,7 @@ object LyricsRepository {
             val encodedTitle = URLEncoder.encode(title, "UTF-8")
             val encodedArtist = URLEncoder.encode(artist, "UTF-8")
             val url = "$BASE_URL/search?q=$encodedTitle+$encodedArtist"
+            Log.d("LyricsRepository", "fetchPlain: GET $url")
 
             val response = URL(url).readText()
             val arr = JSONArray(response)
