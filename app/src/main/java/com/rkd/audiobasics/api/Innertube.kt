@@ -1443,7 +1443,116 @@ object Innertube {
         }
     }
 
-    suspend fun getRelatedSongs(context: Context, videoId: String, limit: Int = 10): List<Song> =
+    suspend fun getRelatedSongs(context: Context, videoId: String, limit: Int = 15): List<Song> =
+        withContext(Dispatchers.IO) {
+            try {
+                val results = getWatchNextSongs(videoId, limit)
+                if (results.isNotEmpty()) return@withContext results
+            } catch (e: Exception) {
+                Log.e("Innertube", "getWatchNextSongs error, falling back to NewPipe related: ${e.message}")
+            }
+            // Fallback only: YTM's own "next"/radio queue occasionally comes back empty (e.g.
+            // a video YTM doesn't have a catalog entry for at all). NewPipe's generic related-
+            // videos endpoint is a worse source — plain YouTube uploads, not YTM catalog
+            // tracks, with a channel name instead of a real artist credit — but an imperfect
+            // queue beats an empty one.
+            getRelatedSongsViaNewPipe(context, videoId, limit)
+        }
+
+    // Real YTM "watch next" queue (the same one YTM's own app uses to auto-fill the queue after
+    // a song) via the `next` endpoint's playlistPanelRenderer — proper catalog songs with clean
+    // titles/artist credits/durations, not generic YouTube video results. This replaced a
+    // NewPipe-based "related videos" fetch that was pulling in plain YouTube uploads (fan
+    // uploads, lyric videos, "(Official Audio)" title clutter) with poor/missing metadata,
+    // since that endpoint is YouTube's general recommendation surface, not YTM's music one.
+    private suspend fun getWatchNextSongs(videoId: String, limit: Int): List<Song> {
+        val response = ytmPost("next", JSONObject().put("videoId", videoId)) ?: return emptyList()
+
+        val playlistPanelRenderer = response.optJSONObject("contents")
+            ?.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
+            ?.optJSONObject("tabbedRenderer")
+            ?.optJSONObject("watchNextTabbedResultsRenderer")
+            ?.optJSONArray("tabs")?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")?.optJSONObject("content")
+            ?.optJSONObject("musicQueueRenderer")?.optJSONObject("content")
+            ?.optJSONObject("playlistPanelRenderer") ?: return emptyList()
+
+        val contents = playlistPanelRenderer.optJSONArray("contents") ?: return emptyList()
+        val results = mutableListOf<Song>()
+
+        for (i in 0 until contents.length()) {
+            if (results.size >= limit) break
+            val renderer = contents.optJSONObject(i)
+                ?.optJSONObject("playlistPanelVideoRenderer") ?: continue
+            try {
+                val id = renderer.optString("videoId", "")
+                if (id.isBlank() || id == videoId) continue // skip the seed song itself
+
+                val title = renderer.optJSONObject("title")
+                    ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text", "")
+                if (title.isNullOrBlank()) continue
+
+                // longBylineText carries "Artist • Album" (or just "Artist" for some rows),
+                // runs-separated the same way as everywhere else in this file.
+                val bylineRuns = renderer.optJSONObject("longBylineText")?.optJSONArray("runs")
+                var artist = ""
+                var artistNames: List<String> = emptyList()
+                var artistIds: List<String?> = emptyList()
+                var albumId = ""
+                var albumTitle = ""
+                if (bylineRuns != null) {
+                    val artistParts = mutableListOf<String>()
+                    val artistRunObjs = mutableListOf<JSONObject>()
+                    var hitDot = false
+                    for (r in 0 until bylineRuns.length()) {
+                        val runObj = bylineRuns.optJSONObject(r)
+                        val t = runObj?.optString("text", "") ?: ""
+                        if (t == " • " || t == "•") {
+                            if (!hitDot) { hitDot = true; continue } else break
+                        }
+                        if (t.isBlank()) continue
+                        if (!hitDot) {
+                            artistParts.add(t)
+                            if (runObj != null) artistRunObjs.add(runObj)
+                        } else if (albumTitle.isBlank()) {
+                            albumTitle = t
+                            albumId = runObj?.optJSONObject("navigationEndpoint")
+                                ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
+                        }
+                    }
+                    artist = artistParts.joinToString("")
+                    val nameIdPairs = extractArtistNameIdPairsFromRuns(artistRunObjs)
+                    artistNames = nameIdPairs.map { it.first }
+                    artistIds = nameIdPairs.map { it.second }
+                }
+
+                val durationText = renderer.optJSONObject("lengthText")
+                    ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text", "")
+                val durationMs = if (!durationText.isNullOrBlank()) parseDurationString(durationText) else 0L
+
+                val thumbArr = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                val thumbUrl = thumbArr?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
+                    ?.takeIf { it.isNotBlank() }?.let { upscaleThumbnail(it) } ?: ytThumbnail(id)
+
+                val isExplicit = renderer.optJSONArray("badges")?.let { badges ->
+                    (0 until badges.length()).any { bi ->
+                        badges.optJSONObject(bi)?.optJSONObject("musicInlineBadgeRenderer")
+                            ?.optJSONObject("icon")?.optString("iconType", "") == "MUSIC_EXPLICIT_BADGE"
+                    }
+                } ?: false
+
+                results.add(Song(
+                    id = id, title = title, artist = artist,
+                    artistNames = artistNames, artistIds = artistIds,
+                    thumbnail = thumbUrl, duration = durationMs,
+                    albumId = albumId, albumTitle = albumTitle, isExplicit = isExplicit
+                ))
+            } catch (_: Exception) {}
+        }
+        return results
+    }
+
+    private suspend fun getRelatedSongsViaNewPipe(context: Context, videoId: String, limit: Int): List<Song> =
         withContext(Dispatchers.IO) {
             initNewPipe()
             val results = mutableListOf<Song>()
