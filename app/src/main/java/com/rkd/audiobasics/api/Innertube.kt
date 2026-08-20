@@ -28,6 +28,19 @@ import org.schabi.newpipe.extractor.stream.AudioStream
 import java.util.concurrent.TimeUnit
 
 object Innertube {
+    /**
+     * Extracts individual artist names AND, where present, each one's YTM channel browseId,
+     * from a raw "runs" list (the artist-credit portion of a song/album subtitle, already
+     * truncated to before the first "•"). Same run-boundary logic as the name-only version
+     * above — a separator run marks a real boundary, never a comma/ampersand inside a single
+     * run's own text — but this variant also captures each name's navigationEndpoint browseId
+     * when the run is a clickable artist link, so callers that need to navigate to a specific
+     * artist's page can do so directly instead of re-deriving an id via a name search later
+     * (searches are lossy: multiple artists can share ambiguous/similar names, and a wrong
+     * search filter can silently return the wrong channel — see the Kanye West/¥$ mixup this
+     * was added to fix). A run with no navigationEndpoint (plain, non-linked text) yields a
+     * null id at that position rather than dropping the name.
+     */
     private fun extractArtistNameIdPairsFromRuns(runs: List<JSONObject>): List<Pair<String, String?>> {
         if (runs.isEmpty()) return emptyList()
 
@@ -60,6 +73,19 @@ object Innertube {
         return pairs.filter { it.first.isNotBlank() }
     }
 
+    /**
+     * Extracts individual artist names from a raw "runs" list (the artist-credit portion
+     * of a song/album subtitle, already truncated to before the first "•"), treating run
+     * boundaries as the only source of truth for where one artist name ends and another
+     * begins — never re-splitting a single run's own text on comma/ampersand.
+     *
+     * This is the fix for artist names that contain a comma or ampersand as part of the name
+     * itself (e.g. "Tyler, The Creator", "Earth, Wind & Fire") — YouTube always gives these as
+     * ONE run with the full name as its text, while genuinely separate co-artists are given as
+     * separate runs joined by a literal separator run (", " or " & "). Splitting the joined
+     * display string by comma after the fact is lossy and can't tell these cases apart; reading
+     * the runs directly can.
+     */
     private fun extractArtistNamesFromRuns(runs: List<JSONObject>): List<String> {
         if (runs.isEmpty()) return emptyList()
 
@@ -77,13 +103,17 @@ object Innertube {
                     current.clear()
                 }
             } else {
+                // Any non-separator run — including one whose own text happens to contain a
+                // comma or ampersand (e.g. "Tyler, The Creator" as a single run) — is part of
+                // the artist name currently being built, never a split point on its own.
                 current.append(text)
             }
         }
         if (current.isNotBlank()) names.add(current.toString().trim())
 
         return names.filter { it.isNotBlank() }.ifEmpty {
-        
+            // No usable run boundaries at all (e.g. everything came back as one big run) —
+            // fall back to the lossy string-splitter, same as when we only have joined text.
             splitArtistNames(runs.joinToString("") { it.optString("text", "") })
         }
     }
@@ -331,12 +361,27 @@ object Innertube {
         } catch (_: Exception) { "" }
     }
 
+    // Comma-joined phrases where the comma is a genuine separator between two distinct artists
+    // (as opposed to being part of one artist's own name, e.g. "Tyler, The Creator"). These are
+    // checked first and replaced with "&" before the general split below, so both halves come
+    // out as separate artists. Kanye West releases in particular are often credited under
+    // multiple names/aliases for the same person or collective (DONDA, Kanye West, Ye) joined
+    // by a bare comma in YouTube's own data, which the generic no-comma-split rule can't
+    // distinguish from a name like "Tyler, The Creator" — so these need to be listed explicitly.
     private val COMMA_IS_SEPARATOR_IN = listOf(
         "DONDA, Kanye West" to "DONDA & Kanye West",
         "Kanye West, Ye" to "Kanye West & Ye",
         "DONDA, Ye" to "DONDA & Ye"
     )
 
+    // The mirror-image problem: some acts have "&" baked into their own single name
+    // (bands, duos), so a plain "split on &" rule wrongly breaks them into two artists —
+    // e.g. "Earth, Wind & Fire" becoming ["Earth, Wind", "Fire"]. These names are protected
+    // by swapping their "&" for a placeholder before the separator split runs, then swapping
+    // it back afterward. Only matters for the string-based fallback below — the run-boundary
+    // based [extractArtistNamesFromRuns] doesn't have this problem, since it only treats "&"
+    // as a split point when it's YouTube's own standalone separator run, never when it's
+    // embedded inside a single artist's run text.
     private val AMPERSAND_IS_PART_OF_NAME = listOf(
         "Earth, Wind & Fire",
         "Simon & Garfunkel",
@@ -366,7 +411,16 @@ object Innertube {
         return result
     }
 
-
+    // Splits an artist credit string like "Future & Metro Boomin" or "Future and Metro Boomin"
+    // into individual, trimmed names. Deliberately does NOT split on comma — YouTube uses a
+    // comma both between genuinely separate co-artists (rare; usually they use "&" or "and")
+    // and inside a single artist's own name (e.g. "Tyler, The Creator", "Earth, Wind & Fire"),
+    // and there's no reliable way to tell these apart from the string alone. Only "&" and the
+    // word "and" are safe, unambiguous separators. Also doesn't try to detect "(feat. ...)" —
+    // YTM doesn't consistently mark guest features that way, so callers should instead use this
+    // to intersect names across every track on an album and keep only the ones present on all.
+    // A short explicit allowlist (see [COMMA_IS_SEPARATOR_IN]) covers known cases where a comma
+    // really does separate two distinct artist credits.
     fun splitArtistNames(artist: String): List<String> {
         return protectKnownAmpersandNames(normalizeKnownCommaSeparators(artist)).trim()
             .split(Regex("\\s*&\\s*|\\s+and\\s+", RegexOption.IGNORE_CASE))
@@ -374,6 +428,9 @@ object Innertube {
             .filter { it.isNotBlank() }
     }
 
+    /** Same as [splitArtistNames] but also splits on "feat." — used where a full song credit
+     *  string (e.g. "Tyler, The Creator feat. Kali Uchis") needs breaking into individual
+     *  artist names for display/linking. Still never splits on a bare, unlisted comma. */
     fun splitArtistNamesWithFeat(artist: String): List<String> {
         return protectKnownAmpersandNames(normalizeKnownCommaSeparators(artist)).trim()
             .split(Regex("\\s*&\\s*|\\s+and\\s+|\\s*feat\\.\\s*", RegexOption.IGNORE_CASE))
@@ -492,9 +549,24 @@ object Innertube {
                             artistNames = nameIdPairs.map { it.first }
                             artistIds = nameIdPairs.map { it.second }
                         }
-                        
+                        // Duration: scan the whole row for a duration-shaped run (mm:ss) via
+                        // parseDurationMs rather than assuming it's whatever comes right after
+                        // the SECOND "•" in the loop above. Search-result subtitles aren't
+                        // consistently "Artist • Duration" (two segments, one dot) the way an
+                        // album tracklist row is — they're commonly "Artist • Album • Duration"
+                        // (three segments, two dots), sometimes more — so stopping at the
+                        // second dot was bailing out before ever reaching the duration segment,
+                        // silently leaving it at 0 for most search results. parseDurationMs
+                        // already handles this correctly (it's what the album tracklist path
+                        // uses) by checking fixedColumns first, then scanning every flexColumns
+                        // run by shape (\d+:\d{2}) instead of by position.
                         val durationMs = parseDurationMs(item)
-                        
+                        // Find the album segment by its browseId shape (MPREb_... is always an
+                        // album, never an artist/other id) instead of assuming a fixed segment
+                        // position — search-result subtitles aren't consistently laid out as
+                        // "Artist • Album • Duration"; the album segment can shift position or
+                        // be missing entirely, so a positional index (e.g. "always segment 1")
+                        // silently grabs the wrong text or nothing at all.
                         var albumId = ""
                         var albumTitle = ""
                         if (runs != null) {
@@ -527,7 +599,11 @@ object Innertube {
                                 }
                             }
                         }
-                        
+                        // Prefer the real thumbnail array YouTube returns for this item —
+                        // proper square-ish album art, not a 16:9 video-frame grab. Only
+                        // fall back to ytThumbnail() (hqdefault.jpg) if that's missing;
+                        // that fallback is otherwise reserved for Play with Link, where
+                        // there's no search-result item to pull a thumbnail array from.
                         val thumbArr = item.optJSONObject("thumbnail")
                             ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
                             ?.optJSONArray("thumbnails")
@@ -796,6 +872,7 @@ object Innertube {
                 }
 
                 // ── Year: microformat's description usually contains a release date
+                // ("...released on April 14, 2017...") — pull the year from there first. ──
                 if (albumYear.isBlank()) {
                     val description = microformatData?.optString("description", "") ?: ""
                     albumYear = Regex("""released on [A-Za-z]+ \d{1,2},\s*(\d{4})""")
@@ -890,7 +967,23 @@ object Innertube {
                         } catch (_: Exception) {}
                     }
                 }
-               
+                // ── Album artist: derive from the tracklist itself rather than trusting the
+                // header/microformat alone, since YTM's album-level artist credit is often
+                // incomplete (e.g. shows only "Future" for an album that's really
+                // "Future & Metro Boomin" throughout). An artist only belongs in the album
+                // credit if they appear on EVERY track — this naturally excludes one-off
+                // guest features (which show up in the same comma/& format, with no
+                // reliable "feat." marker to detect) while keeping the true core artist(s).
+                //
+                // Uses each song's structured artistNames (parsed directly from the response's
+                // run boundaries) rather than splitArtistNames(song.artist) — the latter is a
+                // best-effort string splitter that deliberately never splits on a bare comma
+                // (to avoid breaking names like "Tyler, The Creator" apart), so genuinely
+                // separate co-artists joined by a comma in the display string — e.g. "¥$, Kanye
+                // West" — were staying merged into one entry unless hardcoded into an allowlist
+                // by name. artistNames has no such ambiguity: it already knows the real
+                // boundary between every name because it reads it from the run structure
+                // itself, not by guessing at punctuation. ──
                 if (songs.isNotEmpty()) {
                     try {
                         val perSongNames = songs.map { it.artistNames.ifEmpty { listOf(it.artist) } }
@@ -915,7 +1008,17 @@ object Innertube {
                         // albumArtist was already resolved to.
                     }
                 }
-            
+                // ── Album artist IDs: same "appears on every track" rule as above, but using
+                // the structured artistNames/artistIds captured directly from each song's
+                // response runs — never re-derived by splitting a display string, since that
+                // can't carry an id. This is what lets tapping an album-artist's name (e.g.
+                // "Kanye West" on Vultures 1, distinct from "¥$") open the exact channel that
+                // name actually links to on YTM, instead of falling back to a name search that
+                // can land on a different, related artist's page. A name only earns an id here
+                // if the same (name, id) pair is present on every single track — this guards
+                // against a rare case where YTM links the same artist name to different browse
+                // ids across tracks; when that happens we simply leave that name's id unknown
+                // rather than guess which one is "right", and it falls back to name search.
                 val albumArtistIdByNameResult: Map<String, String> = try {
                     if (songs.isNotEmpty()) {
                         val perSongPairs = songs.map { s -> s.artistNames.zip(s.artistIds).toSet() }
@@ -957,6 +1060,19 @@ object Innertube {
         null
     }
 
+    /**
+     * Re-resolves a song through the YTM search path (the same one used for browsing/search
+     * results) rather than the plain video extractor, so it picks up the correct multi-artist
+     * splitting and album linkage that older library exports may be missing or have wrong.
+     * Matches the result back to [song] by video ID so the original song's identity is never
+     * lost; falls back to the original untouched [song] if no confident match is found or the
+     * lookup fails, so refreshing metadata can never destroy an existing library entry.
+     *
+     * The search-results subtitle line doesn't always carry every field (duration in
+     * particular is frequently missing there, unlike in an album tracklist), so this merges
+     * the refreshed values onto the original song rather than replacing it outright — a field
+     * the fresh result left blank/zero keeps whatever the original song already had.
+     */
     suspend fun refreshSongMetadata(song: Song): Song = withContext(Dispatchers.IO) {
         try {
             val query = "${song.title} ${song.artist}".trim()
@@ -1331,12 +1447,12 @@ object Innertube {
         withContext(Dispatchers.IO) {
             try {
                 val results = getWatchNextSongs(videoId, limit)
-                Log.d("RelatedSongsDebug", "getWatchNextSongs returned ${results.size} songs for videoId=$videoId")
+                Timber.tag("RelatedSongsDebug").d("getWatchNextSongs returned ${results.size} songs for videoId=$videoId")
                 if (results.isNotEmpty()) return@withContext results
             } catch (e: Exception) {
-                Log.e("RelatedSongsDebug", "getWatchNextSongs threw for videoId=$videoId: ${e.javaClass.simpleName}: ${e.message}", e)
+                Timber.tag("RelatedSongsDebug").e(e, "getWatchNextSongs threw for videoId=$videoId: ${e.javaClass.simpleName}: ${e.message}")
             }
-            Log.d("RelatedSongsDebug", "Falling back to NewPipe related videos for videoId=$videoId")
+            Timber.tag("RelatedSongsDebug").d("Falling back to NewPipe related videos for videoId=$videoId")
             // Fallback only: YTM's own "next"/radio queue occasionally comes back empty (e.g.
             // a video YTM doesn't have a catalog entry for at all). NewPipe's generic related-
             // videos endpoint is a worse source — plain YouTube uploads, not YTM catalog
@@ -1354,19 +1470,19 @@ object Innertube {
     private suspend fun getWatchNextSongs(videoId: String, limit: Int): List<Song> {
         val response = ytmPost("next", JSONObject().put("videoId", videoId))
         if (response == null) {
-            Log.d("RelatedSongsDebug", "getWatchNextSongs: ytmPost(\"next\") returned null (request failed) for videoId=$videoId")
+            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: ytmPost(\"next\") returned null (request failed) for videoId=$videoId")
             return emptyList()
         }
-        Log.d("RelatedSongsDebug", "getWatchNextSongs: raw response (first 500 chars): ${response.toString().take(500)}")
+        Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: raw response (first 500 chars): ${response.toString().take(500)}")
 
         val contentsRoot = response.optJSONObject("contents")
         if (contentsRoot == null) {
-            Log.d("RelatedSongsDebug", "getWatchNextSongs: response has no top-level 'contents' key. Top-level keys: ${response.keys().asSequence().toList()}")
+            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: response has no top-level 'contents' key. Top-level keys: ${response.keys().asSequence().toList()}")
             return emptyList()
         }
         val singleColumn = contentsRoot.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
         if (singleColumn == null) {
-            Log.d("RelatedSongsDebug", "getWatchNextSongs: no 'singleColumnMusicWatchNextResultsRenderer'. contents keys: ${contentsRoot.keys().asSequence().toList()}")
+            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: no 'singleColumnMusicWatchNextResultsRenderer'. contents keys: ${contentsRoot.keys().asSequence().toList()}")
             return emptyList()
         }
         val playlistPanelRenderer = singleColumn
@@ -1377,16 +1493,16 @@ object Innertube {
             ?.optJSONObject("musicQueueRenderer")?.optJSONObject("content")
             ?.optJSONObject("playlistPanelRenderer")
         if (playlistPanelRenderer == null) {
-            Log.d("RelatedSongsDebug", "getWatchNextSongs: found singleColumnMusicWatchNextResultsRenderer but couldn't navigate down to playlistPanelRenderer. Its keys: ${singleColumn.keys().asSequence().toList()}")
+            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: found singleColumnMusicWatchNextResultsRenderer but couldn't navigate down to playlistPanelRenderer. Its keys: ${singleColumn.keys().asSequence().toList()}")
             return emptyList()
         }
 
         val contents = playlistPanelRenderer.optJSONArray("contents")
         if (contents == null) {
-            Log.d("RelatedSongsDebug", "getWatchNextSongs: playlistPanelRenderer has no 'contents' array. Its keys: ${playlistPanelRenderer.keys().asSequence().toList()}")
+            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: playlistPanelRenderer has no 'contents' array. Its keys: ${playlistPanelRenderer.keys().asSequence().toList()}")
             return emptyList()
         }
-        Log.d("RelatedSongsDebug", "getWatchNextSongs: playlistPanelRenderer.contents has ${contents.length()} items")
+        Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: playlistPanelRenderer.contents has ${contents.length()} items")
         val results = mutableListOf<Song>()
 
         for (i in 0 until contents.length()) {
@@ -1394,7 +1510,7 @@ object Innertube {
             val itemObj = contents.optJSONObject(i)
             val renderer = itemObj?.optJSONObject("playlistPanelVideoRenderer")
             if (renderer == null) {
-                Log.d("RelatedSongsDebug", "getWatchNextSongs: item $i has no playlistPanelVideoRenderer. Its keys: ${itemObj?.keys()?.asSequence()?.toList()}")
+                Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: item $i has no playlistPanelVideoRenderer. Its keys: ${itemObj?.keys()?.asSequence()?.toList()}")
                 continue
             }
             try {
@@ -1740,7 +1856,14 @@ object Innertube {
             } catch (e: Exception) { Log.e("Innertube", "getArtistPage error: ${e.message}"); null }
         }
 
-   
+    // ── Search artist by name ─────────────────────────────────────────────────
+    // "Kanye West" and "Madvillain" appearing to merge with "¥$"/"Madlib" turned out to be a
+    // bug in our own search filter params (see searchArtists' `params` blob above) — it was
+    // requesting an extra YTM result-type category that isn't part of the real "artist search"
+    // filter, which threw off which channel search actually returned. Fixed there; the
+    // alias/override logic below is kept as a harmless fallback in case any other name
+    // collision turns out to be a genuine shared-channel case on YTM's side rather than a
+    // parsing bug like this one — add entries here only if that's confirmed for a specific pair.
     private val knownArtistAliases: Map<String, List<String>> = emptyMap()
 
     suspend fun searchArtistByName(name: String): com.rkd.audiobasics.data.ArtistPage? =
