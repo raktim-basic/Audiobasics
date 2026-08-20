@@ -1,6 +1,6 @@
 package com.rkd.audiobasics.lyrics
 
-import android.util.Log
+import timber.log.Timber
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -26,26 +26,26 @@ object LyricsRepository {
     suspend fun getLyrics(title: String, artist: String, duration: Long): LyricsResult? {
         return withContext(Dispatchers.IO) {
             try {
-                Log.d("LyricsRepository", "getLyrics: title='$title' artist='$artist' durationMs=$duration")
+                Timber.tag("LyricsRepository").d("getLyrics: title='$title' artist='$artist' durationMs=$duration")
 
                 // Try synced lyrics first
                 val synced = fetchSynced(title, artist, duration)
                 if (synced != null) {
-                    Log.d("LyricsRepository", "getLyrics: fetchSynced returned hasSynced=${synced.hasSynced} for title='$title' artist='$artist'")
+                    Timber.tag("LyricsRepository").d("getLyrics: fetchSynced returned hasSynced=${synced.hasSynced} for title='$title' artist='$artist'")
                     return@withContext synced
                 }
 
                 // Fall back to plain lyrics
                 val plain = fetchPlain(title, artist)
                 if (plain != null) {
-                    Log.d("LyricsRepository", "getLyrics: fetchSynced found nothing, fetchPlain succeeded (unsynced) for title='$title' artist='$artist'")
+                    Timber.tag("LyricsRepository").d("getLyrics: fetchSynced found nothing, fetchPlain succeeded (unsynced) for title='$title' artist='$artist'")
                     return@withContext plain
                 }
 
-                Log.d("LyricsRepository", "getLyrics: no result from either endpoint for title='$title' artist='$artist'")
+                Timber.tag("LyricsRepository").d("getLyrics: no result from either endpoint for title='$title' artist='$artist'")
                 null
             } catch (e: Exception) {
-                Log.e("LyricsRepository", "Error fetching lyrics: ${e.message}")
+                Timber.tag("LyricsRepository").e("Error fetching lyrics: ${e.message}")
                 null
             }
         }
@@ -57,10 +57,10 @@ object LyricsRepository {
             val encodedArtist = URLEncoder.encode(artist, "UTF-8")
             val durationSecs = duration / 1000
             val url = "$BASE_URL/get?track_name=$encodedTitle&artist_name=$encodedArtist&duration=$durationSecs"
-            Log.d("LyricsRepository", "fetchSynced: GET $url")
+            Timber.tag("LyricsRepository").d("fetchSynced: GET $url")
 
             val response = URL(url).readText()
-            Log.d("LyricsRepository", "fetchSynced: response=${response.take(300)}")
+            Timber.tag("LyricsRepository").d("fetchSynced: response=${response.take(300)}")
             val json = JSONObject(response)
 
             val syncedLyrics = json.optString("syncedLyrics", "")
@@ -75,7 +75,7 @@ object LyricsRepository {
 
             val plainLyrics = json.optString("plainLyrics", "")
             if (plainLyrics.isNotBlank()) {
-                Log.d("LyricsRepository", "fetchSynced: /get matched a track but it has no syncedLyrics, only plainLyrics")
+                Timber.tag("LyricsRepository").d("fetchSynced: /get matched a track but it has no syncedLyrics, only plainLyrics")
                 return LyricsResult(
                     syncedLines = emptyList(),
                     plainText = plainLyrics,
@@ -92,7 +92,7 @@ object LyricsRepository {
             // song coming back unsynced: an exact track_name/artist_name/duration match failed
             // on LRCLIB's side, so this whole function returned null and the caller fell back to
             // the fuzzy /search endpoint below, which never returns synced lyrics at all.
-            Log.e("LyricsRepository", "Synced fetch failed (likely a 404 = no exact match): ${e.message}")
+            Timber.tag("LyricsRepository").e("Synced fetch failed (likely a 404 = no exact match): ${e.message}")
             null
         }
     }
@@ -102,7 +102,7 @@ object LyricsRepository {
             val encodedTitle = URLEncoder.encode(title, "UTF-8")
             val encodedArtist = URLEncoder.encode(artist, "UTF-8")
             val url = "$BASE_URL/search?q=$encodedTitle+$encodedArtist"
-            Log.d("LyricsRepository", "fetchPlain: GET $url")
+            Timber.tag("LyricsRepository").d("fetchPlain: GET $url")
 
             val response = URL(url).readText()
             val arr = JSONArray(response)
@@ -118,7 +118,7 @@ object LyricsRepository {
                 hasSynced = false
             )
         } catch (e: Exception) {
-            Log.e("LyricsRepository", "Plain fetch failed: ${e.message}")
+            Timber.tag("LyricsRepository").e("Plain fetch failed: ${e.message}")
             null
         }
     }
