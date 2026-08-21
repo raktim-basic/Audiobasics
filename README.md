@@ -59,7 +59,7 @@ Audiobasics is built around a simple idea:
 
 You choose the music.
 
-Found something? Search for it. Play it. Save it if you like it. Build your own library.
+Found something? Search it. Play it. Save it if you like it. Build your own library.
 
 also while keeping it lightweight..
 
