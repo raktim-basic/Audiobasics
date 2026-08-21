@@ -26,7 +26,7 @@ import okhttp3.Request
 import org.json.JSONArray
 import com.rkd.audiobasics.ui.theme.NothingFont
 
-private const val NEWPIPE_CURRENT = "v0.26.3"
+private const val NEWPIPE_CURRENT = "v0.26.5"
 private const val YTM_CURRENT = "1.20260520.01.00"
 
 private suspend fun fetchLatestNewPipeVersion(): String? = withContext(Dispatchers.IO) {
