@@ -1,16 +1,15 @@
-## Audiobasics
+# Audiobasics
 A lightweight music player for android
 
 (really lightweight)
 
-
+#
 <a href="https://github.com/raktim-basic/Audiobasics/releases/latest">
   <img src="https://raw.githubusercontent.com/raktim-basic/Audiobasics/main/app/src/main/assets/download.svg"
        alt="DOWNLOAD for android">
 </a>
 
-
-
+#
 Just you and your music, no recommendation bs.
 
 listen what you choose, yes you. because sometimes choosing yourself feels better.
@@ -21,8 +20,8 @@ my finals are nearby so the development will be a bit slower.
 
 still usable as a solid daily driver.
 
-## Features
-# Playback
+# Features
+## Playback
 
 • Play music from online sources
 
@@ -30,7 +29,7 @@ still usable as a solid daily driver.
 
 • Play music directly from links
 
-# Library
+## Library
 
 • Build your own music library
 
@@ -40,11 +39,11 @@ still usable as a solid daily driver.
 
 • Offline access to your library
 
-# Lyrics support
+## Lyrics support
 
 • Offline synced lyrics in your library (if available in LRCLIB)
 
-# Interface
+## Interface
 
 • Lightweight and focused
 
@@ -54,7 +53,7 @@ still usable as a solid daily driver.
 
 • Built around finding and playing the music you want
 
-## Why Audiobasics?
+# Why Audiobasics?
 
 Audiobasics is built around a simple idea:
 
@@ -64,27 +63,27 @@ Found something? Search for it. Play it. Save it if you like it. Build your own 
 
 also while keeping it lightweight..
 
-## Special Thanks
+# Special Thanks
 
 Audiobasics is built with and inspired by open-source software.
 
-| [Metrolist](https://github.com/MetrolistGroup/Metrolist) | Backend components and inspiration |
+[Metrolist](https://github.com/MetrolistGroup/Metrolist) | Backend components and inspiration
 
-| [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) | Music extraction and metadata |
+[NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) | Music extraction and metadata
 
-| [LRCLIB](https://lrclib.net/) | Lyrics |
+[LRCLIB](https://lrclib.net/) | Lyrics
 
 and thanks to the wider open source community
 
-## Contributors
+# Contributors
 
 just me rn, you're welcome if u wanna join in...
 
-## License
+# License
 
 Audiobasics is free and open-source software licensed under the GNU General Public License v3.0.
 
-## Disclaimer
+# Disclaimer
 
 Audiobasics is not affiliated with, funded, authorized, endorsed by, or associated with YouTube, Google LLC, or any of their affiliates.
 
