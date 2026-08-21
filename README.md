@@ -4,7 +4,8 @@ A lightweight music player for android
 (really lightweight)
 
 <a href="https://github.com/raktim-basic/Audiobasics/releases/latest">
-  <img src="https://img.shields.io/badge/Download-Latest%20Release-E53935?style=for-the-badge&logo=android&logoColor=white&labelColor=E53935" alt="Download">
+  <img src="https://raw.githubusercontent.com/raktim-basic/Audiobasics/main/assets/download.svg"
+       alt="DOWNLOAD for android">
 </a>
 
 Just you and your music, no recommendation bs.
