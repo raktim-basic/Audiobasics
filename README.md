@@ -1,7 +1,7 @@
 # Audiobasics
-A lightweight music player for android
+A lightweight music client for android
 
-(really lightweight)
+(really lightweight..)
 
 #
 <a href="https://github.com/raktim-basic/Audiobasics/releases/latest">
