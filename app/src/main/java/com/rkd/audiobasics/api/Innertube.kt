@@ -1467,118 +1467,155 @@ object Innertube {
     // NewPipe-based "related videos" fetch that was pulling in plain YouTube uploads (fan
     // uploads, lyric videos, "(Official Audio)" title clutter) with poor/missing metadata,
     // since that endpoint is YouTube's general recommendation surface, not YTM's music one.
+    //
+    // The FIRST `next` response only ever contains a short preview (often just the seed song
+    // itself, plus one or two more) followed by an `automixPreviewVideoRenderer` "card" —
+    // that's YTM's own "continue with an automatic mix" prompt, not a real song, and its
+    // presence is exactly how the real YTM app knows there's more to fetch. The actual full
+    // "up next" queue only comes from following that card's own playlistId with a SECOND
+    // `next` request. Skipping that step (as the first version of this function did) means
+    // getting at most 1-2 real songs back before silently falling through to the worse
+    // NewPipe fallback — not because the real endpoint doesn't have more, but because we
+    // never asked for the rest of it.
     private suspend fun getWatchNextSongs(videoId: String, limit: Int): List<Song> {
-        val response = ytmPost("next", JSONObject().put("videoId", videoId))
-        if (response == null) {
-            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: ytmPost(\"next\") returned null (request failed) for videoId=$videoId")
-            return emptyList()
-        }
-        Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: raw response (first 500 chars): ${response.toString().take(500)}")
+        val seen = LinkedHashMap<String, Song>() // de-duped, insertion-ordered
+        var nextVideoId: String? = videoId
+        var nextPlaylistId: String? = null
+        var hops = 0
 
-        val contentsRoot = response.optJSONObject("contents")
-        if (contentsRoot == null) {
-            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: response has no top-level 'contents' key. Top-level keys: ${response.keys().asSequence().toList()}")
-            return emptyList()
-        }
-        val singleColumn = contentsRoot.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
-        if (singleColumn == null) {
-            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: no 'singleColumnMusicWatchNextResultsRenderer'. contents keys: ${contentsRoot.keys().asSequence().toList()}")
-            return emptyList()
-        }
-        val playlistPanelRenderer = singleColumn
-            .optJSONObject("tabbedRenderer")
-            ?.optJSONObject("watchNextTabbedResultsRenderer")
-            ?.optJSONArray("tabs")?.optJSONObject(0)
-            ?.optJSONObject("tabRenderer")?.optJSONObject("content")
-            ?.optJSONObject("musicQueueRenderer")?.optJSONObject("content")
-            ?.optJSONObject("playlistPanelRenderer")
-        if (playlistPanelRenderer == null) {
-            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: found singleColumnMusicWatchNextResultsRenderer but couldn't navigate down to playlistPanelRenderer. Its keys: ${singleColumn.keys().asSequence().toList()}")
-            return emptyList()
-        }
+        while (seen.size < limit && hops < 4) { // small hard cap: this is a queue-fill, not a crawl
+            hops++
+            val body = JSONObject()
+            if (nextPlaylistId != null) body.put("playlistId", nextPlaylistId)
+            else if (nextVideoId != null) body.put("videoId", nextVideoId)
+            else break
 
-        val contents = playlistPanelRenderer.optJSONArray("contents")
-        if (contents == null) {
-            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: playlistPanelRenderer has no 'contents' array. Its keys: ${playlistPanelRenderer.keys().asSequence().toList()}")
-            return emptyList()
-        }
-        Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: playlistPanelRenderer.contents has ${contents.length()} items")
-        val results = mutableListOf<Song>()
-
-        for (i in 0 until contents.length()) {
-            if (results.size >= limit) break
-            val itemObj = contents.optJSONObject(i)
-            val renderer = itemObj?.optJSONObject("playlistPanelVideoRenderer")
-            if (renderer == null) {
-                Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: item $i has no playlistPanelVideoRenderer. Its keys: ${itemObj?.keys()?.asSequence()?.toList()}")
-                continue
+            val response = ytmPost("next", body)
+            if (response == null) {
+                Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: ytmPost(\"next\") returned null on hop $hops (videoId=$nextVideoId playlistId=$nextPlaylistId)")
+                break
             }
-            try {
-                val id = renderer.optString("videoId", "")
-                if (id.isBlank() || id == videoId) continue // skip the seed song itself
+            if (hops == 1) {
+                Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: raw response (first 500 chars): ${response.toString().take(500)}")
+            }
 
-                val title = renderer.optJSONObject("title")
-                    ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text", "")
-                if (title.isNullOrBlank()) continue
+            val playlistPanelRenderer = response.optJSONObject("contents")
+                ?.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
+                ?.optJSONObject("tabbedRenderer")
+                ?.optJSONObject("watchNextTabbedResultsRenderer")
+                ?.optJSONArray("tabs")?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")?.optJSONObject("content")
+                ?.optJSONObject("musicQueueRenderer")?.optJSONObject("content")
+                ?.optJSONObject("playlistPanelRenderer")
+            if (playlistPanelRenderer == null) {
+                Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: hop $hops couldn't navigate down to playlistPanelRenderer")
+                break
+            }
 
-                // longBylineText carries "Artist • Album" (or just "Artist" for some rows),
-                // runs-separated the same way as everywhere else in this file.
-                val bylineRuns = renderer.optJSONObject("longBylineText")?.optJSONArray("runs")
-                var artist = ""
-                var artistNames: List<String> = emptyList()
-                var artistIds: List<String?> = emptyList()
-                var albumId = ""
-                var albumTitle = ""
-                if (bylineRuns != null) {
-                    val artistParts = mutableListOf<String>()
-                    val artistRunObjs = mutableListOf<JSONObject>()
-                    var hitDot = false
-                    for (r in 0 until bylineRuns.length()) {
-                        val runObj = bylineRuns.optJSONObject(r)
-                        val t = runObj?.optString("text", "") ?: ""
-                        if (t == " • " || t == "•") {
-                            if (!hitDot) { hitDot = true; continue } else break
-                        }
-                        if (t.isBlank()) continue
-                        if (!hitDot) {
-                            artistParts.add(t)
-                            if (runObj != null) artistRunObjs.add(runObj)
-                        } else if (albumTitle.isBlank()) {
-                            albumTitle = t
-                            albumId = runObj?.optJSONObject("navigationEndpoint")
-                                ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
-                        }
-                    }
-                    artist = artistParts.joinToString("")
-                    val nameIdPairs = extractArtistNameIdPairsFromRuns(artistRunObjs)
-                    artistNames = nameIdPairs.map { it.first }
-                    artistIds = nameIdPairs.map { it.second }
+            val contents = playlistPanelRenderer.optJSONArray("contents")
+            if (contents == null) {
+                Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: hop $hops playlistPanelRenderer has no 'contents' array")
+                break
+            }
+            Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: hop $hops playlistPanelRenderer.contents has ${contents.length()} items")
+
+            var automixPlaylistId: String? = null
+            for (i in 0 until contents.length()) {
+                val itemObj = contents.optJSONObject(i) ?: continue
+
+                itemObj.optJSONObject("automixPreviewVideoRenderer")?.let { automix ->
+                    automixPlaylistId = automix.optJSONObject("content")
+                        ?.optJSONObject("automixPlaylistVideoRenderer")
+                        ?.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("watchPlaylistEndpoint")
+                        ?.optString("playlistId")?.takeIf { it.isNotBlank() }
+                    return@let
                 }
 
-                val durationText = renderer.optJSONObject("lengthText")
-                    ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text", "")
-                val durationMs = if (!durationText.isNullOrBlank()) parseDurationString(durationText) else 0L
+                val renderer = itemObj.optJSONObject("playlistPanelVideoRenderer") ?: continue
+                try {
+                    val song = parsePlaylistPanelVideoRenderer(renderer) ?: continue
+                    if (song.id != videoId) seen.putIfAbsent(song.id, song)
+                } catch (_: Exception) {}
+            }
 
-                val thumbArr = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                val thumbUrl = thumbArr?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
-                    ?.takeIf { it.isNotBlank() }?.let { upscaleThumbnail(it) } ?: ytThumbnail(id)
-
-                val isExplicit = renderer.optJSONArray("badges")?.let { badges ->
-                    (0 until badges.length()).any { bi ->
-                        badges.optJSONObject(bi)?.optJSONObject("musicInlineBadgeRenderer")
-                            ?.optJSONObject("icon")?.optString("iconType", "") == "MUSIC_EXPLICIT_BADGE"
-                    }
-                } ?: false
-
-                results.add(Song(
-                    id = id, title = title, artist = artist,
-                    artistNames = artistNames, artistIds = artistIds,
-                    thumbnail = thumbUrl, duration = durationMs,
-                    albumId = albumId, albumTitle = albumTitle, isExplicit = isExplicit
-                ))
-            } catch (_: Exception) {}
+            if (automixPlaylistId == null) {
+                Timber.tag("RelatedSongsDebug").d("getWatchNextSongs: hop $hops had no automix continuation — stopping (have ${seen.size} songs)")
+                break
+            }
+            nextPlaylistId = automixPlaylistId
+            nextVideoId = null
         }
-        return results
+
+        return seen.values.take(limit).toList()
+    }
+
+    /** Parses one song out of a `playlistPanelVideoRenderer` (used by both the initial "next"
+     *  response's preview items and the automix continuation's real queue items — same shape
+     *  either way). Returns null if the renderer doesn't look like a real playable song. */
+    private fun parsePlaylistPanelVideoRenderer(renderer: JSONObject): Song? {
+        val id = renderer.optString("videoId", "")
+        if (id.isBlank()) return null
+
+        val title = renderer.optJSONObject("title")
+            ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text", "")
+        if (title.isNullOrBlank()) return null
+
+        // longBylineText carries "Artist • Album" (or just "Artist" for some rows),
+        // runs-separated the same way as everywhere else in this file.
+        val bylineRuns = renderer.optJSONObject("longBylineText")?.optJSONArray("runs")
+        var artist = ""
+        var artistNames: List<String> = emptyList()
+        var artistIds: List<String?> = emptyList()
+        var albumId = ""
+        var albumTitle = ""
+        if (bylineRuns != null) {
+            val artistParts = mutableListOf<String>()
+            val artistRunObjs = mutableListOf<JSONObject>()
+            var hitDot = false
+            for (r in 0 until bylineRuns.length()) {
+                val runObj = bylineRuns.optJSONObject(r)
+                val t = runObj?.optString("text", "") ?: ""
+                if (t == " • " || t == "•") {
+                    if (!hitDot) { hitDot = true; continue } else break
+                }
+                if (t.isBlank()) continue
+                if (!hitDot) {
+                    artistParts.add(t)
+                    if (runObj != null) artistRunObjs.add(runObj)
+                } else if (albumTitle.isBlank()) {
+                    albumTitle = t
+                    albumId = runObj?.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("browseEndpoint")?.optString("browseId") ?: ""
+                }
+            }
+            artist = artistParts.joinToString("")
+            val nameIdPairs = extractArtistNameIdPairsFromRuns(artistRunObjs)
+            artistNames = nameIdPairs.map { it.first }
+            artistIds = nameIdPairs.map { it.second }
+        }
+
+        val durationText = renderer.optJSONObject("lengthText")
+            ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text", "")
+        val durationMs = if (!durationText.isNullOrBlank()) parseDurationString(durationText) else 0L
+
+        val thumbArr = renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        val thumbUrl = thumbArr?.let { it.optJSONObject(it.length() - 1)?.optString("url") }
+            ?.takeIf { it.isNotBlank() }?.let { upscaleThumbnail(it) } ?: ytThumbnail(id)
+
+        val isExplicit = renderer.optJSONArray("badges")?.let { badges ->
+            (0 until badges.length()).any { bi ->
+                badges.optJSONObject(bi)?.optJSONObject("musicInlineBadgeRenderer")
+                    ?.optJSONObject("icon")?.optString("iconType", "") == "MUSIC_EXPLICIT_BADGE"
+            }
+        } ?: false
+
+        return Song(
+            id = id, title = title, artist = artist,
+            artistNames = artistNames, artistIds = artistIds,
+            thumbnail = thumbUrl, duration = durationMs,
+            albumId = albumId, albumTitle = albumTitle, isExplicit = isExplicit
+        )
     }
 
     private suspend fun getRelatedSongsViaNewPipe(context: Context, videoId: String, limit: Int): List<Song> =
