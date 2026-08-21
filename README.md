@@ -69,7 +69,7 @@ Audiobasics is built with and inspired by open-source software.
 
 [Metrolist](https://github.com/MetrolistGroup/Metrolist) | Backend components and inspiration
 
-[NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) | Music extraction and metadata
+[NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) | Music extraction and more
 
 [LRCLIB](https://lrclib.net/) | Lyrics
 
