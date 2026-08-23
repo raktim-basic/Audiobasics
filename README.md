@@ -23,11 +23,13 @@ still usable as a solid daily driver.
 # Features
 ## Playback
 
-• Play music from online sources
+• Stream music from online sources
+
+• Add 'em to your library
 
 • Background playback
 
-• Play music directly from links
+• Stream music directly from links
 
 ## Library
 
