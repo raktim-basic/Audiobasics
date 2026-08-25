@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -101,14 +102,31 @@ fun SongItem(
         val cachedThumbPath = remember(song.id) {
             com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, song.id)
         }
-        AsyncImage(
-            model = cachedThumbPath ?: song.thumbnail,
-            contentDescription = null,
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(6.dp)),
-            contentScale = ContentScale.Crop
-        )
+        if (isDragging) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SwapVert,
+                    contentDescription = "Reordering",
+                    tint = textColor,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+        } else {
+            AsyncImage(
+                model = cachedThumbPath ?: song.thumbnail,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+                contentScale = ContentScale.Crop
+            )
+        }
 
         Spacer(Modifier.width(12.dp))
 
