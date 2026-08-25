@@ -260,7 +260,14 @@ fun QueueScreen(
                             isPlaying = isCurrentSong,
                             hapticsEnabled = hapticsEnabled,
                             context = context,
-                            onClick = { vm.playWithQueue(song, queue) },
+                            onClick = {
+                                // While any item is armed for reorder, taps must not change
+                                // playback — a press-and-release-without-moving can otherwise
+                                // race the drag gesture and fire this as a normal click.
+                                if (draggingIndex == null) {
+                                    vm.playWithQueue(song, queue)
+                                }
+                            },
                             onLike = { vm.toggleLike(song) },
                             onShare = {},
                             onRemoveFromQueue = { vm.removeFromQueue(song) },
