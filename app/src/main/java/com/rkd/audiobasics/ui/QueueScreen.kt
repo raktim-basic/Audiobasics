@@ -135,19 +135,21 @@ fun QueueScreen(
             )
             Spacer(Modifier.width(12.dp))
             Text(
-                text = "Queue",
+                text = if (draggingIndex != null) "Drag and drop" else "Queue",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 22.sp,
                 color = textColor
             )
             Spacer(Modifier.weight(1f))
-            Text(
-                text = "${queue.size} songs",
-                fontFamily = NothingFont,
-                fontSize = 13.sp,
-                color = Color.Gray
-            )
+            if (draggingIndex == null) {
+                Text(
+                    text = "${queue.size} songs",
+                    fontFamily = NothingFont,
+                    fontSize = 13.sp,
+                    color = Color.Gray
+                )
+            }
         }
 
         DashedDivider(
