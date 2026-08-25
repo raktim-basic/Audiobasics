@@ -85,7 +85,7 @@ fun QueueScreen(
         }
     }
 
-    LaunchedEffect(currentSong, queue) {
+    LaunchedEffect(currentSong?.id) {
         val idx = queue.indexOfFirst { it.id == currentSong?.id }
         if (idx < 0) return@LaunchedEffect
         if (!hasHandledInitialScroll) {
@@ -93,8 +93,9 @@ fun QueueScreen(
             // so no animation here; just mark it handled.
             hasHandledInitialScroll = true
         } else {
-            // Current song changed while the queue screen is already open
-            // (e.g. track advanced/skipped) — animate to the new position.
+            // The currently playing song actually changed (e.g. track advanced/
+            // skipped) — animate to its new position. Reordering the queue does
+            // NOT change currentSong?.id, so it never re-triggers this effect.
             listState.animateScrollToItem(idx)
         }
     }
