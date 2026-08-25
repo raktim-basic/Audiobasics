@@ -70,7 +70,11 @@ fun QueueScreen(
     val sleepTimerRemaining by vm.sleepTimerRemaining.collectAsState()
     var showSleepDialog by remember { mutableStateOf(false) }
 
-    val listState = rememberLazyListState()
+    val initialQueueIndex = remember {
+        queue.indexOfFirst { it.id == currentSong?.id }.coerceAtLeast(0)
+    }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialQueueIndex)
+    var hasHandledInitialScroll by remember { mutableStateOf(false) }
 
     val scrollProgress = remember(listState, queue.size) {
         derivedStateOf {
@@ -83,7 +87,16 @@ fun QueueScreen(
 
     LaunchedEffect(currentSong, queue) {
         val idx = queue.indexOfFirst { it.id == currentSong?.id }
-        if (idx >= 0) listState.animateScrollToItem(idx)
+        if (idx < 0) return@LaunchedEffect
+        if (!hasHandledInitialScroll) {
+            // Screen just opened — listState was already seeded to this index,
+            // so no animation here; just mark it handled.
+            hasHandledInitialScroll = true
+        } else {
+            // Current song changed while the queue screen is already open
+            // (e.g. track advanced/skipped) — animate to the new position.
+            listState.animateScrollToItem(idx)
+        }
     }
 
     if (showSleepDialog) {
