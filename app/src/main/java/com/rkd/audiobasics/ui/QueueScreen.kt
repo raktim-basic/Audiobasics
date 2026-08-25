@@ -91,6 +91,12 @@ fun QueueScreen(
         val current = pendingReorder
         pendingReorder = if (current == null) from.index to to.index else current.first to to.index
         liveQueue.move(from.index, to.index)
+        // The dragged item's rendered index changes every time it crosses another
+        // row. draggingIndex ("armed") must follow it, or the next recomposition
+        // renders this song at `to.index` with armed == false, its drag handle
+        // modifier disappears mid-gesture, and the drag silently stops — which is
+        // exactly the "moves one song then gives up" symptom.
+        draggingIndex = to.index
     }
 
     // Only commit to the ViewModel (and unarm) once the finger actually lifts —
