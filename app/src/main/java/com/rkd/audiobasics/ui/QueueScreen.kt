@@ -3,7 +3,6 @@ package com.rkd.audiobasics.ui
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -20,16 +19,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
+import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+
+private fun <T> MutableList<T>.move(fromIndex: Int, toIndex: Int) {
+    add(toIndex, removeAt(fromIndex))
+}
 
 fun formatCountdown(remainingMs: Long): String {
     val totalSec = (remainingMs / 1000).coerceAtLeast(0)
@@ -62,9 +65,6 @@ fun QueueScreen(
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
-    var dragOffsetY by remember { mutableStateOf(0f) }
-    var targetIndex by remember { mutableStateOf<Int?>(null) }
-    var itemHeightPx by remember { mutableStateOf(80f) }
 
     val sleepTimerMode by vm.sleepTimerMode.collectAsState()
     val sleepTimerRemaining by vm.sleepTimerRemaining.collectAsState()
@@ -75,6 +75,37 @@ fun QueueScreen(
     }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialQueueIndex)
     var hasHandledInitialScroll by remember { mutableStateOf(false) }
+
+    // Local, live-editable copy of the queue. The LazyColumn renders this list, so
+    // dragging an armed item reorders it instantly (with animated reflow of the
+    // other rows) without waiting for the ViewModel/controller round-trip. It's
+    // kept in sync with the real queue whenever that changes for any other reason.
+    val liveQueue = remember { mutableStateListOf<Song>().apply { addAll(queue) } }
+    LaunchedEffect(queue) {
+        liveQueue.clear()
+        liveQueue.addAll(queue)
+    }
+
+    var pendingReorder by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        val current = pendingReorder
+        pendingReorder = if (current == null) from.index to to.index else current.first to to.index
+        liveQueue.move(from.index, to.index)
+    }
+
+    // Only commit to the ViewModel (and unarm) once the finger actually lifts —
+    // this is what "settles" the drag, matching Metrolist's approach. Reading
+    // isAnyItemDragging (rather than watching liveQueue) means a reorder never
+    // fires from anything except a real drag release.
+    LaunchedEffect(reorderableState.isAnyItemDragging) {
+        if (!reorderableState.isAnyItemDragging) {
+            pendingReorder?.let { (from, to) ->
+                if (from != to) vm.reorderQueue(from, to)
+            }
+            pendingReorder = null
+            draggingIndex = null
+        }
+    }
 
     val scrollProgress = remember(listState, queue.size) {
         derivedStateOf {
@@ -177,120 +208,91 @@ fun QueueScreen(
                 state = listState
             ) {
                 itemsIndexed(
-                    items = queue,
+                    items = liveQueue,
                     key = { _, song -> song.id }
                 ) { index, song ->
                     val isCurrentSong = song.id == currentSong?.id
                     val isLiked = likedSongs.any { it.id == song.id }
-                    val isDragging = draggingIndex == index
-                    val isTarget = targetIndex == index
+                    val armed = draggingIndex == index
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onGloballyPositioned { coords ->
-                                if (index == 0) itemHeightPx = coords.size.height.toFloat()
-                            }
-                            .zIndex(if (isDragging) 1f else 0f)
-                            .graphicsLayer {
-                                translationY = if (isDragging) dragOffsetY else 0f
-                                alpha = if (isDragging) 0.85f else 1f
-                                scaleX = if (isDragging) 1.02f else 1f
-                                scaleY = if (isDragging) 1.02f else 1f
-                            }
-                            .background(
-                                when {
-                                    isDragging -> if (isDarkMode)
-                                        Color.White.copy(alpha = 0.1f)
-                                    else Color.Black.copy(alpha = 0.06f)
-                                    isTarget -> Color.Red.copy(alpha = 0.08f)
-                                    isCurrentSong -> if (isDarkMode)
-                                        Color.White.copy(alpha = 0.05f)
-                                    else Color.Black.copy(alpha = 0.04f)
-                                    else -> Color.Transparent
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = song.id
+                    ) { isActivelyDragging ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .graphicsLayer {
+                                    val s = if (isActivelyDragging) 1.02f else 1f
+                                    scaleX = s
+                                    scaleY = s
+                                    alpha = if (isActivelyDragging) 0.9f else 1f
                                 }
-                            )
-                            .then(
-                                if (isDragging) {
-                                    Modifier.pointerInput(index) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = {
+                                .then(
+                                    if (armed) {
+                                        Modifier.longPressDraggableHandle(
+                                            onDragStarted = {
                                                 HapticUtils.performStrongHaptic(context)
-                                                dragOffsetY = 0f
-                                            },
-                                            onDrag = { change, dragAmount ->
-                                                change.consume()
-                                                dragOffsetY += dragAmount.y
-                                                val h = itemHeightPx.takeIf { it > 0 } ?: 80f
-                                                targetIndex = (index + (dragOffsetY / h).toInt())
-                                                    .coerceIn(0, queue.size - 1)
-                                            },
-                                            onDragEnd = {
-                                                val from = draggingIndex
-                                                val to = targetIndex
-                                                if (from != null && to != null && from != to) {
-                                                    vm.reorderQueue(from, to)
-                                                }
-                                                draggingIndex = null
-                                                dragOffsetY = 0f
-                                                targetIndex = null
-                                            },
-                                            onDragCancel = {
-                                                draggingIndex = null
-                                                dragOffsetY = 0f
-                                                targetIndex = null
                                             }
                                         )
+                                    } else Modifier
+                                )
+                                .background(
+                                    when {
+                                        isActivelyDragging -> if (isDarkMode)
+                                            Color.White.copy(alpha = 0.1f)
+                                        else Color.Black.copy(alpha = 0.06f)
+                                        armed -> if (isDarkMode)
+                                            Color.White.copy(alpha = 0.06f)
+                                        else Color.Black.copy(alpha = 0.05f)
+                                        isCurrentSong -> if (isDarkMode)
+                                            Color.White.copy(alpha = 0.05f)
+                                        else Color.Black.copy(alpha = 0.04f)
+                                        else -> Color.Transparent
                                     }
-                                } else Modifier
-                            )
-                    ) {
-                        if (isCurrentSong) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.CenterStart)
-                                    .width(3.dp)
-                                    .height(52.dp)
-                                    .background(Color.Red)
+                                )
+                        ) {
+                            if (isCurrentSong) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterStart)
+                                        .width(3.dp)
+                                        .height(52.dp)
+                                        .background(Color.Red)
+                                )
+                            }
+
+                            SongItem(
+                                song = song,
+                                isDarkMode = isDarkMode,
+                                isLiked = isLiked,
+                                isInQueue = true,
+                                isPlaying = isCurrentSong,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
+                                onClick = {
+                                    // While any item is armed for reorder, taps must not change
+                                    // playback — a press-and-release-without-moving can otherwise
+                                    // race the drag gesture and fire this as a normal click.
+                                    if (draggingIndex == null) {
+                                        vm.playWithQueue(song, queue)
+                                    }
+                                },
+                                onLike = { vm.toggleLike(song) },
+                                onShare = {},
+                                onRemoveFromQueue = { vm.removeFromQueue(song) },
+                                onReorder = {
+                                    draggingIndex = if (armed) null else index
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                },
+                                onRetryCache = { vm.retryCache(song) },
+                                onRemoveLike = { vm.toggleLike(song) },
+                                onAddTo = { onAddTo(song) },
+                                isDragging = armed,
+                                isCaching = song.id in cachingSongIds
                             )
                         }
-
-                        SongItem(
-                            song = song,
-                            isDarkMode = isDarkMode,
-                            isLiked = isLiked,
-                            isInQueue = true,
-                            isPlaying = isCurrentSong,
-                            hapticsEnabled = hapticsEnabled,
-                            context = context,
-                            onClick = {
-                                // While any item is armed for reorder, taps must not change
-                                // playback — a press-and-release-without-moving can otherwise
-                                // race the drag gesture and fire this as a normal click.
-                                if (draggingIndex == null) {
-                                    vm.playWithQueue(song, queue)
-                                }
-                            },
-                            onLike = { vm.toggleLike(song) },
-                            onShare = {},
-                            onRemoveFromQueue = { vm.removeFromQueue(song) },
-                            onReorder = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = null
-                                    dragOffsetY = 0f
-                                    targetIndex = null
-                                } else {
-                                    draggingIndex = index
-                                    dragOffsetY = 0f
-                                }
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            },
-                            onRetryCache = { vm.retryCache(song) },
-                            onRemoveLike = { vm.toggleLike(song) },
-                            onAddTo = { onAddTo(song) },
-                            isDragging = isDragging,
-                            isCaching = song.id in cachingSongIds
-                        )
                     }
                 }
             }
