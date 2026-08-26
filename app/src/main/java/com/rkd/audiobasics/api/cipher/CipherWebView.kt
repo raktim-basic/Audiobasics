@@ -3,8 +3,10 @@ package com.rkd.audiobasics.api.cipher
 import android.content.Context
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -41,6 +43,17 @@ class CipherWebView private constructor(
     var usingHardcodedMode: Boolean = false
         private set
 
+    // Guards against resuming initContinuation twice (normal load vs. onRenderProcessGone
+    // racing each other).
+    @Volatile
+    private var initResolved: Boolean = false
+
+    // Guards against tearing down the WebView twice — onRenderProcessGone destroys it
+    // immediately, but the caller's own retry/cleanup path also calls close() afterward.
+    // Calling WebView methods a second time on an already-dead renderer can itself throw.
+    @Volatile
+    private var isDestroyed: Boolean = false
+
     init {
         Timber.tag(TAG).d("Initializing CipherWebView...")
         Timber.tag(TAG).d("  sigInfo: name=${sigInfo?.name}, constantArg=${sigInfo?.constantArg}, hardcoded=${sigInfo?.isHardcoded}")
@@ -55,6 +68,33 @@ class CipherWebView private constructor(
         settings.blockNetworkLoads = true
 
         webView.addJavascriptInterface(this, JS_INTERFACE)
+
+        // Without this, a renderer-process kill (common under memory pressure — the OS
+        // treats WebView renderer processes as one of the first things it can reclaim)
+        // falls through to WebViewClient's default onRenderProcessGone, which returns
+        // false and takes the whole app process down with it. Handling it here turns
+        // that into a normal, catchable failure instead of a native crash.
+        webView.webViewClient = object : WebViewClient() {
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                val didCrash = runCatching { detail.didCrash() }.getOrNull()
+                Timber.tag(TAG).e("CipherWebView render process gone (didCrash=$didCrash)")
+                val exception = CipherException("WebView render process gone (didCrash=$didCrash)")
+
+                if (!initResolved) {
+                    initResolved = true
+                    initContinuation.resumeWithException(exception)
+                }
+                sigContinuation?.resumeWithException(exception)
+                sigContinuation = null
+                nContinuation?.resumeWithException(exception)
+                nContinuation = null
+
+                // The underlying renderer is already gone — don't try to reuse this
+                // WebView instance.
+                close()
+                return true // handled: tell Android not to kill the app process
+            }
+        }
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
@@ -428,6 +468,7 @@ function discoverAndInit() {
         Timber.tag(TAG).d("discoveredNFuncName=$discoveredNFuncName")
         Timber.tag(TAG).d("usingHardcodedMode=$usingHardcodedMode")
 
+        initResolved = true
         initContinuation.resume(this)
     }
 
@@ -435,6 +476,7 @@ function discoverAndInit() {
     fun onPlayerJsError(error: String) {
         Timber.tag(TAG).e("=== PLAYER.JS LOAD FAILED ===")
         Timber.tag(TAG).e("Error: $error")
+        initResolved = true
         initContinuation.resumeWithException(CipherException("Player JS load failed: $error"))
     }
 
@@ -516,13 +558,25 @@ function discoverAndInit() {
     }
 
     fun close() {
+        if (isDestroyed) {
+            Timber.tag(TAG).d("close(): already destroyed, skipping")
+            return
+        }
+        isDestroyed = true
         Timber.tag(TAG).d("Closing CipherWebView...")
-        webView.clearHistory()
-        webView.clearCache(true)
-        webView.loadUrl("about:blank")
-        webView.onPause()
-        webView.removeAllViews()
-        webView.destroy()
+        // A prior onRenderProcessGone (or a second close() call) may have already torn
+        // this WebView down; the renderer can also already be dead when we get here.
+        // Any of clearHistory/clearCache/loadUrl/onPause/removeAllViews/destroy can throw
+        // in that state, so this teardown must not be allowed to throw back into a
+        // playback error path and become a second crash on top of the first.
+        runCatching {
+            webView.clearHistory()
+            webView.clearCache(true)
+            webView.loadUrl("about:blank")
+            webView.onPause()
+            webView.removeAllViews()
+            webView.destroy()
+        }.onFailure { Timber.tag(TAG).w(it, "close(): error during teardown (webview likely already dead)") }
         Timber.tag(TAG).d("CipherWebView closed")
     }
 
