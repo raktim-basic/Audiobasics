@@ -13,6 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import android.os.Bundle
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -475,7 +476,27 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         val artist = meta.artist?.toString() ?: ""
         val thumbnail = meta.artworkUri?.toString() ?: ""
         val duration = meta.durationMs?.takeIf { it > 0 } ?: 0L
-        return Song(id, title, artist, thumbnail, duration = duration)
+        val extras = meta.extras
+        val albumId = extras?.getString(SongExtraKeys.ALBUM_ID) ?: ""
+        val albumTitle = extras?.getString(SongExtraKeys.ALBUM_TITLE) ?: ""
+        val year = extras?.getString(SongExtraKeys.YEAR) ?: ""
+        val isExplicit = extras?.getBoolean(SongExtraKeys.IS_EXPLICIT) ?: false
+        val artistNames = extras?.getStringArrayList(SongExtraKeys.ARTIST_NAMES) ?: arrayListOf()
+        val artistIds = extras?.getStringArrayList(SongExtraKeys.ARTIST_IDS)
+            ?.map { it.ifEmpty { null } } ?: emptyList()
+        return Song(
+            id = id,
+            title = title,
+            artist = artist,
+            thumbnail = thumbnail,
+            duration = duration,
+            albumId = albumId,
+            albumTitle = albumTitle,
+            year = year,
+            isExplicit = isExplicit,
+            artistNames = artistNames,
+            artistIds = artistIds
+        )
     }
 
     private fun startProgressTracking() {
@@ -660,7 +681,34 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         return if (cached != null) Uri.parse("file://$cached") else Uri.parse(song.thumbnail)
     }
 
+    // Bundle keys for round-tripping Song fields that MediaMetadata has no built-in slot
+    // for. Without this, anything read back via MediaItem.toSong() (queue restore after
+    // a service reconnect, the currentMediaItem fallback, etc.) silently loses albumId/
+    // albumTitle/year/artistNames/artistIds — which is exactly what broke "open artist by
+    // ID" in 2.4.1: artistIdFor() had nothing to look up once the round trip dropped it.
+    private object SongExtraKeys {
+        const val ALBUM_ID = "albumId"
+        const val ALBUM_TITLE = "albumTitle"
+        const val YEAR = "year"
+        const val IS_EXPLICIT = "isExplicit"
+        const val ARTIST_NAMES = "artistNames"
+        // Bundle string-array-lists can't hold nulls; "" stands in for a null id at the
+        // matching artistNames index and is mapped back to null on the way out.
+        const val ARTIST_IDS = "artistIds"
+    }
+
     private fun buildMediaItem(song: Song, uri: String): MediaItem {
+        val extras = Bundle().apply {
+            putString(SongExtraKeys.ALBUM_ID, song.albumId)
+            putString(SongExtraKeys.ALBUM_TITLE, song.albumTitle)
+            putString(SongExtraKeys.YEAR, song.year)
+            putBoolean(SongExtraKeys.IS_EXPLICIT, song.isExplicit)
+            putStringArrayList(SongExtraKeys.ARTIST_NAMES, ArrayList(song.artistNames))
+            putStringArrayList(
+                SongExtraKeys.ARTIST_IDS,
+                ArrayList(song.artistIds.map { it ?: "" })
+            )
+        }
         return MediaItem.Builder()
             .setMediaId(song.id)
             .setUri(uri)
@@ -670,6 +718,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     .setArtist(song.artist)
                     .setArtworkUri(resolveArtworkUri(song))
                     .apply { if (song.duration > 0) setDurationMs(song.duration) }
+                    .setExtras(extras)
                     .build()
             )
             .build()
