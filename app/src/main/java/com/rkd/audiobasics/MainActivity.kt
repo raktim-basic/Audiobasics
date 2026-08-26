@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import com.rkd.audiobasics.ui.DebugLogOverlay
+import com.rkd.audiobasics.ui.CrashReportDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -123,6 +124,7 @@ class MainActivity : ComponentActivity() {
                     AudiobasicsApp(vm = vm, isDarkMode = isDarkMode)
                     DebugLogOverlay(logsEnabled = logsEnabled)
                 }
+                CrashReportDialog()
             }
         }
     }
