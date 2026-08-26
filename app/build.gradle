@@ -43,6 +43,11 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        // Required by NewPipeExtractor: it calls java.net.URLDecoder/URLEncoder
+        // Charset overloads that only exist natively on API 33+. Without this, any
+        // path that falls back to NewPipeExtractor throws NoSuchMethodError and
+        // crashes the app on every device below Android 13.
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
@@ -99,4 +104,8 @@ dependencies {
     ksp 'androidx.room:room-compiler:2.7.0'
 
     implementation 'com.jakewharton.timber:timber:5.0.1'
+
+    // NewPipeExtractor requires this (the "nio" variant specifically, not the
+    // smaller default one) for any minSdk below 33 — see their README.
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.1.5'
 }
