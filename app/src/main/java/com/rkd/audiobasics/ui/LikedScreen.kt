@@ -38,6 +38,15 @@ import com.rkd.audiobasics.utils.HapticUtils
 private var savedLikedIndex = 0
 private var savedLikedOffset = 0
 
+// Called from MainActivity's navigateBack() specifically when Liked is the screen being
+// popped (i.e. the user is leaving it, not just returning to it from something pushed on
+// top like Queue or Song Info). Keeps the existing "resume where I left off" behavior for
+// forward navigation while making an actual back-out start fresh at the top next time.
+internal fun resetLikedScreenScroll() {
+    savedLikedIndex = 0
+    savedLikedOffset = 0
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LikedScreen(
