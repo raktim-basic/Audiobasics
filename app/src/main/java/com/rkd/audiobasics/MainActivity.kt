@@ -63,6 +63,7 @@ import com.rkd.audiobasics.ui.SearchScreen
 import com.rkd.audiobasics.ui.SettingsScreen
 import com.rkd.audiobasics.ui.UpdaterScreen
 import com.rkd.audiobasics.ui.fetchLatestAppVersion
+import com.rkd.audiobasics.ui.resetLikedScreenScroll
 import com.rkd.audiobasics.ui.theme.AppTheme
 import com.rkd.audiobasics.ui.theme.NothingFont
 import kotlinx.coroutines.CoroutineScope
@@ -220,6 +221,7 @@ fun AudiobasicsApp(
     fun navigateBack() {
         if (screenStack.size > 1) {
             if (screenStack.last() is Screen.Search) vm.clearSearch()
+            if (screenStack.last() is Screen.Liked) resetLikedScreenScroll()
             screenStack = screenStack.dropLast(1)
         }
     }
