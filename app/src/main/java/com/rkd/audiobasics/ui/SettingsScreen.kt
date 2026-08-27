@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Download
@@ -150,6 +151,7 @@ private fun SettingsMainPage(
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val logsEnabled by vm.logsEnabled.collectAsState()
+    val isRefreshingCipherEngine by vm.isRefreshingCipherEngine.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -169,18 +171,45 @@ private fun SettingsMainPage(
                 color = textColor,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(
-                onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onNavigateDevTools()
-                },
+            // Kept together in one Row so the pair shifts as a unit — previously only
+            // the dev-tools button had the logs-on offset applied to it individually.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = if (logsEnabled) Modifier.padding(end = 80.dp) else Modifier
             ) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "Dev tools",
-                    tint = textColor
-                )
+                IconButton(
+                    onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.refreshCipherEngine()
+                    },
+                    enabled = !isRefreshingCipherEngine
+                ) {
+                    if (isRefreshingCipherEngine) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = textColor
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Refresh playback engine",
+                            tint = textColor
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onNavigateDevTools()
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Dev tools",
+                        tint = textColor
+                    )
+                }
             }
         }
 
