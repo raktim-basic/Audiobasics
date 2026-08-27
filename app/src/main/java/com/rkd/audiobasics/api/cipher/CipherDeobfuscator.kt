@@ -3,9 +3,11 @@ package com.rkd.audiobasics.api.cipher
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 
 object CipherDeobfuscator {
@@ -30,49 +32,78 @@ object CipherDeobfuscator {
     // Prevents two coroutines from creating a CipherWebView simultaneously.
     private val deobfuscateMutex = Mutex()
 
+    // Without a bound, a stale/broken player.js (YouTube rotates these periodically)
+    // can leave a WebView JS call hanging indefinitely — Mutex.withLock releases the
+    // lock in a finally block even on cancellation, so wrapping the whole locked
+    // section in withTimeout guarantees the lock can never be stuck forever and every
+    // future stream resolution or download queued behind it isn't either. Previously
+    // the only way out of this was force-stopping the app.
+    private const val CIPHER_OP_TIMEOUT_MS = 20_000L
+    // The n-transform fast path below runs without the mutex, so it gets its own
+    // shorter budget — matches PoTokenGenerator's existing timeout convention.
+    private const val N_TRANSFORM_FAST_PATH_TIMEOUT_MS = 8_000L
+
     // Pre-warm the CipherWebView at startup so it's ready before the first song plays.
     // Without this, the first deobfuscation call bears the full ~8-10s WebView init cost,
     // causing the resolver to time out before the stream URL is ready.
     suspend fun warmUp() {
         Timber.tag(TAG).d("warmUp: pre-creating CipherWebView...")
-        deobfuscateMutex.withLock {
-            if (cipherWebView != null) {
-                Timber.tag(TAG).d("warmUp: CipherWebView already exists, skipping")
-                return
-            }
-            try {
-                val webView = getOrCreateWebView(forceRefresh = false)
-                if (webView != null) {
-                    Timber.tag(TAG).d("warmUp: CipherWebView ready ✅ " +
-                            "(sig=${webView.sigFunctionAvailable} n=${webView.nFunctionAvailable})")
-                } else {
-                    Timber.tag(TAG).w("warmUp: CipherWebView creation returned null")
+        try {
+            withTimeout(CIPHER_OP_TIMEOUT_MS) {
+                deobfuscateMutex.withLock {
+                    if (cipherWebView != null) {
+                        Timber.tag(TAG).d("warmUp: CipherWebView already exists, skipping")
+                        return@withLock
+                    }
+                    try {
+                        val webView = getOrCreateWebView(forceRefresh = false)
+                        if (webView != null) {
+                            Timber.tag(TAG).d("warmUp: CipherWebView ready ✅ " +
+                                    "(sig=${webView.sigFunctionAvailable} n=${webView.nFunctionAvailable})")
+                        } else {
+                            Timber.tag(TAG).w("warmUp: CipherWebView creation returned null")
+                        }
+                    } catch (e: Exception) {
+                        Timber.tag(TAG).w("warmUp failed (non-fatal, will retry on first use): ${e.message}")
+                    }
                 }
-            } catch (e: Exception) {
-                Timber.tag(TAG).w("warmUp failed (non-fatal, will retry on first use): ${e.message}")
             }
+        } catch (e: TimeoutCancellationException) {
+            Timber.tag(TAG).e("warmUp timed out after ${CIPHER_OP_TIMEOUT_MS}ms — clearing stale state")
+            cleanupAfterTimeout()
         }
     }
 
     suspend fun deobfuscateStreamUrl(signatureCipher: String, videoId: String): String? =
-        deobfuscateMutex.withLock {
-            Timber.tag(TAG).d("=== DEOBFUSCATE STREAM URL ===")
-            Timber.tag(TAG).d("videoId: $videoId")
-            Timber.tag(TAG).d("signatureCipher length: ${signatureCipher.length}")
-            Timber.tag(TAG).d("signatureCipher preview: ${signatureCipher.take(100)}...")
-            try {
-                deobfuscateInternal(signatureCipher, videoId, isRetry = false)
-            } catch (e: Exception) {
-                Timber.tag(TAG).e(e, "Cipher deobfuscation failed, retrying with fresh JS: ${e.message}")
-                try {
-                    PlayerJsFetcher.invalidateCache()
-                    closeWebView()
-                    deobfuscateInternal(signatureCipher, videoId, isRetry = true)
-                } catch (retryE: Exception) {
-                    Timber.tag(TAG).e(retryE, "Cipher deobfuscation retry also failed: ${retryE.message}")
-                    null
+        try {
+            withTimeout(CIPHER_OP_TIMEOUT_MS) {
+                deobfuscateMutex.withLock {
+                    Timber.tag(TAG).d("=== DEOBFUSCATE STREAM URL ===")
+                    Timber.tag(TAG).d("videoId: $videoId")
+                    Timber.tag(TAG).d("signatureCipher length: ${signatureCipher.length}")
+                    Timber.tag(TAG).d("signatureCipher preview: ${signatureCipher.take(100)}...")
+                    try {
+                        deobfuscateInternal(signatureCipher, videoId, isRetry = false)
+                    } catch (e: Exception) {
+                        Timber.tag(TAG).e(e, "Cipher deobfuscation failed, retrying with fresh JS: ${e.message}")
+                        try {
+                            PlayerJsFetcher.invalidateCache()
+                            closeWebView()
+                            deobfuscateInternal(signatureCipher, videoId, isRetry = true)
+                        } catch (retryE: Exception) {
+                            Timber.tag(TAG).e(retryE, "Cipher deobfuscation retry also failed: ${retryE.message}")
+                            null
+                        }
+                    }
                 }
             }
+        } catch (e: TimeoutCancellationException) {
+            // A stale/rotated player.js can leave the WebView hanging mid-call. Without
+            // this, deobfuscateMutex stays locked forever and every song — streaming or
+            // downloading — spins indefinitely until the app is force-stopped.
+            Timber.tag(TAG).e("Cipher deobfuscation timed out after ${CIPHER_OP_TIMEOUT_MS}ms for videoId=$videoId — clearing stale state")
+            cleanupAfterTimeout()
+            null
         }
 
     private suspend fun deobfuscateInternal(
@@ -136,15 +167,23 @@ object CipherDeobfuscator {
         // transformNParamInUrl is called after deobfuscateStreamUrl in the same flow
         val webView = cipherWebView ?: run {
             Timber.tag(TAG).w("No CipherWebView for n-transform, acquiring lock...")
-            return deobfuscateMutex.withLock {
-                val wv = getOrCreateWebView(forceRefresh = false)
-                if (wv == null || !wv.nFunctionAvailable) {
-                    Timber.tag(TAG).e("N-transform function not available")
-                    return url
+            return try {
+                withTimeout(CIPHER_OP_TIMEOUT_MS) {
+                    deobfuscateMutex.withLock {
+                        val wv = getOrCreateWebView(forceRefresh = false)
+                        if (wv == null || !wv.nFunctionAvailable) {
+                            Timber.tag(TAG).e("N-transform function not available")
+                            return@withLock url
+                        }
+                        val transformed = wv.transformN(nValue)
+                        Timber.tag(TAG).d("N-param: $nValue -> $transformed")
+                        url.replaceFirst(Regex("([?&])n=[^&]+"), "$1n=${Uri.encode(transformed)}")
+                    }
                 }
-                val transformed = wv.transformN(nValue)
-                Timber.tag(TAG).d("N-param: $nValue -> $transformed")
-                url.replaceFirst(Regex("([?&])n=[^&]+"), "$1n=${Uri.encode(transformed)}")
+            } catch (e: TimeoutCancellationException) {
+                Timber.tag(TAG).e("N-transform (cold path) timed out after ${CIPHER_OP_TIMEOUT_MS}ms")
+                cleanupAfterTimeout()
+                url
             }
         }
 
@@ -153,7 +192,13 @@ object CipherDeobfuscator {
             return url
         }
 
-        val transformedN = webView.transformN(nValue)
+        val transformedN = try {
+            withTimeout(N_TRANSFORM_FAST_PATH_TIMEOUT_MS) { webView.transformN(nValue) }
+        } catch (e: TimeoutCancellationException) {
+            Timber.tag(TAG).e("N-transform timed out after ${N_TRANSFORM_FAST_PATH_TIMEOUT_MS}ms — clearing stale state")
+            cleanupAfterTimeout()
+            return url
+        }
         Timber.tag(TAG).d("N-param: $nValue -> $transformedN")
 
         return url.replaceFirst(
@@ -233,6 +278,50 @@ object CipherDeobfuscator {
         cipherWebView = null
         currentPlayerHash = null
         Timber.tag(TAG).d("CipherWebView closed")
+    }
+
+    // Runs after a CIPHER_OP_TIMEOUT_MS/N_TRANSFORM_FAST_PATH_TIMEOUT_MS timeout fires.
+    // By that point deobfuscateMutex has already been released (Mutex.withLock always
+    // unlocks in a finally, even on cancellation), so this is a normal, safe lock
+    // acquisition — not a race against whatever hung. Drops the cached player.js too,
+    // not just the WebView, since a rotated/stale hash is the most likely cause of a
+    // hang in the first place, and the next attempt should start from a clean slate.
+    private suspend fun cleanupAfterTimeout() {
+        try {
+            deobfuscateMutex.withLock {
+                PlayerJsFetcher.invalidateCache()
+                closeWebView()
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "cleanupAfterTimeout failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Full manual reset: drops the cached player.js, closes the current CipherWebView,
+     * and re-fetches + re-warms from scratch. This is what the Settings "Refresh" button
+     * triggers, for when YouTube rotates player.js and playback/downloads are stuck
+     * spinning — previously the only fix was force-stopping the app. Safe to call even
+     * if something else is currently mid-hang: CIPHER_OP_TIMEOUT_MS bounds how long this
+     * can possibly wait for the lock, since nothing can hold it forever anymore.
+     */
+    suspend fun forceReset(): Boolean {
+        Timber.tag(TAG).w("forceReset: user-triggered — invalidating cache and re-warming CipherWebView")
+        return try {
+            withTimeout(CIPHER_OP_TIMEOUT_MS) {
+                deobfuscateMutex.withLock {
+                    PlayerJsFetcher.invalidateCache()
+                    closeWebView()
+                    getOrCreateWebView(forceRefresh = true) != null
+                }
+            }
+        } catch (e: TimeoutCancellationException) {
+            Timber.tag(TAG).e("forceReset timed out after ${CIPHER_OP_TIMEOUT_MS}ms")
+            false
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "forceReset failed: ${e.message}")
+            false
+        }
     }
 
     private fun parseQueryParams(query: String): Map<String, String> {
