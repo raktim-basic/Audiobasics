@@ -63,6 +63,7 @@ import com.rkd.audiobasics.ui.SearchScreen
 import com.rkd.audiobasics.ui.SettingsScreen
 import com.rkd.audiobasics.ui.UpdaterScreen
 import com.rkd.audiobasics.ui.fetchLatestAppVersion
+import com.rkd.audiobasics.ui.resetCustomPlaylistScroll
 import com.rkd.audiobasics.ui.resetLikedScreenScroll
 import com.rkd.audiobasics.ui.theme.AppTheme
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -220,8 +221,10 @@ fun AudiobasicsApp(
     fun navigate(screen: Screen) { screenStack = screenStack + screen }
     fun navigateBack() {
         if (screenStack.size > 1) {
-            if (screenStack.last() is Screen.Search) vm.clearSearch()
-            if (screenStack.last() is Screen.Liked) resetLikedScreenScroll()
+            val leaving = screenStack.last()
+            if (leaving is Screen.Search) vm.clearSearch()
+            if (leaving is Screen.Liked) resetLikedScreenScroll()
+            if (leaving is Screen.CustomPlaylist) resetCustomPlaylistScroll(leaving.playlist.id)
             screenStack = screenStack.dropLast(1)
         }
     }
