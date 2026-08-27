@@ -8,6 +8,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import com.rkd.audiobasics.api.cipher.CipherDeobfuscator
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -257,6 +258,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _logsEnabled = MutableStateFlow(prefs.getBoolean("logs_enabled", false))
     val logsEnabled: StateFlow<Boolean> = _logsEnabled
+
+    private val _isRefreshingCipherEngine = MutableStateFlow(false)
+    val isRefreshingCipherEngine: StateFlow<Boolean> = _isRefreshingCipherEngine
 
     private val _navigateToUpdater = MutableStateFlow(false)
     val navigateToUpdater: StateFlow<Boolean> = _navigateToUpdater
@@ -1517,6 +1521,24 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleLogs() {
         _logsEnabled.value = !_logsEnabled.value
         prefs.edit().putBoolean("logs_enabled", _logsEnabled.value).apply()
+    }
+
+    // Manual recovery for a stale/rotated cipher hash (YouTube periodically rotates
+    // player.js) — previously the only fix when playback or downloads got stuck
+    // spinning was force-stopping the app from system settings. Guarded against
+    // double-taps since a full reset can legitimately take several seconds.
+    fun refreshCipherEngine() {
+        if (_isRefreshingCipherEngine.value) return
+        viewModelScope.launch {
+            _isRefreshingCipherEngine.value = true
+            val ok = CipherDeobfuscator.forceReset()
+            _isRefreshingCipherEngine.value = false
+            Toast.makeText(
+                getApplication(),
+                if (ok) "Playback engine refreshed" else "Refresh failed — try again",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     fun triggerUpdater() { _navigateToUpdater.value = true }
