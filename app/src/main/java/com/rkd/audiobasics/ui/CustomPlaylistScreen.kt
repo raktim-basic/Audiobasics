@@ -36,6 +36,12 @@ import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
+private val savedPlaylistScroll = mutableMapOf<String, Pair<Int, Int>>()
+
+internal fun resetCustomPlaylistScroll(playlistId: String) {
+    savedPlaylistScroll.remove(playlistId)
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CustomPlaylistScreen(
@@ -62,7 +68,13 @@ fun CustomPlaylistScreen(
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val listState = rememberLazyListState()
+    val (savedIndex, savedOffset) = remember(playlist.id) {
+        savedPlaylistScroll[playlist.id] ?: (0 to 0)
+    }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = savedIndex,
+        initialFirstVisibleItemScrollOffset = savedOffset
+    )
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
 
@@ -74,6 +86,13 @@ fun CustomPlaylistScreen(
         else playlistSongs.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
             it.artist.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+        if (filteredSongs.isNotEmpty()) {
+            savedPlaylistScroll[playlist.id] =
+                listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
         }
     }
 
