@@ -299,7 +299,7 @@ fun LibraryScreen(
     deleteTarget?.let { target ->
         AlertDialog(onDismissRequest = { deleteTarget = null },
             title = { Text("Delete \"${target.name}\"?", fontFamily = NothingFont) },
-            text = { Text("Songs not saved elsewhere will be un-downloaded.", fontFamily = NothingFont) },
+            text = { Text("Are you sure you want to remove the songs in the playlist?", fontFamily = NothingFont) },
             confirmButton = {
                 TextButton(onClick = { vm.deletePlaylist(target.id); deleteTarget = null }) {
                     Text("Delete", color = Color.Red, fontFamily = NothingFont)
