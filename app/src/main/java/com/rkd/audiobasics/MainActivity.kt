@@ -9,11 +9,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import com.rkd.audiobasics.ui.DebugLogOverlay
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -38,10 +37,29 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.media3.common.util.UnstableApi
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Artist
 import com.rkd.audiobasics.data.db.PlaylistEntity
+import com.rkd.audiobasics.navigation.AlbumDetailKey
+import com.rkd.audiobasics.navigation.AlbumsKey
+import com.rkd.audiobasics.navigation.ArtistDetailKey
+import com.rkd.audiobasics.navigation.CustomPlaylistKey
+import com.rkd.audiobasics.navigation.EngineInfoKey
+import com.rkd.audiobasics.navigation.HomeKey
+import com.rkd.audiobasics.navigation.LibraryKey
+import com.rkd.audiobasics.navigation.LikedKey
+import com.rkd.audiobasics.navigation.QueueKey
+import com.rkd.audiobasics.navigation.SearchAlbumsKey
+import com.rkd.audiobasics.navigation.SearchArtistsKey
+import com.rkd.audiobasics.navigation.SearchKey
+import com.rkd.audiobasics.navigation.SettingsKey
+import com.rkd.audiobasics.navigation.UpdaterKey
 import com.rkd.audiobasics.ui.AddToPlaylistSheet
 import com.rkd.audiobasics.ui.AlbumScreen
 import com.rkd.audiobasics.ui.APP_CURRENT_VERSION
@@ -74,6 +92,10 @@ import dagger.hilt.android.AndroidEntryPoint
 
 private const val NOTIF_CHANNEL_ID = "audiobasics_updates"
 private const val NOTIF_ID = 1001
+
+// Matches umihi's Constants.Animation.NAVIGATION_DURATION — snappier than Compose's
+// 300ms defaults.
+private const val NAV_ANIMATION_DURATION_MS = 200
 
 @UnstableApi
 @AndroidEntryPoint
@@ -176,23 +198,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-sealed class Screen {
-    object Home : Screen()
-    object Search : Screen()
-    object Queue : Screen()
-    data class Settings(val openCache: Boolean = false, val openLibrary: Boolean = false) : Screen()
-    object Liked : Screen()
-    object Albums : Screen()
-    object Library : Screen()
-    object Updater : Screen()
-    object EngineInfo : Screen()
-    data class AlbumDetail(val album: Album) : Screen()
-    data class ArtistDetail(val artistName: String, val artistBrowseId: String = "") : Screen()
-    data class SearchAlbums(val query: String) : Screen()
-    data class SearchArtists(val query: String) : Screen()
-    data class CustomPlaylist(val playlist: PlaylistEntity) : Screen()
-}
-
 @UnstableApi
 @Composable
 fun AudiobasicsApp(
@@ -205,31 +210,37 @@ fun AudiobasicsApp(
     val showStorageLow by vm.showStorageLow.collectAsState()
     val navigateToUpdater by vm.navigateToUpdater.collectAsState()
 
-    var screenStack by remember { mutableStateOf(listOf<Screen>(Screen.Home)) }
-    val currentScreen = screenStack.last()
+    val backStack = rememberNavBackStack(HomeKey)
     var showPlayerDialog by remember { mutableStateOf(false) }
     var addToSheetSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
     var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(navigateToUpdater) {
         if (navigateToUpdater) {
-            screenStack = listOf(Screen.Home, Screen.Settings(), Screen.Updater)
+            backStack.clear()
+            backStack.addAll(listOf(HomeKey, SettingsKey(), UpdaterKey))
             vm.onUpdaterNavigated()
         }
     }
 
-    fun navigate(screen: Screen) { screenStack = screenStack + screen }
+    fun navigate(key: com.rkd.audiobasics.navigation.NavKeyMarker) = Unit // placeholder, unused
+
+    // navigate()/navigateBack() operate on the Navigation3 back stack directly. Pushes use
+    // backStack.add (-> NavDisplay's transitionSpec), pops use backStack.removeLastOrNull
+    // (-> popTransitionSpec) or the system/predictive back gesture (-> predictivePopTransitionSpec).
+    // Unlike the old manual screenStack, direction is never guessed here — NavDisplay always
+    // knows push from pop.
     fun navigateBack() {
-        if (screenStack.size > 1) {
-            val leaving = screenStack.last()
-            if (leaving is Screen.Search) vm.clearSearch()
-            if (leaving is Screen.Liked) resetLikedScreenScroll()
-            if (leaving is Screen.CustomPlaylist) resetCustomPlaylistScroll(leaving.playlist.id)
-            screenStack = screenStack.dropLast(1)
+        if (backStack.size > 1) {
+            when (val leaving = backStack.last()) {
+                is SearchKey -> vm.clearSearch()
+                is LikedKey -> resetLikedScreenScroll()
+                is CustomPlaylistKey -> resetCustomPlaylistScroll(leaving.playlist.id)
+                else -> {}
+            }
+            backStack.removeLastOrNull()
         }
     }
-
-    BackHandler(enabled = screenStack.size > 1) { navigateBack() }
 
     if (showStorageLow) {
         AlertDialog(
@@ -249,15 +260,18 @@ fun AudiobasicsApp(
             vm = vm,
             isDarkMode = isDarkMode,
             onDismiss = { showPlayerDialog = false },
-            onNavigateQueue = { showPlayerDialog = false; navigate(Screen.Queue) },
-            onNavigateArtist = { name, artistId -> showPlayerDialog = false; navigate(Screen.ArtistDetail(name, artistId ?: "")) },
+            onNavigateQueue = { showPlayerDialog = false; backStack.add(QueueKey) },
+            onNavigateArtist = { name, artistId ->
+                showPlayerDialog = false
+                backStack.add(ArtistDetailKey(name, artistId ?: ""))
+            },
             onNavigateAlbum = { albumTitle ->
                 showPlayerDialog = false
                 // Search for the album by name rather than browsing this specific id —
                 // YTM itself sometimes has more than one catalog entry for what's really
                 // the same album, so search reliably lands on a real, complete result
                 // instead of risking opening a different, possibly-incomplete duplicate.
-                navigate(Screen.SearchAlbums(albumTitle))
+                backStack.add(SearchAlbumsKey(albumTitle))
             }
         )
     }
@@ -293,132 +307,190 @@ fun AudiobasicsApp(
             .imePadding()
     ) {
         Box(modifier = Modifier.weight(1f)) {
-            AnimatedContent(
-                targetState = currentScreen,
+            NavDisplay(
+                backStack = backStack,
+                modifier = Modifier.fillMaxSize(),
+                onBack = { navigateBack() },
+                entryDecorators = listOf(
+                    rememberSaveableStateHolderNavEntryDecorator(),
+                    rememberViewModelStoreNavEntryDecorator(),
+                ),
                 transitionSpec = {
-                    val goingDeeper = screenStack.size > 1 && targetState != Screen.Home
-                    if (goingDeeper)
-                        (scaleIn(initialScale = 0.93f) + fadeIn()) togetherWith
-                                (scaleOut(targetScale = 0.97f) + fadeOut())
-                    else
-                        (scaleIn(initialScale = 1.03f) + fadeIn()) togetherWith
-                                (scaleOut(targetScale = 1.07f) + fadeOut())
+                    (scaleIn(
+                        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+                        initialScale = 0.85f
+                    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
+                            (scaleOut(
+                                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+                                targetScale = 1.1f
+                            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
                 },
-                label = "screen_transition"
-            ) { screen ->
-                when (screen) {
-                    is Screen.Home -> HomeScreen(
-                        vm = vm,
-                        onNavigateSearch = { navigate(Screen.Search) },
-                        onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateSettings = { navigate(Screen.Settings()) },
-                        onNavigateLiked = { navigate(Screen.Liked) },
-                        onNavigateAlbums = { navigate(Screen.Albums) },
-                        onNavigateLibrary = { navigate(Screen.Library) }
-                    )
-                    is Screen.Search -> SearchScreen(
-                        vm = vm,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onNavigateQueue = { navigate(Screen.Queue) },
-                        onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) },
-                        onNavigateAlbums = { q -> navigate(Screen.SearchAlbums(q)) },
-                        onNavigateArtists = { q -> navigate(Screen.SearchArtists(q)) },
-                        onAddTo = { song -> addToSheetSong = song }
-                    )
-                    is Screen.Queue -> QueueScreen(
-                        vm = vm,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onAddTo = { song -> addToSheetSong = song }
-                    )
-                    is Screen.Settings -> SettingsScreen(
-                        vm = vm,
-                        isDarkMode = isDarkMode,
-                        openCache = screen.openCache,
-                        openLibrary = screen.openLibrary,
-                        onBack = { navigateBack() },
-                        onNavigateUpdater = { navigate(Screen.Updater) }
-                    )
-                    is Screen.Liked -> LikedScreen(
-                        vm = vm,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) },
-                        onAddTo = { song -> addToSheetSong = song }
-                    )
-                    is Screen.Albums -> SavedAlbumsScreen(
-                        vm = vm,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onNavigateQueue = { navigate(Screen.Queue) },
-                        onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) }
-                    )
-                    is Screen.Library -> LibraryScreen(
-                        vm = vm,
-                        onBack = { navigateBack() },
-                        onNavigateLiked = { navigate(Screen.Liked) },
-                        onNavigateAlbums = { navigate(Screen.Albums) },
-                        onNavigatePlaylist = { playlist -> navigate(Screen.CustomPlaylist(playlist)) },
-                        onNavigateQueue = { navigate(Screen.Queue) }
-                    )
-                    is Screen.Updater -> UpdaterScreen(
-                        vm = vm,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onEngineInfo = { navigate(Screen.EngineInfo) },
-                        onNavigateLibrary = { navigate(Screen.Settings(openLibrary = true)) }
-                    )
-                    is Screen.EngineInfo -> EngineInfoScreen(
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() }
-                    )
-                    is Screen.AlbumDetail -> AlbumScreen(
-                        vm = vm,
-                        album = screen.album,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateArtist = { name, artistId -> navigate(Screen.ArtistDetail(name, artistId ?: "")) },
-                        onAddTo = { song -> addToSheetSong = song },
-                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) }
-                    )
-                    is Screen.ArtistDetail -> ArtistScreen(
-                        vm = vm,
-                        artistName = screen.artistName,
-                        artistBrowseId = screen.artistBrowseId,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) },
-                        onAddTo = { song -> addToSheetSong = song },
-                        onNavigateQueue = { navigate(Screen.Queue) }
-                    )
-                    is Screen.SearchAlbums -> SearchAlbumsScreen(
-                        vm = vm,
-                        query = screen.query,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onAlbumClick = { album -> navigate(Screen.AlbumDetail(album)) }
-                    )
-                    is Screen.SearchArtists -> SearchArtistsScreen(
-                        vm = vm,
-                        query = screen.query,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onArtistClick = { artist -> navigate(Screen.ArtistDetail(artist.name, artist.id)) }
-                    )
-                    is Screen.CustomPlaylist -> CustomPlaylistScreen(
-                        vm = vm,
-                        playlist = screen.playlist,
-                        isDarkMode = isDarkMode,
-                        onBack = { navigateBack() },
-                        onAddTo = { song -> addToSheetSong = song },
-                        onNavigateQueue = { navigate(Screen.Queue) },
-                        onNavigateCacheSettings = { navigate(Screen.Settings(openCache = true)) }
-                    )
+                popTransitionSpec = {
+                    (scaleIn(
+                        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+                        initialScale = 1.1f
+                    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
+                            (scaleOut(
+                                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+                                targetScale = 0.85f
+                            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
+                },
+                predictivePopTransitionSpec = {
+                    (scaleIn(
+                        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+                        initialScale = 1.1f
+                    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
+                            (scaleOut(
+                                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+                                targetScale = 0.85f
+                            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
+                },
+                entryProvider = { key ->
+                    when (key) {
+                        is HomeKey -> NavEntry(key) {
+                            HomeScreen(
+                                vm = vm,
+                                onNavigateSearch = { backStack.add(SearchKey) },
+                                onNavigateQueue = { backStack.add(QueueKey) },
+                                onNavigateSettings = { backStack.add(SettingsKey()) },
+                                onNavigateLiked = { backStack.add(LikedKey) },
+                                onNavigateAlbums = { backStack.add(AlbumsKey) },
+                                onNavigateLibrary = { backStack.add(LibraryKey) }
+                            )
+                        }
+                        is SearchKey -> NavEntry(key) {
+                            SearchScreen(
+                                vm = vm,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onNavigateQueue = { backStack.add(QueueKey) },
+                                onAlbumClick = { album -> backStack.add(AlbumDetailKey(album)) },
+                                onNavigateAlbums = { q -> backStack.add(SearchAlbumsKey(q)) },
+                                onNavigateArtists = { q -> backStack.add(SearchArtistsKey(q)) },
+                                onAddTo = { song -> addToSheetSong = song }
+                            )
+                        }
+                        is QueueKey -> NavEntry(key) {
+                            QueueScreen(
+                                vm = vm,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onAddTo = { song -> addToSheetSong = song }
+                            )
+                        }
+                        is SettingsKey -> NavEntry(key) {
+                            SettingsScreen(
+                                vm = vm,
+                                isDarkMode = isDarkMode,
+                                openCache = key.openCache,
+                                openLibrary = key.openLibrary,
+                                onBack = { navigateBack() },
+                                onNavigateUpdater = { backStack.add(UpdaterKey) }
+                            )
+                        }
+                        is LikedKey -> NavEntry(key) {
+                            LikedScreen(
+                                vm = vm,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onNavigateQueue = { backStack.add(QueueKey) },
+                                onNavigateCacheSettings = { backStack.add(SettingsKey(openCache = true)) },
+                                onAddTo = { song -> addToSheetSong = song }
+                            )
+                        }
+                        is AlbumsKey -> NavEntry(key) {
+                            SavedAlbumsScreen(
+                                vm = vm,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onNavigateQueue = { backStack.add(QueueKey) },
+                                onAlbumClick = { album -> backStack.add(AlbumDetailKey(album)) }
+                            )
+                        }
+                        is LibraryKey -> NavEntry(key) {
+                            LibraryScreen(
+                                vm = vm,
+                                onBack = { navigateBack() },
+                                onNavigateLiked = { backStack.add(LikedKey) },
+                                onNavigateAlbums = { backStack.add(AlbumsKey) },
+                                onNavigatePlaylist = { playlist -> backStack.add(CustomPlaylistKey(playlist)) },
+                                onNavigateQueue = { backStack.add(QueueKey) }
+                            )
+                        }
+                        is UpdaterKey -> NavEntry(key) {
+                            UpdaterScreen(
+                                vm = vm,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onEngineInfo = { backStack.add(EngineInfoKey) },
+                                onNavigateLibrary = { backStack.add(SettingsKey(openLibrary = true)) }
+                            )
+                        }
+                        is EngineInfoKey -> NavEntry(key) {
+                            EngineInfoScreen(
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() }
+                            )
+                        }
+                        is AlbumDetailKey -> NavEntry(key) {
+                            AlbumScreen(
+                                vm = vm,
+                                album = key.album,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onNavigateQueue = { backStack.add(QueueKey) },
+                                onNavigateArtist = { name, artistId ->
+                                    backStack.add(ArtistDetailKey(name, artistId ?: ""))
+                                },
+                                onAddTo = { song -> addToSheetSong = song },
+                                onNavigateCacheSettings = { backStack.add(SettingsKey(openCache = true)) }
+                            )
+                        }
+                        is ArtistDetailKey -> NavEntry(key) {
+                            ArtistScreen(
+                                vm = vm,
+                                artistName = key.artistName,
+                                artistBrowseId = key.artistBrowseId,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onAlbumClick = { album -> backStack.add(AlbumDetailKey(album)) },
+                                onAddTo = { song -> addToSheetSong = song },
+                                onNavigateQueue = { backStack.add(QueueKey) }
+                            )
+                        }
+                        is SearchAlbumsKey -> NavEntry(key) {
+                            SearchAlbumsScreen(
+                                vm = vm,
+                                query = key.query,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onAlbumClick = { album -> backStack.add(AlbumDetailKey(album)) }
+                            )
+                        }
+                        is SearchArtistsKey -> NavEntry(key) {
+                            SearchArtistsScreen(
+                                vm = vm,
+                                query = key.query,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onArtistClick = { artist -> backStack.add(ArtistDetailKey(artist.name, artist.id)) }
+                            )
+                        }
+                        is CustomPlaylistKey -> NavEntry(key) {
+                            CustomPlaylistScreen(
+                                vm = vm,
+                                playlist = key.playlist,
+                                isDarkMode = isDarkMode,
+                                onBack = { navigateBack() },
+                                onAddTo = { song -> addToSheetSong = song },
+                                onNavigateQueue = { backStack.add(QueueKey) },
+                                onNavigateCacheSettings = { backStack.add(SettingsKey(openCache = true)) }
+                            )
+                        }
+                        else -> error("Unknown nav key: $key")
+                    }
                 }
-            }
+            )
         }
 
         PlayerBar(
