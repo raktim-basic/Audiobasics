@@ -151,10 +151,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent?.let { setIntent(it) }
-        if (intent?.getBooleanExtra("OPEN_UPDATER", false) == true) {
+        setIntent(intent)
+        if (intent.getBooleanExtra("OPEN_UPDATER", false)) {
             val vm = ViewModelProvider(
                 this,
                 ViewModelProvider.AndroidViewModelFactory.getInstance(application)
@@ -223,13 +223,11 @@ fun AudiobasicsApp(
         }
     }
 
-    fun navigate(key: com.rkd.audiobasics.navigation.NavKeyMarker) = Unit // placeholder, unused
-
-    // navigate()/navigateBack() operate on the Navigation3 back stack directly. Pushes use
-    // backStack.add (-> NavDisplay's transitionSpec), pops use backStack.removeLastOrNull
-    // (-> popTransitionSpec) or the system/predictive back gesture (-> predictivePopTransitionSpec).
-    // Unlike the old manual screenStack, direction is never guessed here — NavDisplay always
-    // knows push from pop.
+    // Navigation goes straight through backStack.add(...) at each call site below (push ->
+    // NavDisplay's transitionSpec). navigateBack() below handles pops (-> popTransitionSpec)
+    // and is also what the system/predictive back gesture calls via onBack (->
+    // predictivePopTransitionSpec). Unlike the old manual screenStack, direction is never
+    // guessed here — NavDisplay always knows push from pop.
     fun navigateBack() {
         if (backStack.size > 1) {
             when (val leaving = backStack.last()) {
