@@ -150,6 +150,32 @@ private fun popSlideKind(initial: NavKey?, target: NavKey?): SlideKind = when {
     else -> SlideKind.NONE
 }
 
+// Builds the actual ContentTransform for a given SlideKind. Receiver is star-projected
+// (AnimatedContentTransitionScope<*>) rather than naming NavDisplay's exact type parameter
+// (which has changed shape across Nav3 releases) — slideIntoContainer/slideOutOfContainer
+// don't need to know the specific type argument, so this compiles regardless of what
+// NavDisplay wraps entries in internally.
+private fun AnimatedContentTransitionScope<*>.slideTransform(
+    kind: SlideKind,
+    isPush: Boolean
+): ContentTransform = when (kind) {
+    SlideKind.LEFT -> slideIntoContainer(
+        AnimatedContentTransitionScope.SlideDirection.Left,
+        animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+    ) togetherWith slideOutOfContainer(
+        AnimatedContentTransitionScope.SlideDirection.Left,
+        animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+    )
+    SlideKind.RIGHT -> slideIntoContainer(
+        AnimatedContentTransitionScope.SlideDirection.Right,
+        animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+    ) togetherWith slideOutOfContainer(
+        AnimatedContentTransitionScope.SlideDirection.Right,
+        animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+    )
+    SlideKind.NONE -> if (isPush) defaultPushTransform() else defaultPopTransform()
+}
+
 @UnstableApi
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -268,27 +294,43 @@ fun AudiobasicsApp(
     var addToSheetSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
     var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
 
+    // Which special slide (if any) the transition currently in flight should use. Set
+    // explicitly at each push()/navigateBack() call site, immediately before the backStack
+    // mutation that triggers it — read back inside transitionSpec/popTransitionSpec below.
+    // This sidesteps needing to know the exact type NavDisplay wraps entries in internally
+    // (it's changed shape across Nav3 releases); we already fully control every navigation
+    // call site ourselves, so there's no need to reverse-engineer it from the transition
+    // scope's targetState/initialState.
+    var pendingSlideKind by remember { mutableStateOf(SlideKind.NONE) }
+
     LaunchedEffect(navigateToUpdater) {
         if (navigateToUpdater) {
+            pendingSlideKind = SlideKind.NONE
             backStack.clear()
             backStack.addAll(listOf(HomeKey, SettingsKey(), UpdaterKey))
             vm.onUpdaterNavigated()
         }
     }
 
-    // Navigation goes straight through backStack.add(...) at each call site below (push ->
-    // NavDisplay's transitionSpec). navigateBack() below handles pops (-> popTransitionSpec)
-    // and is also what the system/predictive back gesture calls via onBack (->
-    // predictivePopTransitionSpec). Unlike the old manual screenStack, direction is never
-    // guessed here — NavDisplay always knows push from pop.
+    // push()/navigateBack() are the only places the back stack is ever mutated. Each one
+    // decides pendingSlideKind BEFORE mutating, from the stack state as it stood just prior
+    // to the change — see the comment on pendingSlideKind above for why.
+    fun push(key: NavKey) {
+        pendingSlideKind = pushSlideKind(backStack.lastOrNull(), key)
+        backStack.add(key)
+    }
+
     fun navigateBack() {
         if (backStack.size > 1) {
-            when (val leaving = backStack.last()) {
+            val leaving = backStack.last()
+            when (leaving) {
                 is SearchKey -> vm.clearSearch()
                 is LikedKey -> resetLikedScreenScroll()
                 is CustomPlaylistKey -> resetCustomPlaylistScroll(leaving.playlist.id)
                 else -> {}
             }
+            val revealed = backStack.getOrNull(backStack.size - 2)
+            pendingSlideKind = popSlideKind(leaving, revealed)
             backStack.removeLastOrNull()
         }
     }
@@ -311,10 +353,10 @@ fun AudiobasicsApp(
             vm = vm,
             isDarkMode = isDarkMode,
             onDismiss = { showPlayerDialog = false },
-            onNavigateQueue = { showPlayerDialog = false; backStack.add(QueueKey) },
+            onNavigateQueue = { showPlayerDialog = false; push(QueueKey) },
             onNavigateArtist = { name, artistId ->
                 showPlayerDialog = false
-                backStack.add(ArtistDetailKey(name, artistId ?: ""))
+                push(ArtistDetailKey(name, artistId ?: ""))
             },
             onNavigateAlbum = { albumTitle ->
                 showPlayerDialog = false
@@ -322,7 +364,7 @@ fun AudiobasicsApp(
                 // YTM itself sometimes has more than one catalog entry for what's really
                 // the same album, so search reliably lands on a real, complete result
                 // instead of risking opening a different, possibly-incomplete duplicate.
-                backStack.add(SearchAlbumsKey(albumTitle))
+                push(SearchAlbumsKey(albumTitle))
             }
         )
     }
@@ -366,80 +408,30 @@ fun AudiobasicsApp(
                     rememberSaveableStateHolderNavEntryDecorator(),
                     rememberViewModelStoreNavEntryDecorator(),
                 ),
-                transitionSpec = {
-                    val initial = initialState.key as? NavKey
-                    val target = targetState.key as? NavKey
-                    when (pushSlideKind(initial, target)) {
-                        SlideKind.LEFT -> slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        ) togetherWith slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        )
-                        SlideKind.RIGHT -> slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        ) togetherWith slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        )
-                        SlideKind.NONE -> defaultPushTransform()
-                    }
-                },
-                popTransitionSpec = {
-                    val initial = initialState.key as? NavKey
-                    val target = targetState.key as? NavKey
-                    when (popSlideKind(initial, target)) {
-                        SlideKind.LEFT -> slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        ) togetherWith slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        )
-                        SlideKind.RIGHT -> slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        ) togetherWith slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        )
-                        SlideKind.NONE -> defaultPopTransform()
-                    }
-                },
+                transitionSpec = { slideTransform(pendingSlideKind, isPush = true) },
+                popTransitionSpec = { slideTransform(pendingSlideKind, isPush = false) },
                 predictivePopTransitionSpec = {
-                    val initial = initialState.key as? NavKey
-                    val target = targetState.key as? NavKey
-                    when (popSlideKind(initial, target)) {
-                        SlideKind.LEFT -> slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        ) togetherWith slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        )
-                        SlideKind.RIGHT -> slideIntoContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        ) togetherWith slideOutOfContainer(
-                            AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-                        )
-                        SlideKind.NONE -> defaultPopTransform()
-                    }
+                    // Unlike transitionSpec/popTransitionSpec above, this renders a live
+                    // preview WHILE the user is still dragging — before navigateBack() has
+                    // run and set pendingSlideKind, and before backStack has actually
+                    // shrunk. So this one case does need to peek at backStack directly
+                    // (still fully intact at this point) rather than reading
+                    // pendingSlideKind.
+                    val leaving = backStack.lastOrNull()
+                    val revealed = if (backStack.size >= 2) backStack[backStack.size - 2] else null
+                    slideTransform(popSlideKind(leaving, revealed), isPush = false)
                 },
                 entryProvider = { key ->
                     when (key) {
                         is HomeKey -> NavEntry(key) {
                             HomeScreen(
                                 vm = vm,
-                                onNavigateSearch = { backStack.add(SearchKey) },
-                                onNavigateQueue = { backStack.add(QueueKey) },
-                                onNavigateSettings = { backStack.add(SettingsKey()) },
-                                onNavigateLiked = { backStack.add(LikedKey) },
-                                onNavigateAlbums = { backStack.add(AlbumsKey) },
-                                onNavigateLibrary = { backStack.add(LibraryKey) }
+                                onNavigateSearch = { push(SearchKey) },
+                                onNavigateQueue = { push(QueueKey) },
+                                onNavigateSettings = { push(SettingsKey()) },
+                                onNavigateLiked = { push(LikedKey) },
+                                onNavigateAlbums = { push(AlbumsKey) },
+                                onNavigateLibrary = { push(LibraryKey) }
                             )
                         }
                         is SearchKey -> NavEntry(key) {
@@ -447,10 +439,10 @@ fun AudiobasicsApp(
                                 vm = vm,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onNavigateQueue = { backStack.add(QueueKey) },
-                                onAlbumClick = { album -> backStack.add(AlbumDetailKey(album)) },
-                                onNavigateAlbums = { q -> backStack.add(SearchAlbumsKey(q)) },
-                                onNavigateArtists = { q -> backStack.add(SearchArtistsKey(q)) },
+                                onNavigateQueue = { push(QueueKey) },
+                                onAlbumClick = { album -> push(AlbumDetailKey(album)) },
+                                onNavigateAlbums = { q -> push(SearchAlbumsKey(q)) },
+                                onNavigateArtists = { q -> push(SearchArtistsKey(q)) },
                                 onAddTo = { song -> addToSheetSong = song }
                             )
                         }
@@ -469,7 +461,7 @@ fun AudiobasicsApp(
                                 openCache = key.openCache,
                                 openLibrary = key.openLibrary,
                                 onBack = { navigateBack() },
-                                onNavigateUpdater = { backStack.add(UpdaterKey) }
+                                onNavigateUpdater = { push(UpdaterKey) }
                             )
                         }
                         is LikedKey -> NavEntry(key) {
@@ -477,8 +469,8 @@ fun AudiobasicsApp(
                                 vm = vm,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onNavigateQueue = { backStack.add(QueueKey) },
-                                onNavigateCacheSettings = { backStack.add(SettingsKey(openCache = true)) },
+                                onNavigateQueue = { push(QueueKey) },
+                                onNavigateCacheSettings = { push(SettingsKey(openCache = true)) },
                                 onAddTo = { song -> addToSheetSong = song }
                             )
                         }
@@ -487,18 +479,18 @@ fun AudiobasicsApp(
                                 vm = vm,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onNavigateQueue = { backStack.add(QueueKey) },
-                                onAlbumClick = { album -> backStack.add(AlbumDetailKey(album)) }
+                                onNavigateQueue = { push(QueueKey) },
+                                onAlbumClick = { album -> push(AlbumDetailKey(album)) }
                             )
                         }
                         is LibraryKey -> NavEntry(key) {
                             LibraryScreen(
                                 vm = vm,
                                 onBack = { navigateBack() },
-                                onNavigateLiked = { backStack.add(LikedKey) },
-                                onNavigateAlbums = { backStack.add(AlbumsKey) },
-                                onNavigatePlaylist = { playlist -> backStack.add(CustomPlaylistKey(playlist)) },
-                                onNavigateQueue = { backStack.add(QueueKey) }
+                                onNavigateLiked = { push(LikedKey) },
+                                onNavigateAlbums = { push(AlbumsKey) },
+                                onNavigatePlaylist = { playlist -> push(CustomPlaylistKey(playlist)) },
+                                onNavigateQueue = { push(QueueKey) }
                             )
                         }
                         is UpdaterKey -> NavEntry(key) {
@@ -506,8 +498,8 @@ fun AudiobasicsApp(
                                 vm = vm,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onEngineInfo = { backStack.add(EngineInfoKey) },
-                                onNavigateLibrary = { backStack.add(SettingsKey(openLibrary = true)) }
+                                onEngineInfo = { push(EngineInfoKey) },
+                                onNavigateLibrary = { push(SettingsKey(openLibrary = true)) }
                             )
                         }
                         is EngineInfoKey -> NavEntry(key) {
@@ -522,12 +514,12 @@ fun AudiobasicsApp(
                                 album = key.album,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onNavigateQueue = { backStack.add(QueueKey) },
+                                onNavigateQueue = { push(QueueKey) },
                                 onNavigateArtist = { name, artistId ->
-                                    backStack.add(ArtistDetailKey(name, artistId ?: ""))
+                                    push(ArtistDetailKey(name, artistId ?: ""))
                                 },
                                 onAddTo = { song -> addToSheetSong = song },
-                                onNavigateCacheSettings = { backStack.add(SettingsKey(openCache = true)) }
+                                onNavigateCacheSettings = { push(SettingsKey(openCache = true)) }
                             )
                         }
                         is ArtistDetailKey -> NavEntry(key) {
@@ -537,9 +529,9 @@ fun AudiobasicsApp(
                                 artistBrowseId = key.artistBrowseId,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onAlbumClick = { album -> backStack.add(AlbumDetailKey(album)) },
+                                onAlbumClick = { album -> push(AlbumDetailKey(album)) },
                                 onAddTo = { song -> addToSheetSong = song },
-                                onNavigateQueue = { backStack.add(QueueKey) }
+                                onNavigateQueue = { push(QueueKey) }
                             )
                         }
                         is SearchAlbumsKey -> NavEntry(key) {
@@ -548,7 +540,7 @@ fun AudiobasicsApp(
                                 query = key.query,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onAlbumClick = { album -> backStack.add(AlbumDetailKey(album)) }
+                                onAlbumClick = { album -> push(AlbumDetailKey(album)) }
                             )
                         }
                         is SearchArtistsKey -> NavEntry(key) {
@@ -557,7 +549,7 @@ fun AudiobasicsApp(
                                 query = key.query,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onArtistClick = { artist -> backStack.add(ArtistDetailKey(artist.name, artist.id)) }
+                                onArtistClick = { artist -> push(ArtistDetailKey(artist.name, artist.id)) }
                             )
                         }
                         is CustomPlaylistKey -> NavEntry(key) {
@@ -567,8 +559,8 @@ fun AudiobasicsApp(
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
                                 onAddTo = { song -> addToSheetSong = song },
-                                onNavigateQueue = { backStack.add(QueueKey) },
-                                onNavigateCacheSettings = { backStack.add(SettingsKey(openCache = true)) }
+                                onNavigateQueue = { push(QueueKey) },
+                                onNavigateCacheSettings = { push(SettingsKey(openCache = true)) }
                             )
                         }
                         else -> error("Unknown nav key: $key")
