@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -23,6 +25,7 @@ import coil.compose.AsyncImage
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Artist
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
 fun SearchArtistsScreen(
@@ -30,8 +33,11 @@ fun SearchArtistsScreen(
     query: String,
     isDarkMode: Boolean,
     onBack: () -> Unit,
-    onArtistClick: (Artist) -> Unit
+    onArtistClick: (Artist) -> Unit,
+    onNavigateQueue: () -> Unit
 ) {
+    val context = LocalContext.current
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
@@ -122,10 +128,21 @@ fun SearchArtistsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(barColor)
-                .padding(horizontal = 8.dp, vertical = 8.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onBack()
+            }) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
+            }
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onNavigateQueue()
+            }) {
+                Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = textColor, modifier = Modifier.size(26.dp))
             }
         }
     }
