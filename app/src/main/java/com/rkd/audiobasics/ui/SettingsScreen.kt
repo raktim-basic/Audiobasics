@@ -7,11 +7,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -78,22 +73,32 @@ fun SettingsScreen(
             }
         ) 
     }
+    // Tracked explicitly rather than guessed from targetState (the old code's
+    // `if (targetState != Main) push-style else pop-style` got EngineInfo -> DevTools
+    // wrong, since DevTools != Main made it look like a forward push even though that's
+    // a back navigation) — same fix as the top-level Nav3 setup in MainActivity.kt.
+    var isForwardNav by remember { mutableStateOf(true) }
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+
+    fun goTo(page: SettingsPage) {
+        isForwardNav = true
+        currentPage = page
+    }
+
+    fun goBack(page: SettingsPage) {
+        isForwardNav = false
+        currentPage = page
+    }
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        currentPage = if (currentPage == SettingsPage.EngineInfo) SettingsPage.DevTools else SettingsPage.Main
+        goBack(if (currentPage == SettingsPage.EngineInfo) SettingsPage.DevTools else SettingsPage.Main)
     }
 
     AnimatedContent(
         targetState = currentPage,
         transitionSpec = {
-            if (targetState != SettingsPage.Main)
-                (scaleIn(initialScale = 0.93f) + fadeIn()) togetherWith
-                        (scaleOut(targetScale = 0.97f) + fadeOut())
-            else
-                (scaleIn(initialScale = 1.03f) + fadeIn()) togetherWith
-                        (scaleOut(targetScale = 1.07f) + fadeOut())
+            if (isForwardNav) defaultPushTransform() else defaultPopTransform()
         },
         label = "settings_transition"
     ) { page ->
@@ -103,35 +108,35 @@ fun SettingsScreen(
                 isDarkMode = isDarkMode,
                 onBack = onBack,
                 onNavigateUpdater = onNavigateUpdater,
-                onNavigateAppearance = { currentPage = SettingsPage.Appearance },
-                onNavigateCache = { currentPage = SettingsPage.Cache },
-                onNavigateLibrary = { currentPage = SettingsPage.Library },
-                onNavigateDevTools = { currentPage = SettingsPage.DevTools }
+                onNavigateAppearance = { goTo(SettingsPage.Appearance) },
+                onNavigateCache = { goTo(SettingsPage.Cache) },
+                onNavigateLibrary = { goTo(SettingsPage.Library) },
+                onNavigateDevTools = { goTo(SettingsPage.DevTools) }
             )
             is SettingsPage.Appearance -> AppearancePage(
                 vm = vm,
                 isDarkMode = isDarkMode,
-                onBack = { currentPage = SettingsPage.Main }
+                onBack = { goBack(SettingsPage.Main) }
             )
             is SettingsPage.Cache -> CachePage(
                 vm = vm,
                 isDarkMode = isDarkMode,
-                onBack = { currentPage = SettingsPage.Main }
+                onBack = { goBack(SettingsPage.Main) }
             )
             is SettingsPage.Library -> LibraryPage(
                 vm = vm,
                 isDarkMode = isDarkMode,
-                onBack = { currentPage = SettingsPage.Main }
+                onBack = { goBack(SettingsPage.Main) }
             )
             is SettingsPage.DevTools -> DevToolsPage(
                 vm = vm,
                 isDarkMode = isDarkMode,
-                onBack = { currentPage = SettingsPage.Main },
-                onNavigateEngineInfo = { currentPage = SettingsPage.EngineInfo }
+                onBack = { goBack(SettingsPage.Main) },
+                onNavigateEngineInfo = { goTo(SettingsPage.EngineInfo) }
             )
             is SettingsPage.EngineInfo -> EngineInfoScreen(
                 isDarkMode = isDarkMode,
-                onBack = { currentPage = SettingsPage.DevTools }
+                onBack = { goBack(SettingsPage.DevTools) }
             )
         }
     }
