@@ -69,6 +69,9 @@ import com.rkd.audiobasics.ui.APP_CURRENT_VERSION
 import com.rkd.audiobasics.ui.ArtistScreen
 import com.rkd.audiobasics.ui.CreatePlaylistDialog
 import com.rkd.audiobasics.ui.CustomPlaylistScreen
+import com.rkd.audiobasics.ui.NAV_ANIMATION_DURATION_MS
+import com.rkd.audiobasics.ui.defaultPopTransform
+import com.rkd.audiobasics.ui.defaultPushTransform
 import com.rkd.audiobasics.ui.EngineInfoScreen
 import com.rkd.audiobasics.ui.HomeScreen
 import com.rkd.audiobasics.ui.LibraryScreen
@@ -96,10 +99,6 @@ import dagger.hilt.android.AndroidEntryPoint
 private const val NOTIF_CHANNEL_ID = "audiobasics_updates"
 private const val NOTIF_ID = 1001
 
-// Matches umihi's Constants.Animation.NAVIGATION_DURATION — snappier than Compose's
-// 300ms defaults.
-private const val NAV_ANIMATION_DURATION_MS = 200
-
 // Settings, Updater, and EngineInfo together form the "settings flow" — Updater and
 // EngineInfo are only ever reached by pushing deeper from Settings. Used below to tell
 // "opening/closing the settings flow" (gets the special slide) apart from "navigating
@@ -108,26 +107,6 @@ private const val NAV_ANIMATION_DURATION_MS = 200
 // (Updater's onNavigateLibrary) — that push/pop still counts as "within."
 private fun isSettingsSubtree(key: NavKey): Boolean =
     key is SettingsKey || key is UpdaterKey || key is EngineInfoKey
-
-private fun defaultPushTransform(): ContentTransform =
-    (scaleIn(
-        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-        initialScale = 0.85f
-    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
-            (scaleOut(
-                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-                targetScale = 1.1f
-            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
-
-private fun defaultPopTransform(): ContentTransform =
-    (scaleIn(
-        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-        initialScale = 1.1f
-    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
-            (scaleOut(
-                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-                targetScale = 0.85f
-            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
 
 private enum class SlideKind { LEFT, RIGHT, NONE }
 
@@ -540,7 +519,8 @@ fun AudiobasicsApp(
                                 query = key.query,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onAlbumClick = { album -> push(AlbumDetailKey(album)) }
+                                onAlbumClick = { album -> push(AlbumDetailKey(album)) },
+                                onNavigateQueue = { push(QueueKey) }
                             )
                         }
                         is SearchArtistsKey -> NavEntry(key) {
@@ -549,7 +529,8 @@ fun AudiobasicsApp(
                                 query = key.query,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
-                                onArtistClick = { artist -> push(ArtistDetailKey(artist.name, artist.id)) }
+                                onArtistClick = { artist -> push(ArtistDetailKey(artist.name, artist.id)) },
+                                onNavigateQueue = { push(QueueKey) }
                             )
                         }
                         is CustomPlaylistKey -> NavEntry(key) {
