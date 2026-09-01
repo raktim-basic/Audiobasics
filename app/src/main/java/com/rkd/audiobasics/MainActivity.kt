@@ -129,51 +129,25 @@ private fun defaultPopTransform(): ContentTransform =
                 targetScale = 0.85f
             ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
 
+private enum class SlideKind { LEFT, RIGHT, NONE }
+
 // Push: Queue always slides in right-to-left; Settings always slides in left-to-right
-// when entered from outside the settings flow. Everything else keeps the scale+fade
-// default, including pushes deeper within the settings flow itself.
-private fun AnimatedContentTransitionScope<NavKey>.pushTransform(): ContentTransform = when {
-    targetState is QueueKey ->
-        slideIntoContainer(
-            AnimatedContentTransitionScope.SlideDirection.Left,
-            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-        ) togetherWith slideOutOfContainer(
-            AnimatedContentTransitionScope.SlideDirection.Left,
-            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-        )
-    targetState is SettingsKey && !isSettingsSubtree(initialState) ->
-        slideIntoContainer(
-            AnimatedContentTransitionScope.SlideDirection.Right,
-            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-        ) togetherWith slideOutOfContainer(
-            AnimatedContentTransitionScope.SlideDirection.Right,
-            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-        )
-    else -> defaultPushTransform()
+// when entered from outside the settings flow. Everything else (NONE) keeps the
+// scale+fade default, including pushes deeper within the settings flow itself.
+private fun pushSlideKind(initial: NavKey?, target: NavKey?): SlideKind = when {
+    target is QueueKey -> SlideKind.LEFT
+    target is SettingsKey && initial != null && !isSettingsSubtree(initial) -> SlideKind.RIGHT
+    else -> SlideKind.NONE
 }
 
-// Pop: the exact reverse of pushTransform() above — Queue closing slides left-to-right,
+// Pop: the exact reverse of pushSlideKind() above — Queue closing slides left-to-right,
 // Settings closing (back out of the whole settings flow) slides right-to-left. Shared by
 // popTransitionSpec and predictivePopTransitionSpec so the gesture-driven preview matches
 // the regular back animation.
-private fun AnimatedContentTransitionScope<NavKey>.popTransform(): ContentTransform = when {
-    initialState is QueueKey ->
-        slideIntoContainer(
-            AnimatedContentTransitionScope.SlideDirection.Right,
-            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-        ) togetherWith slideOutOfContainer(
-            AnimatedContentTransitionScope.SlideDirection.Right,
-            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-        )
-    initialState is SettingsKey && !isSettingsSubtree(targetState) ->
-        slideIntoContainer(
-            AnimatedContentTransitionScope.SlideDirection.Left,
-            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-        ) togetherWith slideOutOfContainer(
-            AnimatedContentTransitionScope.SlideDirection.Left,
-            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
-        )
-    else -> defaultPopTransform()
+private fun popSlideKind(initial: NavKey?, target: NavKey?): SlideKind = when {
+    initial is QueueKey -> SlideKind.RIGHT
+    initial is SettingsKey && target != null && !isSettingsSubtree(target) -> SlideKind.LEFT
+    else -> SlideKind.NONE
 }
 
 @UnstableApi
@@ -392,9 +366,69 @@ fun AudiobasicsApp(
                     rememberSaveableStateHolderNavEntryDecorator(),
                     rememberViewModelStoreNavEntryDecorator(),
                 ),
-                transitionSpec = { pushTransform() },
-                popTransitionSpec = { popTransform() },
-                predictivePopTransitionSpec = { popTransform() },
+                transitionSpec = {
+                    val initial = initialState.key as? NavKey
+                    val target = targetState.key as? NavKey
+                    when (pushSlideKind(initial, target)) {
+                        SlideKind.LEFT -> slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        ) togetherWith slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        )
+                        SlideKind.RIGHT -> slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        ) togetherWith slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        )
+                        SlideKind.NONE -> defaultPushTransform()
+                    }
+                },
+                popTransitionSpec = {
+                    val initial = initialState.key as? NavKey
+                    val target = targetState.key as? NavKey
+                    when (popSlideKind(initial, target)) {
+                        SlideKind.LEFT -> slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        ) togetherWith slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        )
+                        SlideKind.RIGHT -> slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        ) togetherWith slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        )
+                        SlideKind.NONE -> defaultPopTransform()
+                    }
+                },
+                predictivePopTransitionSpec = {
+                    val initial = initialState.key as? NavKey
+                    val target = targetState.key as? NavKey
+                    when (popSlideKind(initial, target)) {
+                        SlideKind.LEFT -> slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        ) togetherWith slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        )
+                        SlideKind.RIGHT -> slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        ) togetherWith slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+                        )
+                        SlideKind.NONE -> defaultPopTransform()
+                    }
+                },
                 entryProvider = { key ->
                     when (key) {
                         is HomeKey -> NavEntry(key) {
