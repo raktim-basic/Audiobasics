@@ -12,12 +12,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.rkd.audiobasics.ui.DebugLogOverlay
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.navigation3.runtime.NavKey
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -96,6 +99,82 @@ private const val NOTIF_ID = 1001
 // Matches umihi's Constants.Animation.NAVIGATION_DURATION — snappier than Compose's
 // 300ms defaults.
 private const val NAV_ANIMATION_DURATION_MS = 200
+
+// Settings, Updater, and EngineInfo together form the "settings flow" — Updater and
+// EngineInfo are only ever reached by pushing deeper from Settings. Used below to tell
+// "opening/closing the settings flow" (gets the special slide) apart from "navigating
+// within it" (Settings -> Updater -> EngineInfo, or back, which keeps the scale+fade
+// default) even though a second SettingsKey can itself be pushed from within the flow
+// (Updater's onNavigateLibrary) — that push/pop still counts as "within."
+private fun isSettingsSubtree(key: NavKey): Boolean =
+    key is SettingsKey || key is UpdaterKey || key is EngineInfoKey
+
+private fun defaultPushTransform(): ContentTransform =
+    (scaleIn(
+        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+        initialScale = 0.85f
+    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
+            (scaleOut(
+                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+                targetScale = 1.1f
+            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
+
+private fun defaultPopTransform(): ContentTransform =
+    (scaleIn(
+        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+        initialScale = 1.1f
+    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
+            (scaleOut(
+                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+                targetScale = 0.85f
+            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
+
+// Push: Queue always slides in right-to-left; Settings always slides in left-to-right
+// when entered from outside the settings flow. Everything else keeps the scale+fade
+// default, including pushes deeper within the settings flow itself.
+private fun AnimatedContentTransitionScope<NavKey>.pushTransform(): ContentTransform = when {
+    targetState is QueueKey ->
+        slideIntoContainer(
+            AnimatedContentTransitionScope.SlideDirection.Left,
+            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+        ) togetherWith slideOutOfContainer(
+            AnimatedContentTransitionScope.SlideDirection.Left,
+            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+        )
+    targetState is SettingsKey && !isSettingsSubtree(initialState) ->
+        slideIntoContainer(
+            AnimatedContentTransitionScope.SlideDirection.Right,
+            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+        ) togetherWith slideOutOfContainer(
+            AnimatedContentTransitionScope.SlideDirection.Right,
+            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+        )
+    else -> defaultPushTransform()
+}
+
+// Pop: the exact reverse of pushTransform() above — Queue closing slides left-to-right,
+// Settings closing (back out of the whole settings flow) slides right-to-left. Shared by
+// popTransitionSpec and predictivePopTransitionSpec so the gesture-driven preview matches
+// the regular back animation.
+private fun AnimatedContentTransitionScope<NavKey>.popTransform(): ContentTransform = when {
+    initialState is QueueKey ->
+        slideIntoContainer(
+            AnimatedContentTransitionScope.SlideDirection.Right,
+            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+        ) togetherWith slideOutOfContainer(
+            AnimatedContentTransitionScope.SlideDirection.Right,
+            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+        )
+    initialState is SettingsKey && !isSettingsSubtree(targetState) ->
+        slideIntoContainer(
+            AnimatedContentTransitionScope.SlideDirection.Left,
+            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+        ) togetherWith slideOutOfContainer(
+            AnimatedContentTransitionScope.SlideDirection.Left,
+            animationSpec = tween(NAV_ANIMATION_DURATION_MS)
+        )
+    else -> defaultPopTransform()
+}
 
 @UnstableApi
 @AndroidEntryPoint
@@ -313,36 +392,9 @@ fun AudiobasicsApp(
                     rememberSaveableStateHolderNavEntryDecorator(),
                     rememberViewModelStoreNavEntryDecorator(),
                 ),
-                transitionSpec = {
-                    (scaleIn(
-                        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-                        initialScale = 0.85f
-                    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
-                            (scaleOut(
-                                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-                                targetScale = 1.1f
-                            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
-                },
-                popTransitionSpec = {
-                    (scaleIn(
-                        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-                        initialScale = 1.1f
-                    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
-                            (scaleOut(
-                                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-                                targetScale = 0.85f
-                            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
-                },
-                predictivePopTransitionSpec = {
-                    (scaleIn(
-                        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-                        initialScale = 1.1f
-                    ) + fadeIn(animationSpec = tween(NAV_ANIMATION_DURATION_MS))) togetherWith
-                            (scaleOut(
-                                animationSpec = tween(NAV_ANIMATION_DURATION_MS),
-                                targetScale = 0.85f
-                            ) + fadeOut(animationSpec = tween(NAV_ANIMATION_DURATION_MS)))
-                },
+                transitionSpec = { pushTransform() },
+                popTransitionSpec = { popTransform() },
+                predictivePopTransitionSpec = { popTransform() },
                 entryProvider = { key ->
                     when (key) {
                         is HomeKey -> NavEntry(key) {
