@@ -22,6 +22,25 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
+# 3b. Protect the Navigation3 NavKey types (navigation/Screen.kt). Several are empty
+#     `data object`s (HomeKey, QueueKey, LikedKey, etc.) that are structurally identical
+#     to each other — nothing but their class identity tells them apart. R8's class-merging
+#     optimizations are free to collapse structurally-identical classes like this together
+#     unless they're kept, which would silently break the `is QueueKey`/`is SettingsKey`
+#     checks MainActivity.kt uses to drive per-destination nav animations (no crash, the
+#     checks just stop matching — exactly this kind of bug is easy to ship unnoticed since
+#     it only shows up in a minified release build, never in debug). Also needed for the
+#     same @Serializable codegen reasons as rule 3 above, since these types ride in the
+#     back stack's saved state.
+-keep class com.rkd.audiobasics.navigation.** { *; }
+-keepclassmembers class com.rkd.audiobasics.navigation.** {
+    *** Companion;
+}
+-keepclasseswithmembers class com.rkd.audiobasics.navigation.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keep,includedescriptorclasses class com.rkd.audiobasics.navigation.**$$serializer { *; }
+
 # 4. Protect Hilt & Dagger
 -keep class dagger.** { *; }
 -dontwarn dagger.**
