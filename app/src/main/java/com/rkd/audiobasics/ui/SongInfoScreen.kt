@@ -37,42 +37,21 @@ fun SongInfoScreen(
     savedAlbums: List<Album> = emptyList(),
     resolvedAlbumCache: Map<String, Album> = emptyMap(),
     onCacheResolvedAlbum: (Album) -> Unit = {},
-    // The player's own live duration (same value the scrub bar's right-hand label shows),
-    // passed in when this song is the one currently playing. Takes priority over
-    // song.duration, which may be 0 for songs saved/liked before duration was persisted, or
-    // simply hasn't resolved yet — the player already knows the real number by the time this
-    // screen can be opened for the current track, so just use it directly instead of relying
-    // on a separately-stored copy.
     livePlaybackDurationMs: Long? = null,
     onDismiss: () -> Unit,
-    onArtistClick: (String, String?) -> Unit,   // artist name, and its browseId if known
-                                                  // directly from the song data (avoids a
-                                                  // fallback name search when we already have it)
-    onAlbumClick: (String) -> Unit     // album title — searches for it rather than
-                                        // browsing a specific (possibly duplicate) id
+    onArtistClick: (String, String?) -> Unit,
+    onAlbumClick: (String) -> Unit
 ) {
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
-
-    // Resolve the album title. Fastest path: the song itself already carries its album's
-    // title (stamped on by whichever screen loaded it — Album screen, search, etc.) — use
-    // that immediately with zero lookup. Only fall back to the resolved-album cache / a live
-    // network call for songs that don't have it (e.g. loaded before this field existed, or
-    // from a source that doesn't know the album title).
-    // Tapping the title searches for it by name instead of browsing this specific id, since
-    // YTM itself (confirmed against the official app) sometimes has two separate catalog
-    // entries for what's really the same album — search reliably lands on one canonical
-    // result instead of risking opening a different, possibly-incomplete duplicate.
     var albumTitle by remember(song.albumId) { mutableStateOf(song.albumTitle.ifBlank { null }) }
     var albumTitleLoading by remember(song.albumId) {
         mutableStateOf(song.albumId.isNotBlank() && song.albumTitle.isBlank())
     }
 
-    // React immediately to any cache/savedAlbums entry that already exists or arrives later
-    // (e.g. a background resolve kicked off by playback finishing after this screen opened).
     LaunchedEffect(song.albumId, savedAlbums, resolvedAlbumCache) {
-        if (song.albumTitle.isNotBlank()) return@LaunchedEffect // already have it directly
+        if (song.albumTitle.isNotBlank()) return@LaunchedEffect
         if (song.albumId.isBlank()) {
             albumTitleLoading = false
             return@LaunchedEffect
@@ -85,10 +64,8 @@ fun SongInfoScreen(
         }
     }
 
-    // One-shot live fallback lookup, only if nothing turns up from the song itself or
-    // cache/savedAlbums shortly after this screen opens. Runs once per song.
     LaunchedEffect(song.albumId) {
-        if (song.albumTitle.isNotBlank()) return@LaunchedEffect // already have it directly
+        if (song.albumTitle.isNotBlank()) return@LaunchedEffect
         if (song.albumId.isBlank()) return@LaunchedEffect
         val alreadyCached = savedAlbums.firstOrNull { it.id == song.albumId }?.title?.isNotBlank() == true
                 || resolvedAlbumCache[song.albumId]?.title?.isNotBlank() == true
@@ -100,14 +77,12 @@ fun SongInfoScreen(
                 onCacheResolvedAlbum(meta.copy(id = song.albumId))
             }
         } catch (_: Exception) {
-            // Leave as null — will show "Unknown"; a later background resolve (if one is
-            // in flight elsewhere) will still update the title via the effect above.
         } finally {
             albumTitleLoading = false
         }
     }
 
-    // Compute file size
+    // file size
     val fileSizeText = remember(song.id) {
         val f = CacheManager.getCacheFile(context, song.id)
         if (f.exists() && f.length() > 0) {
@@ -116,8 +91,6 @@ fun SongInfoScreen(
         } else "N/A"
     }
 
-    // Duration mm:ss — prefer the player's own live duration (see livePlaybackDurationMs doc)
-    // over song.duration, falling back to the latter for anything not currently playing.
     val durationText = remember(song.duration, livePlaybackDurationMs) {
         val ms = livePlaybackDurationMs?.takeIf { it > 0 } ?: song.duration
         if (ms > 0) {
@@ -128,15 +101,11 @@ fun SongInfoScreen(
         } else "N/A"
     }
 
-    // Has lyrics cached?
+    // lyrics cached
     val hasLyrics = remember(song.id) {
         CacheManager.isLyricsCached(context, song.id)
     }
-
-    // Individual artist names — prefer the structured list parsed directly from YouTube's
-    // response (accurate even for names containing a comma, like "Tyler, The Creator");
-    // falls back to a best-effort string split only for songs loaded without that data
-    // (e.g. from an older cached/liked entry saved before this field existed).
+    
     val artists = remember(song.id, song.artist, song.artistNames) {
         song.artistNames.ifEmpty {
             com.rkd.audiobasics.api.Innertube.splitArtistNamesWithFeat(song.artist)
@@ -176,7 +145,7 @@ fun SongInfoScreen(
 
                 Spacer(Modifier.height(18.dp))
 
-                // Artists (clickable)
+                // Artists
                 Row(verticalAlignment = Alignment.Top) {
                     Text(
                         text = "Artist(s) : ",
@@ -208,7 +177,7 @@ fun SongInfoScreen(
 
                 Spacer(Modifier.height(16.dp))
 
-                // Album (clickable if exists)
+                // Album
                 if (song.albumId.isNotBlank()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -236,7 +205,10 @@ fun SongInfoScreen(
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
-                                modifier = Modifier.clickable { onAlbumClick(albumTitle!!) }
+                                modifier = Modifier.clickable {
+                                    val firstArtist = song.resolvedArtistNames.firstOrNull().orEmpty()
+                                    onAlbumClick(albumTitle!! + if (firstArtist.isNotBlank()) " $firstArtist" else "")
+                                }
                             )
                             else -> Text(
                                 text = "Unknown",
