@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -35,6 +37,12 @@ import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+
+private fun <T> MutableList<T>.move(fromIndex: Int, toIndex: Int) {
+    add(toIndex, removeAt(fromIndex))
+}
 
 @Composable
 fun LibraryScreen(
@@ -80,6 +88,21 @@ fun LibraryScreen(
     val showLiked = searchQuery.isBlank() || "liked songs".contains(searchQuery, ignoreCase = true)
     val showAlbums = searchQuery.isBlank() || "saved albums".contains(searchQuery, ignoreCase = true)
 
+    // Reordering only makes sense against the full, unfiltered list — while searching, the
+    // custom-playlist rows use filteredCustom read-only below instead.
+    val reorderEnabled = searchQuery.isBlank()
+
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+
+    // Local, live-editable copy of the custom playlists, mirroring QueueScreen's pattern:
+    // dragging an armed row reorders this list instantly, and it's committed to the
+    // ViewModel/DB only once the finger lifts.
+    val livePlaylists = remember { mutableStateListOf<PlaylistEntity>().apply { addAll(customPlaylists) } }
+    LaunchedEffect(customPlaylists) {
+        livePlaylists.clear()
+        livePlaylists.addAll(customPlaylists)
+    }
+
     val listState = rememberLazyListState()
     val totalItems = remember(showLiked, showAlbums, filteredCustom) {
         (if (showLiked) 1 else 0) + (if (showAlbums) 1 else 0) + filteredCustom.size
@@ -89,6 +112,32 @@ fun LibraryScreen(
             if (totalItems <= 1) return@derivedStateOf 0f
             val max = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0
             (max.toFloat() / totalItems).coerceIn(0f, 1f)
+        }
+    }
+
+    // Position of the first custom-playlist row within the LazyColumn: 1 sticky header +
+    // Liked Songs + Saved Albums (both always shown when reorder is enabled, since it's only
+    // enabled while unfiltered). Playlists can never be dragged above this boundary.
+    val playlistOffset = 1 + (if (showLiked) 1 else 0) + (if (showAlbums) 1 else 0)
+
+    var pendingReorder by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromLocal = from.index - playlistOffset
+        val toLocal = (to.index - playlistOffset).coerceIn(0, livePlaylists.size - 1)
+        if (fromLocal < 0 || fromLocal >= livePlaylists.size) return@rememberReorderableLazyListState
+        val current = pendingReorder
+        pendingReorder = if (current == null) fromLocal to toLocal else current.first to toLocal
+        livePlaylists.move(fromLocal, toLocal)
+        draggingIndex = toLocal
+    }
+
+    LaunchedEffect(reorderableState.isAnyItemDragging) {
+        if (!reorderableState.isAnyItemDragging) {
+            pendingReorder?.let { (from, to) ->
+                if (from != to) vm.reorderPlaylists(from, to)
+            }
+            pendingReorder = null
+            draggingIndex = null
         }
     }
 
@@ -113,7 +162,14 @@ fun LibraryScreen(
                                 fontSize = 22.sp,
                                 color = textColor
                             )
-                            if (cacheSize.isNotBlank()) {
+                            if (draggingIndex != null) {
+                                Text(
+                                    text = "Drag and drop",
+                                    fontFamily = NothingFont,
+                                    fontSize = 14.sp,
+                                    color = Color.Gray
+                                )
+                            } else if (cacheSize.isNotBlank()) {
                                 Text(
                                     text = cacheSize,
                                     fontFamily = NothingFont,
@@ -183,20 +239,89 @@ fun LibraryScreen(
                 }
             }
 
-            items(filteredCustom) { playlist ->
-                LibraryRow(
-                    emoji = playlist.emoji,
-                    icon = null,
-                    label = playlist.name,
-                    isDarkMode = isDarkMode,
-                    showMenu = true,
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigatePlaylist(playlist)
-                    },
-                    onRename = { renameTarget = playlist },
-                    onDelete = { deleteTarget = playlist }
-                )
+            val displayedPlaylists = if (reorderEnabled) livePlaylists else filteredCustom
+            itemsIndexed(
+                items = displayedPlaylists,
+                key = { _, playlist -> playlist.id }
+            ) { index, playlist ->
+                val armed = reorderEnabled && draggingIndex == index
+
+                if (reorderEnabled) {
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = playlist.id
+                    ) { isActivelyDragging ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateItem()
+                                .graphicsLayer {
+                                    val s = if (isActivelyDragging) 1.02f else 1f
+                                    scaleX = s
+                                    scaleY = s
+                                    alpha = if (isActivelyDragging) 0.9f else 1f
+                                }
+                                .then(
+                                    if (armed) {
+                                        Modifier.longPressDraggableHandle(
+                                            onDragStarted = {
+                                                HapticUtils.performStrongHaptic(context)
+                                            }
+                                        )
+                                    } else Modifier
+                                )
+                                .background(
+                                    when {
+                                        isActivelyDragging -> if (isDarkMode)
+                                            Color.White.copy(alpha = 0.1f)
+                                        else Color.Black.copy(alpha = 0.06f)
+                                        armed -> if (isDarkMode)
+                                            Color.White.copy(alpha = 0.06f)
+                                        else Color.Black.copy(alpha = 0.05f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                        ) {
+                            LibraryRow(
+                                emoji = playlist.emoji,
+                                icon = null,
+                                label = playlist.name,
+                                isDarkMode = isDarkMode,
+                                showMenu = true,
+                                onClick = {
+                                    // While any playlist is armed for reorder, taps must not
+                                    // navigate — a press-and-release-without-moving can
+                                    // otherwise race the drag gesture and fire as a normal click.
+                                    if (draggingIndex == null) {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        onNavigatePlaylist(playlist)
+                                    }
+                                },
+                                onRename = { renameTarget = playlist },
+                                onDelete = { deleteTarget = playlist },
+                                isDragging = armed,
+                                onReorder = {
+                                    draggingIndex = if (armed) null else index
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    LibraryRow(
+                        emoji = playlist.emoji,
+                        icon = null,
+                        label = playlist.name,
+                        isDarkMode = isDarkMode,
+                        showMenu = true,
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigatePlaylist(playlist)
+                        },
+                        onRename = { renameTarget = playlist },
+                        onDelete = { deleteTarget = playlist }
+                    )
+                }
             }
         }
 
@@ -322,7 +447,9 @@ private fun LibraryRow(
     showMenu: Boolean,
     onClick: () -> Unit,
     onRename: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    isDragging: Boolean = false,
+    onReorder: (() -> Unit)? = null
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
@@ -333,13 +460,28 @@ private fun LibraryRow(
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp))
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (emoji != null) Text(text = emoji, fontSize = 28.sp)
-            else icon?.invoke()
+        if (isDragging) {
+            Box(
+                modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp))
+                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SwapVert,
+                    contentDescription = "Reordering",
+                    tint = textColor,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp))
+                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (emoji != null) Text(text = emoji, fontSize = 28.sp)
+                else icon?.invoke()
+            }
         }
         Spacer(Modifier.width(16.dp))
         Text(text = label, fontFamily = NothingFont, fontWeight = FontWeight.Bold,
@@ -352,6 +494,11 @@ private fun LibraryRow(
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(text = { Text("Rename", fontFamily = NothingFont) },
                         onClick = { menuExpanded = false; onRename?.invoke() })
+                    if (onReorder != null) {
+                        DropdownMenuItem(
+                            text = { Text(if (isDragging) "Cancel reorder" else "Reorder", fontFamily = NothingFont) },
+                            onClick = { menuExpanded = false; onReorder.invoke() })
+                    }
                     DropdownMenuItem(
                         text = { Text("Delete", color = Color.Red, fontFamily = NothingFont) },
                         onClick = { menuExpanded = false; onDelete?.invoke() })
