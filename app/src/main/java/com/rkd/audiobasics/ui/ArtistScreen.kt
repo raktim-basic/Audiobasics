@@ -33,10 +33,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
-import com.rkd.audiobasics.data.ArtistPage
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
@@ -64,10 +64,10 @@ fun ArtistScreen(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
 
-    var artistPage by remember { mutableStateOf<ArtistPage?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var hasError by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    // Scoped to this artist's own NavEntry (see ArtistViewModel.kt) — survives pushing an
+    // album/EP on top and coming back, so the fetched page and selected tab don't reset.
+    val artistVm: ArtistViewModel = viewModel()
+
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -78,26 +78,11 @@ fun ArtistScreen(
     LaunchedEffect(isSearching) { if (isSearching) focusRequester.requestFocus() }
 
     LaunchedEffect(artistName, artistBrowseId) {
-        isLoading = true
-        hasError = false
-        searchQuery = ""
-        try {
-            val page = if (artistBrowseId.isNotBlank()) {
-                Innertube.getArtistPage(artistBrowseId)
-            } else {
-                Innertube.searchArtistByName(artistName)
-            }
-            artistPage = page
-            hasError = page == null
-        } catch (_: Exception) {
-            hasError = true
-        } finally {
-            isLoading = false
-        }
+        artistVm.loadIfNeeded(artistName, artistBrowseId)
     }
 
     // Reset search when tab changes
-    LaunchedEffect(selectedTab) {
+    LaunchedEffect(artistVm.selectedTab) {
         searchQuery = ""
         isSearching = false
     }
@@ -105,28 +90,28 @@ fun ArtistScreen(
     val tabs = listOf("Popular songs", "Albums", "Singles & EPs")
 
     // Filtered content per tab
-    val filteredSongs = remember(artistPage, searchQuery, selectedTab) {
-        if (selectedTab != 0) return@remember emptyList()
-        val all = artistPage?.popularSongs ?: emptyList()
+    val filteredSongs = remember(artistVm.artistPage, searchQuery, artistVm.selectedTab) {
+        if (artistVm.selectedTab != 0) return@remember emptyList()
+        val all = artistVm.artistPage?.popularSongs ?: emptyList()
         if (searchQuery.isBlank()) all
         else all.filter { it.title.contains(searchQuery, ignoreCase = true) || it.artist.contains(searchQuery, ignoreCase = true) }
     }
-    val filteredAlbums = remember(artistPage, searchQuery, selectedTab) {
-        if (selectedTab != 1) return@remember emptyList()
-        val all = artistPage?.albums ?: emptyList()
+    val filteredAlbums = remember(artistVm.artistPage, searchQuery, artistVm.selectedTab) {
+        if (artistVm.selectedTab != 1) return@remember emptyList()
+        val all = artistVm.artistPage?.albums ?: emptyList()
         if (searchQuery.isBlank()) all
         else all.filter { it.title.contains(searchQuery, ignoreCase = true) }
     }
-    val filteredSingles = remember(artistPage, searchQuery, selectedTab) {
-        if (selectedTab != 2) return@remember emptyList()
-        val all = artistPage?.singles ?: emptyList()
+    val filteredSingles = remember(artistVm.artistPage, searchQuery, artistVm.selectedTab) {
+        if (artistVm.selectedTab != 2) return@remember emptyList()
+        val all = artistVm.artistPage?.singles ?: emptyList()
         if (searchQuery.isBlank()) all
         else all.filter { it.title.contains(searchQuery, ignoreCase = true) }
     }
 
     val scrollProgress = remember(listState) {
         derivedStateOf {
-            val total = when (selectedTab) {
+            val total = when (artistVm.selectedTab) {
                 0 -> filteredSongs.size + 2
                 1 -> filteredAlbums.size + 2
                 else -> filteredSingles.size + 2
@@ -146,7 +131,7 @@ fun ArtistScreen(
                     modifier = Modifier.fillMaxWidth().height(260.dp)
                 ) {
                     AsyncImage(
-                        model = artistPage?.artist?.thumbnail,
+                        model = artistVm.artistPage?.artist?.thumbnail,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -154,7 +139,7 @@ fun ArtistScreen(
                 }
                 // Artist name below image
                 Text(
-                    text = artistPage?.artist?.name ?: artistName,
+                    text = artistVm.artistPage?.artist?.name ?: artistName,
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 24.sp,
@@ -176,11 +161,11 @@ fun ArtistScreen(
                                 fontFamily = NothingFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
-                                color = if (selectedTab == i) Color.Red else subTextColor,
+                                color = if (artistVm.selectedTab == i) Color.Red else subTextColor,
                                 modifier = Modifier
                                     .clickable {
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        selectedTab = i
+                                        artistVm.selectedTab = i
                                     }
                                     .padding(vertical = 8.dp)
                             )
@@ -195,13 +180,13 @@ fun ArtistScreen(
             }
 
             // ── Loading / Error / Empty ────────────────────────────────────
-            if (isLoading) {
+            if (artistVm.isLoading) {
                 item {
                     Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color.Red)
                     }
                 }
-            } else if (hasError || artistPage == null) {
+            } else if (artistVm.hasError || artistVm.artistPage == null) {
                 item {
                     Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         Text("Artist not found", fontFamily = NothingFont, color = Color.Gray)
@@ -209,7 +194,7 @@ fun ArtistScreen(
                 }
             } else {
                 // ── Tab content ────────────────────────────────────────────
-                when (selectedTab) {
+                when (artistVm.selectedTab) {
                     0 -> {
                         if (filteredSongs.isEmpty()) {
                             item {
@@ -286,7 +271,7 @@ fun ArtistScreen(
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.weight(1f).focusRequester(focusRequester),
                     placeholder = {
-                        val hint = when (selectedTab) {
+                        val hint = when (artistVm.selectedTab) {
                             0 -> "Search songs..."
                             1 -> "Search albums..."
                             else -> "Search singles & EPs..."
