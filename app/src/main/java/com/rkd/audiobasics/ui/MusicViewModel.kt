@@ -1195,9 +1195,21 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             val entity = PlaylistEntity(
                 id = UUID.randomUUID().toString(),
                 name = trimmed,
-                emoji = emoji
+                emoji = emoji,
+                sortOrder = playlistDao.getMaxSortOrder() + 1
             )
             playlistDao.insertPlaylist(entity)
+        }
+    }
+
+    fun reorderPlaylists(fromIndex: Int, toIndex: Int) {
+        val current = customPlaylists.value.toMutableList()
+        if (fromIndex < 0 || toIndex < 0 ||
+            fromIndex >= current.size || toIndex >= current.size) return
+        val playlist = current.removeAt(fromIndex)
+        current.add(toIndex, playlist)
+        viewModelScope.launch(Dispatchers.IO) {
+            playlistDao.reorderPlaylists(current.map { it.id })
         }
     }
 
@@ -1817,7 +1829,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                 PlaylistEntity(
                                     id = playlistId,
                                     name = pObj.getString("name"),
-                                    emoji = pObj.optString("emoji", "🎵")
+                                    emoji = pObj.optString("emoji", "🎵"),
+                                    sortOrder = i
                                 )
                             )
                             importedPlaylistCount++
