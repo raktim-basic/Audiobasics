@@ -112,13 +112,14 @@ fun CreatePlaylistDialog(
                             gravity = android.view.Gravity.CENTER
                             textSize = 32f
                             isSingleLine = true
-                            // TYPE_TEXT_VARIATION_SHORT_MESSAGE with no other hints is the
-                            // combo that most reliably biases Gboard to default to its emoji
-                            // tab; not a guaranteed system behavior on other keyboards.
                             inputType = InputType.TYPE_CLASS_TEXT or
                                 InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE
                             imeOptions = EditorInfo.IME_ACTION_DONE
                             setPadding(0, 0, 0, 0)
+                            // Hide the blinking text cursor — this field only exists to summon
+                            // the keyboard and catch emoji input, showing a caret over the emoji
+                            // preview looks broken.
+                            isCursorVisible = false
 
                             setOnFocusChangeListener { _, hasFocus ->
                                 isEmojiFieldFocused = hasFocus
