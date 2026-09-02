@@ -245,9 +245,9 @@ fun SearchScreen(
                             val alpha = remember(song.id) { Animatable(0f) }
                             val offsetY = remember(song.id) { Animatable(12f) }
                             LaunchedEffect(song.id) {
-                                delay((index * 24L).coerceAtMost(600L))
-                                launch { alpha.animateTo(1f, tween(durationMillis = 180)) }
-                                launch { offsetY.animateTo(0f, tween(durationMillis = 180)) }
+                                delay((index * 28L).coerceAtMost(600L))
+                                launch { alpha.animateTo(1f, tween(durationMillis = 220)) }
+                                launch { offsetY.animateTo(0f, tween(durationMillis = 220)) }
                             }
 
                             Box(
