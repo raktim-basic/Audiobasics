@@ -8,11 +8,14 @@ interface PlaylistDao {
 
     // ── Playlists ──────────────────────────────────────────────
 
-    @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
+    @Query("SELECT * FROM playlists ORDER BY sortOrder ASC")
     fun observePlaylists(): Flow<List<PlaylistEntity>>
 
-    @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
+    @Query("SELECT * FROM playlists ORDER BY sortOrder ASC")
     suspend fun getPlaylists(): List<PlaylistEntity>
+
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM playlists")
+    suspend fun getMaxSortOrder(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: PlaylistEntity)
@@ -22,6 +25,15 @@ interface PlaylistDao {
 
     @Query("UPDATE playlists SET name = :name, emoji = :emoji WHERE id = :playlistId")
     suspend fun renamePlaylist(playlistId: String, name: String, emoji: String)
+
+    @Query("UPDATE playlists SET sortOrder = :order WHERE id = :playlistId")
+    suspend fun updateSortOrder(playlistId: String, order: Int)
+
+    // Persists a full manual reorder: each id's new position becomes its sortOrder.
+    @Transaction
+    suspend fun reorderPlaylists(orderedIds: List<String>) {
+        orderedIds.forEachIndexed { index, id -> updateSortOrder(id, index) }
+    }
 
     // ── Playlist Songs ─────────────────────────────────────────
 
