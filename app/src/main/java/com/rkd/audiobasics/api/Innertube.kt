@@ -949,7 +949,13 @@ object Innertube {
                             // (rare — usually they don't, since every track shares the album
                             // cover), so prefer it when present rather than always guessing
                             // via ytThumbnail(); this matches the fix applied to regular
-                            // search results and NewPipe fallback search above.
+                            // search results and NewPipe fallback search above. When absent,
+                            // fall back to the album's own cover (albumThumb, resolved above
+                            // from the header/microformat) rather than ytThumbnail(videoId) —
+                            // that raw per-video YouTube thumbnail is what browsing never
+                            // shows (screens here display the album's own thumbnail directly)
+                            // but playback picks up straight from this Song, so it was the
+                            // only place the wrong art ever surfaced.
                             val trackThumbArr = item.optJSONObject("thumbnail")
                                 ?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")
                                 ?.optJSONArray("thumbnails")
@@ -958,7 +964,7 @@ object Innertube {
                                 ?.optJSONObject(trackThumbArr.length() - 1)?.optString("url")
                                 ?.takeIf { it.isNotBlank() }
                                 ?.let { upscaleThumbnail(it) }
-                                ?: ytThumbnail(videoId)
+                                ?: albumThumb.ifBlank { ytThumbnail(videoId) }
                             songs.add(Song(id = videoId, title = songTitle, artist = songArtist,
                                 artistNames = songArtistNames, artistIds = songArtistIds,
                                 thumbnail = trackThumb, duration = parseDurationMs(item),
