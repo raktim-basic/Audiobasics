@@ -12,9 +12,7 @@ import android.net.Uri
  */
 object AudiobasicsLinks {
 
-    // TODO — placeholder. Replace with the real hosted domain once GitHub Pages is set up
-    // (see AUDIOBASICS_LINKS_SETUP.md), and update AndroidManifest.xml's android:host to match.
-    const val HOST = "PLACEHOLDER.audiobasics.example"
+    const val HOST = "raktim-basic.github.io"
     const val PATH_PREFIX = "/l"
 
     private const val PREFS_NAME = "ytlite"
