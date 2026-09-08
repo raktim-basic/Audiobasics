@@ -25,6 +25,10 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/audiobasics.jks
 
+      - name: Print release cert SHA256 fingerprint
+        run: |
+          keytool -list -v -keystore app/audiobasics.jks -alias "${{ secrets.KEY_ALIAS }}" -storepass "${{ secrets.KEYSTORE_PASSWORD }}" | grep "SHA256:"
+
       - name: Inject app icon
         run: |
           pip install Pillow -q
