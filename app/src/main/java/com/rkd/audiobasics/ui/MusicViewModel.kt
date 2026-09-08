@@ -608,15 +608,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             try {
-                val metadata = Innertube.getVideoMetadata(videoId)
-                _smartInputsLinkSong.value = metadata ?: Song(
+                val rawMetadata = Innertube.getVideoMetadata(videoId)
+                // Try to resolve this to a proper catalog song (better title/artist/thumbnail)
+                // in case what was shared is actually a real song, not just a video — falls
+                // back to the raw video metadata untouched (hqdefault thumbnail included) if
+                // no confident catalog match is found, e.g. a fanmade upload or a remix that
+                // isn't in the catalog.
+                val displaySong = rawMetadata?.let { Innertube.refreshSongMetadata(it) }
+                _smartInputsLinkSong.value = displaySong ?: Song(
                     id = videoId, title = "YouTube video", artist = "",
                     thumbnail = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
                 )
-                // Search seed is the video title only, by design — no oEmbed/description
-                // parsing. If we couldn't resolve a title at all, there's nothing to seed a
-                // search with, so the match list is just left empty.
-                val seedTitle = metadata?.title
+                // Search seed is the video's own (raw) title only, by design — no oEmbed/
+                // description parsing, and unaffected by whether refreshSongMetadata above
+                // found a cleaner title. If we couldn't resolve a title at all, there's
+                // nothing to seed a search with, so the match list is just left empty.
+                val seedTitle = rawMetadata?.title
                 _smartInputsMatches.value = if (seedTitle.isNullOrBlank()) emptyList()
                     else Innertube.search(seedTitle).filter { it.id != videoId }.take(3)
             } catch (e: Exception) {
