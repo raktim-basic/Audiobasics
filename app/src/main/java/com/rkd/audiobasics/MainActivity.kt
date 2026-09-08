@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -87,6 +88,7 @@ import com.rkd.audiobasics.ui.SearchArtistsScreen
 import com.rkd.audiobasics.ui.SearchScreen
 import com.rkd.audiobasics.ui.SettingsScreen
 import com.rkd.audiobasics.ui.SmartInputsDialog
+import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.ui.UpdaterScreen
 import com.rkd.audiobasics.ui.fetchLatestAppVersion
 import com.rkd.audiobasics.ui.resetCustomPlaylistScroll
@@ -196,6 +198,11 @@ class MainActivity : ComponentActivity() {
                 if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
                     intent.getStringExtra(Intent.EXTRA_TEXT)?.let { vm.handleSharedYoutubeLink(it) }
                 }
+                // Audiobasics Links — cold start via a tapped song/album link. Warm-start is
+                // handled in onNewIntent() below, same split as Smart Inputs above.
+                if (intent.action == Intent.ACTION_VIEW) {
+                    handleAudiobasicsLinkUri(intent.data, vm)
+                }
             }
 
             val lifecycleOwner = LocalLifecycleOwner.current
@@ -238,6 +245,23 @@ class MainActivity : ComponentActivity() {
                 )[MusicViewModel::class.java]
                 vm.handleSharedYoutubeLink(text)
             }
+        }
+        if (intent.action == Intent.ACTION_VIEW) {
+            val vm = ViewModelProvider(
+                this,
+                ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+            )[MusicViewModel::class.java]
+            handleAudiobasicsLinkUri(intent.data, vm)
+        }
+    }
+
+    /** Shared by both the cold-start LaunchedEffect and onNewIntent — parses an incoming
+     *  Audiobasics Link (see AudiobasicsLinks.parse) and dispatches to the ViewModel. */
+    private fun handleAudiobasicsLinkUri(uri: Uri?, vm: MusicViewModel) {
+        when (val parsed = AudiobasicsLinks.parse(uri)) {
+            is AudiobasicsLinks.ParsedLink.SongLink -> vm.handleAudiobasicsSongLink(parsed.videoId)
+            is AudiobasicsLinks.ParsedLink.AlbumLink -> vm.handleAudiobasicsAlbumLink(parsed.albumId)
+            null -> {}
         }
     }
 
@@ -291,6 +315,7 @@ fun AudiobasicsApp(
     val smartInputsLoading by vm.smartInputsLoading.collectAsState()
     val smartInputsLinkSong by vm.smartInputsLinkSong.collectAsState()
     val smartInputsMatches by vm.smartInputsMatches.collectAsState()
+    val pendingAlbumLinkNavigation by vm.pendingAlbumLinkNavigation.collectAsState()
 
     val backStack = rememberNavBackStack(HomeKey)
     var showPlayerDialog by remember { mutableStateOf(false) }
@@ -335,6 +360,13 @@ fun AudiobasicsApp(
             val revealed = backStack.getOrNull(backStack.size - 2)
             pendingSlideKind = popSlideKind(leaving, revealed)
             backStack.removeLastOrNull()
+        }
+    }
+
+    LaunchedEffect(pendingAlbumLinkNavigation) {
+        pendingAlbumLinkNavigation?.let { album ->
+            push(AlbumDetailKey(album))
+            vm.onAudiobasicsAlbumLinkNavigated()
         }
     }
 
