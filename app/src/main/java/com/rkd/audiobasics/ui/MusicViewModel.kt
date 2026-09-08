@@ -278,6 +278,59 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _currentPitch = MutableStateFlow(0)
     val currentPitch: StateFlow<Int> = _currentPitch
 
+    // ── Audiobasics Links ────────────────────────────────────────────────
+    // Temporary dev-tools-only toggle: with this off (default), Share only ever offers the
+    // Audiobasics Link. Turning it on adds a picker with a YouTube Link option too. Uses the
+    // same pref key as AudiobasicsLinks.isYoutubeShareOptionEnabled(), which reads it directly
+    // from SharedPreferences (rather than through this StateFlow) at each of the several share
+    // call sites, to avoid threading this flow through all of them.
+    private val _shareYoutubeLinkEnabled = MutableStateFlow(prefs.getBoolean("share_show_youtube_option", false))
+    val shareYoutubeLinkEnabled: StateFlow<Boolean> = _shareYoutubeLinkEnabled
+
+    fun toggleShareYoutubeLinkEnabled() {
+        _shareYoutubeLinkEnabled.value = !_shareYoutubeLinkEnabled.value
+        prefs.edit().putBoolean("share_show_youtube_option", _shareYoutubeLinkEnabled.value).apply()
+    }
+
+    // Set when an incoming Audiobasics album link (see AudiobasicsLinks.parse) needs the UI to
+    // navigate to that album; MainActivity observes this, pushes AlbumDetailKey, then calls
+    // onAudiobasicsAlbumLinkNavigated() to clear it. AlbumScreen resolves the full tracklist
+    // itself from just the id (see AlbumScreen's own getAlbumSongs call), so a minimally
+    // populated Album (id only) is all that's needed here.
+    private val _pendingAlbumLinkNavigation = MutableStateFlow<Album?>(null)
+    val pendingAlbumLinkNavigation: StateFlow<Album?> = _pendingAlbumLinkNavigation
+
+    fun onAudiobasicsAlbumLinkNavigated() {
+        _pendingAlbumLinkNavigation.value = null
+    }
+
+    /** Incoming Audiobasics song link — auto-plays immediately (unlike Smart Inputs' generic
+     *  YouTube share flow, there's no disambiguation needed here: the id was already resolved
+     *  by whoever shared it). Reuses the same raw-metadata + refreshSongMetadata approach as
+     *  Smart Inputs so the played song gets proper catalog title/artist/thumbnail when
+     *  available. */
+    fun handleAudiobasicsSongLink(videoId: String) {
+        viewModelScope.launch {
+            try {
+                val rawMetadata = Innertube.getVideoMetadata(videoId)
+                val song = rawMetadata?.let { Innertube.refreshSongMetadata(it) } ?: rawMetadata ?: Song(
+                    id = videoId, title = "YouTube video", artist = "",
+                    thumbnail = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+                )
+                play(song)
+            } catch (e: Exception) {
+                Log.e("YTLite", "Audiobasics song link resolve error: ${e.message}", e)
+                Toast.makeText(getApplication(), "Couldn't open that link", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** Incoming Audiobasics album link — just navigates to the album screen (no auto-play),
+     *  which resolves the full tracklist itself from the id. */
+    fun handleAudiobasicsAlbumLink(albumId: String) {
+        _pendingAlbumLinkNavigation.value = Album(id = albumId, title = "", artist = "", thumbnail = "")
+    }
+
     private val _isRefreshingCipherEngine = MutableStateFlow(false)
     val isRefreshingCipherEngine: StateFlow<Boolean> = _isRefreshingCipherEngine
 
