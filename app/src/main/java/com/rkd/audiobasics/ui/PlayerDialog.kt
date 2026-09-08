@@ -43,6 +43,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
@@ -77,6 +78,7 @@ fun PlayerDialog(
     var showThreeDotMenu by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
     var showTempoPitchDialog by remember { mutableStateOf(false) }
+    var showShareChoice by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableStateOf<Long?>(null) }
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
@@ -369,11 +371,13 @@ fun PlayerDialog(
                                     onClick = {
                                         showThreeDotMenu = false
                                         song?.let { s ->
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=${s.id}")
+                                            if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                                showShareChoice = true
+                                            } else {
+                                                AudiobasicsLinks.shareText(
+                                                    context, AudiobasicsLinks.songLink(s.id), "Share song"
+                                                )
                                             }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Share song"))
                                         }
                                     }
                                 )
@@ -525,6 +529,22 @@ fun PlayerDialog(
             onPitchChange = { vm.setTempoPitch(it) },
             onReset = { vm.resetTempoPitch() },
             onDismiss = { showTempoPitchDialog = false }
+        )
+    }
+
+    // ── Share choice dialog ──────────────────────────────────────────────────
+    if (showShareChoice && song != null) {
+        ShareChoiceDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onAudiobasicsLink = {
+                AudiobasicsLinks.shareText(context, AudiobasicsLinks.songLink(song!!.id), "Share song")
+            },
+            onYoutubeLink = {
+                AudiobasicsLinks.shareText(context, "https://www.youtube.com/watch?v=${song!!.id}", "Share song")
+            },
+            onDismiss = { showShareChoice = false }
         )
     }
 
