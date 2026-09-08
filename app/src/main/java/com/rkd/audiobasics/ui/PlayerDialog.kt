@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -66,6 +67,8 @@ fun PlayerDialog(
     val sleepTimerMode by vm.sleepTimerMode.collectAsState()
     val sleepTimerRemaining by vm.sleepTimerRemaining.collectAsState()
     val repeatMode by vm.repeatMode.collectAsState()
+    val tempoPitchSpeed by vm.currentSpeed.collectAsState()
+    val tempoPitchPitch by vm.currentPitch.collectAsState()
 
     var showLyrics by remember { mutableStateOf(false) }
     var showSongInfo by remember { mutableStateOf(false) }
@@ -73,6 +76,7 @@ fun PlayerDialog(
     var showCreatePlaylist by remember { mutableStateOf(false) }
     var showThreeDotMenu by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
+    var showTempoPitchDialog by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableStateOf<Long?>(null) }
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
@@ -416,6 +420,27 @@ fun PlayerDialog(
                                 DropdownMenuItem(
                                     leadingIcon = {
                                         Icon(
+                                            Icons.Default.Speed,
+                                            contentDescription = null,
+                                            tint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else LocalContentColor.current
+                                        )
+                                    },
+                                    text = {
+                                        Text(
+                                            text = "Tempo and Pitch",
+                                            fontFamily = NothingFont,
+                                            color = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified
+                                        )
+                                    },
+                                    onClick = {
+                                        showThreeDotMenu = false
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        showTempoPitchDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
                                             if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
                                             contentDescription = null,
                                             tint = if (repeatMode == 0) LocalContentColor.current else Color.Red
@@ -485,6 +510,21 @@ fun PlayerDialog(
                 showSleepDialog = false
                 vm.startCustomSleepTimer(minutes)
             }
+        )
+    }
+
+    // ── Tempo/Pitch dialog ───────────────────────────────────────────────────
+    if (showTempoPitchDialog) {
+        TempoPitchDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            speed = tempoPitchSpeed,
+            pitchSemitones = tempoPitchPitch,
+            onSpeedChange = { vm.setTempoSpeed(it) },
+            onPitchChange = { vm.setTempoPitch(it) },
+            onReset = { vm.resetTempoPitch() },
+            onDismiss = { showTempoPitchDialog = false }
         )
     }
 
