@@ -56,6 +56,7 @@ fun SongItem(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
+    var showShareChoice by remember { mutableStateOf(false) }
 
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -64,6 +65,25 @@ fun SongItem(
     val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
 
     val titleColor = if (isPlaying) Color.Red else textColor
+
+    if (showShareChoice) {
+        ShareChoiceDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onAudiobasicsLink = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                    context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
+                )
+            },
+            onYoutubeLink = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                    context, "https://www.youtube.com/watch?v=${song.id}", "Share song"
+                )
+            },
+            onDismiss = { showShareChoice = false }
+        )
+    }
 
     if (showBrokenHeartDialog) {
         BrokenHeartDialog(
@@ -207,7 +227,13 @@ fun SongItem(
                             onClick = {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 menuExpanded = false
-                                shareYouTube(context, song.id)
+                                if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                    showShareChoice = true
+                                } else {
+                                    com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                        context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
+                                    )
+                                }
                             }
                         )
                         // Add to playlist or Like
@@ -260,7 +286,13 @@ fun SongItem(
                             onClick = {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 menuExpanded = false
-                                shareYouTube(context, song.id)
+                                if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                    showShareChoice = true
+                                } else {
+                                    com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                        context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
+                                    )
+                                }
                             }
                         )
                         // Add to playlist or Like
@@ -329,6 +361,8 @@ fun SongItem(
 }
 
 private fun shareYouTube(context: android.content.Context, songId: String) {
+    // Superseded by AudiobasicsLinks.shareText() + the "Audiobasics Link"/"YouTube Link"
+    // choice in SongItem's dropdown — kept only in case another call site still references it.
     val i = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=$songId")
