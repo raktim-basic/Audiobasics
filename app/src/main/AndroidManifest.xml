@@ -25,14 +25,19 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Smart Inputs: makes Audiobasics appear in the Android share sheet for any
-                 shared text. Android can't filter share-target intent-filters by URL content,
-                 so this necessarily also matches non-YouTube text shares — those are rejected
-                 gracefully at runtime in MusicViewModel.handleSharedYoutubeLink(). -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="PLACEHOLDER.audiobasics.example"
+                    android:pathPrefix="/l" />
             </intent-filter>
         </activity>
 
