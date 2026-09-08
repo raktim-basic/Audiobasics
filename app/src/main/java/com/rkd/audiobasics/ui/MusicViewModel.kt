@@ -575,6 +575,77 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _isSearching.value = false
     }
 
+    // ── Smart Inputs ─────────────────────────────────────────────────────
+    // Triggered only via the Android share intent (see MainActivity) — not by pasting a
+    // link inside the app. Resolves the shared link's raw video metadata for display, then
+    // searches the in-app catalog by that video's title only (never oEmbed/description) to
+    // surface up to 3 cleaner library matches alongside it.
+    private val _smartInputsVisible = MutableStateFlow(false)
+    val smartInputsVisible: StateFlow<Boolean> = _smartInputsVisible
+
+    private val _smartInputsLoading = MutableStateFlow(false)
+    val smartInputsLoading: StateFlow<Boolean> = _smartInputsLoading
+
+    private val _smartInputsLinkSong = MutableStateFlow<Song?>(null)
+    val smartInputsLinkSong: StateFlow<Song?> = _smartInputsLinkSong
+
+    private val _smartInputsMatches = MutableStateFlow<List<Song>>(emptyList())
+    val smartInputsMatches: StateFlow<List<Song>> = _smartInputsMatches
+
+    private var smartInputsOriginalUrl: String? = null
+
+    fun handleSharedYoutubeLink(sharedText: String) {
+        val videoId = extractVideoId(sharedText)
+        if (videoId == null) {
+            Toast.makeText(getApplication(), "Not a YouTube link", Toast.LENGTH_SHORT).show()
+            return
+        }
+        smartInputsOriginalUrl = sharedText
+        _smartInputsVisible.value = true
+        _smartInputsLoading.value = true
+        _smartInputsLinkSong.value = null
+        _smartInputsMatches.value = emptyList()
+
+        viewModelScope.launch {
+            try {
+                val metadata = Innertube.getVideoMetadata(videoId)
+                _smartInputsLinkSong.value = metadata ?: Song(
+                    id = videoId, title = "YouTube video", artist = "",
+                    thumbnail = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+                )
+                // Search seed is the video title only, by design — no oEmbed/description
+                // parsing. If we couldn't resolve a title at all, there's nothing to seed a
+                // search with, so the match list is just left empty.
+                val seedTitle = metadata?.title
+                _smartInputsMatches.value = if (seedTitle.isNullOrBlank()) emptyList()
+                    else Innertube.search(seedTitle).filter { it.id != videoId }.take(3)
+            } catch (e: Exception) {
+                Log.e("YTLite", "Smart Inputs resolve error: ${e.message}", e)
+                _smartInputsLinkSong.value = Song(
+                    id = videoId, title = "YouTube video", artist = "",
+                    thumbnail = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+                )
+            } finally {
+                _smartInputsLoading.value = false
+            }
+        }
+    }
+
+    /** Plays exactly what the link pointed to — unedited, not one of the cleaned-up matches. */
+    fun playSmartInputsLinkSong() {
+        val url = smartInputsOriginalUrl ?: return
+        dismissSmartInputs()
+        playByUrl(url)
+    }
+
+    fun dismissSmartInputs() {
+        _smartInputsVisible.value = false
+        _smartInputsLoading.value = false
+        _smartInputsLinkSong.value = null
+        _smartInputsMatches.value = emptyList()
+        smartInputsOriginalUrl = null
+    }
+
     fun play(song: Song) {
         viewModelScope.launch {
             fallbackRetryCount = 0
