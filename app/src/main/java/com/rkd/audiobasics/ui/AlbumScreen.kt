@@ -87,6 +87,7 @@ fun AlbumScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
     var cacheRefreshTick by remember { mutableStateOf(0) }
+    var showShareChoice by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
@@ -336,16 +337,15 @@ fun AlbumScreen(
                                 // Share
                                 IconButton(onClick = {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(
-                                            Intent.EXTRA_TEXT,
-                                            album.youtubeUrl.ifBlank {
-                                                "https://www.youtube.com/playlist?list=${album.id}"
-                                            }
+                                    if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                        showShareChoice = true
+                                    } else {
+                                        com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                            context,
+                                            com.rkd.audiobasics.utils.AudiobasicsLinks.albumLink(album.id),
+                                            "Share album"
                                         )
                                     }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Share album"))
                                 }) {
                                     Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor, modifier = Modifier.size(22.dp))
                                 }
@@ -575,6 +575,29 @@ fun AlbumScreen(
                 }
             }
         }
+    }
+
+    if (showShareChoice) {
+        ShareChoiceDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onAudiobasicsLink = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                    context,
+                    com.rkd.audiobasics.utils.AudiobasicsLinks.albumLink(album.id),
+                    "Share album"
+                )
+            },
+            onYoutubeLink = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                    context,
+                    album.youtubeUrl.ifBlank { "https://www.youtube.com/playlist?list=${album.id}" },
+                    "Share album"
+                )
+            },
+            onDismiss = { showShareChoice = false }
+        )
     }
 }
 
