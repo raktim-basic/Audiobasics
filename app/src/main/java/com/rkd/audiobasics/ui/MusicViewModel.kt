@@ -638,11 +638,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Plays exactly what the link pointed to — unedited, not one of the cleaned-up matches. */
+    /** Plays the same video the link pointed to (not one of the cleaned-up matches below it) —
+     *  but using the already-resolved [_smartInputsLinkSong] (which may carry refreshed catalog
+     *  metadata/thumbnail) rather than re-resolving from scratch, which previously threw away
+     *  that refinement and fell back to the raw video's own metadata/thumbnail on tap. */
     fun playSmartInputsLinkSong() {
-        val url = smartInputsOriginalUrl ?: return
+        val song = _smartInputsLinkSong.value ?: return
         dismissSmartInputs()
-        playByUrl(url)
+        play(song)
     }
 
     fun dismissSmartInputs() {
