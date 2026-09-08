@@ -16,6 +16,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import android.os.Bundle
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -259,6 +260,24 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _logsEnabled = MutableStateFlow(prefs.getBoolean("logs_enabled", false))
     val logsEnabled: StateFlow<Boolean> = _logsEnabled
 
+    // ── Tempo / Pitch ────────────────────────────────────────────────────
+    // Temporary dev-tools-only toggle (see MusicViewModel.toggleTempoPitchApplyToAll):
+    // per-song is the default, global applies one speed/pitch to everything.
+    private val _tempoPitchApplyToAll = MutableStateFlow(prefs.getBoolean("tempo_pitch_apply_all", false))
+    val tempoPitchApplyToAll: StateFlow<Boolean> = _tempoPitchApplyToAll
+
+    private val _globalSpeed = MutableStateFlow(prefs.getFloat("tempo_pitch_global_speed", 1.0f))
+    private val _globalPitch = MutableStateFlow(prefs.getInt("tempo_pitch_global_pitch", 0))
+
+    // songId -> (speed, pitchSemitones); only populated for songs the user has customized.
+    private val _perSongTempoPitch = MutableStateFlow(loadPerSongTempoPitch())
+
+    private val _currentSpeed = MutableStateFlow(1.0f)
+    val currentSpeed: StateFlow<Float> = _currentSpeed
+
+    private val _currentPitch = MutableStateFlow(0)
+    val currentPitch: StateFlow<Int> = _currentPitch
+
     private val _isRefreshingCipherEngine = MutableStateFlow(false)
     val isRefreshingCipherEngine: StateFlow<Boolean> = _isRefreshingCipherEngine
 
@@ -314,6 +333,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 _queue.value.firstOrNull { it.id == mediaId }
             else null
             _currentSong.value = songFromQueue ?: mediaItem?.toSong()
+            syncTempoPitchForCurrentSong()
         }
 
         override fun onPlaybackStateChanged(state: Int) {
@@ -461,6 +481,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (restoredQueue.isNotEmpty()) _queue.value = restoredQueue
         syncStateFromController()
+        syncTempoPitchForCurrentSong()
     }
 
     private fun startPeriodicSync() {
@@ -1533,6 +1554,104 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleLogs() {
         _logsEnabled.value = !_logsEnabled.value
         prefs.edit().putBoolean("logs_enabled", _logsEnabled.value).apply()
+    }
+
+    // ── Tempo / Pitch ────────────────────────────────────────────────────
+
+    companion object {
+        const val TEMPO_MIN = 0.25f
+        const val TEMPO_MAX = 2.0f
+        const val TEMPO_STEP = 0.05f
+        const val PITCH_MIN = -12
+        const val PITCH_MAX = 12
+    }
+
+    private fun pitchSemitonesToRatio(semitones: Int): Float =
+        Math.pow(2.0, semitones / 12.0).toFloat()
+
+    /** Applies (speed, pitch) to the live player and refreshes the dialog-facing state. */
+    private fun applyTempoPitch(speed: Float, pitchSemitones: Int) {
+        _currentSpeed.value = speed
+        _currentPitch.value = pitchSemitones
+        controller?.playbackParameters = PlaybackParameters(speed, pitchSemitonesToRatio(pitchSemitones))
+    }
+
+    /** Call whenever the current song changes (or the controller first connects) to load
+     *  whichever speed/pitch applies — global, this song's saved value, or the 1.0x/0 default. */
+    private fun syncTempoPitchForCurrentSong() {
+        val speed: Float
+        val pitch: Int
+        if (_tempoPitchApplyToAll.value) {
+            speed = _globalSpeed.value
+            pitch = _globalPitch.value
+        } else {
+            val saved = _currentSong.value?.id?.let { _perSongTempoPitch.value[it] }
+            speed = saved?.first ?: 1.0f
+            pitch = saved?.second ?: 0
+        }
+        applyTempoPitch(speed, pitch)
+    }
+
+    fun setTempoSpeed(speed: Float) {
+        val clamped = speed.coerceIn(TEMPO_MIN, TEMPO_MAX)
+        applyTempoPitch(clamped, _currentPitch.value)
+        persistTempoPitch(clamped, _currentPitch.value)
+    }
+
+    fun setTempoPitch(pitchSemitones: Int) {
+        val clamped = pitchSemitones.coerceIn(PITCH_MIN, PITCH_MAX)
+        applyTempoPitch(_currentSpeed.value, clamped)
+        persistTempoPitch(_currentSpeed.value, clamped)
+    }
+
+    fun resetTempoPitch() {
+        applyTempoPitch(1.0f, 0)
+        persistTempoPitch(1.0f, 0)
+    }
+
+    private fun persistTempoPitch(speed: Float, pitch: Int) {
+        if (_tempoPitchApplyToAll.value) {
+            _globalSpeed.value = speed
+            _globalPitch.value = pitch
+            prefs.edit()
+                .putFloat("tempo_pitch_global_speed", speed)
+                .putInt("tempo_pitch_global_pitch", pitch)
+                .apply()
+        } else {
+            val songId = _currentSong.value?.id ?: return
+            val updated = _perSongTempoPitch.value.toMutableMap()
+            if (speed == 1.0f && pitch == 0) updated.remove(songId) else updated[songId] = speed to pitch
+            _perSongTempoPitch.value = updated
+            savePerSongTempoPitch(updated)
+        }
+    }
+
+    /** Temporary dev-tools-only toggle — see MusicViewModel.tempoPitchApplyToAll. */
+    fun toggleTempoPitchApplyToAll() {
+        _tempoPitchApplyToAll.value = !_tempoPitchApplyToAll.value
+        prefs.edit().putBoolean("tempo_pitch_apply_all", _tempoPitchApplyToAll.value).apply()
+        syncTempoPitchForCurrentSong()
+    }
+
+    private fun savePerSongTempoPitch(map: Map<String, Pair<Float, Int>>) {
+        val obj = JSONObject()
+        map.forEach { (songId, pair) ->
+            obj.put(songId, JSONObject().apply {
+                put("speed", pair.first)
+                put("pitch", pair.second)
+            })
+        }
+        prefs.edit().putString("per_song_tempo_pitch", obj.toString()).apply()
+    }
+
+    private fun loadPerSongTempoPitch(): Map<String, Pair<Float, Int>> {
+        return try {
+            val obj = JSONObject(prefs.getString("per_song_tempo_pitch", "{}") ?: "{}")
+            obj.keys().asSequence().associateWith { key ->
+                val entry = obj.getJSONObject(key)
+                entry.getDouble("speed").toFloat() to entry.getInt("pitch")
+            }
+        } catch (_: Exception) { emptyMap() }
     }
 
     // Manual recovery for a stale/rotated cipher hash (YouTube periodically rotates
