@@ -992,6 +992,7 @@ private fun DevToolsPage(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val logsEnabled by vm.logsEnabled.collectAsState()
     val tempoPitchApplyToAll by vm.tempoPitchApplyToAll.collectAsState()
+    val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -1089,6 +1090,42 @@ private fun DevToolsPage(
                 onCheckedChange = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     vm.toggleTempoPitchApplyToAll()
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color.Red,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.Gray
+                )
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Show YouTube Link option on share",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor
+                )
+                Text(
+                    text = "Off: Share only ever sends the Audiobasics Link",
+                    fontSize = 12.sp,
+                    color = textColor.copy(alpha = 0.6f)
+                )
+            }
+            Switch(
+                checked = shareYoutubeLinkEnabled,
+                onCheckedChange = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    vm.toggleShareYoutubeLinkEnabled()
                 },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
