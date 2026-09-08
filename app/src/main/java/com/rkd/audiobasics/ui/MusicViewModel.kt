@@ -1558,14 +1558,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Tempo / Pitch ────────────────────────────────────────────────────
 
-    companion object {
-        const val TEMPO_MIN = 0.25f
-        const val TEMPO_MAX = 2.0f
-        const val TEMPO_STEP = 0.05f
-        const val PITCH_MIN = -12
-        const val PITCH_MAX = 12
-    }
-
     private fun pitchSemitonesToRatio(semitones: Int): Float =
         Math.pow(2.0, semitones / 12.0).toFloat()
 
@@ -2029,5 +2021,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         const val THEME_SYSTEM = "system"
         const val THEME_LIGHT = "light"
         const val THEME_DARK = "dark"
+        const val TEMPO_MIN = 0.25f
+        const val TEMPO_MAX = 2.0f
+        const val TEMPO_STEP = 0.05f
+        const val PITCH_MIN = -12
+        const val PITCH_MAX = 12
     }
 }
