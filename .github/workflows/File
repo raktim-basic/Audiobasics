@@ -1,0 +1,4 @@
+- name: Print release cert SHA256 fingerprint
+        run: |
+          keytool -list -v -keystore "$KEYSTORE_PATH" -alias "$KEY_ALIAS" -storepass "$KEYSTORE_PASSWORD" \
+            | grep "SHA256:"
