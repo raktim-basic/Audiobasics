@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -85,6 +86,7 @@ import com.rkd.audiobasics.ui.SearchAlbumsScreen
 import com.rkd.audiobasics.ui.SearchArtistsScreen
 import com.rkd.audiobasics.ui.SearchScreen
 import com.rkd.audiobasics.ui.SettingsScreen
+import com.rkd.audiobasics.ui.SmartInputsDialog
 import com.rkd.audiobasics.ui.UpdaterScreen
 import com.rkd.audiobasics.ui.fetchLatestAppVersion
 import com.rkd.audiobasics.ui.resetCustomPlaylistScroll
@@ -187,6 +189,15 @@ class MainActivity : ComponentActivity() {
             val openUpdater = intent.getBooleanExtra("OPEN_UPDATER", false)
             if (openUpdater) vm.triggerUpdater()
 
+            // Smart Inputs — cold start via the share sheet. Warm-start re-shares while the
+            // app is already running are handled in onNewIntent() instead (see below), since
+            // this LaunchedEffect(Unit) only ever runs once per Activity creation.
+            LaunchedEffect(Unit) {
+                if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+                    intent.getStringExtra(Intent.EXTRA_TEXT)?.let { vm.handleSharedYoutubeLink(it) }
+                }
+            }
+
             val lifecycleOwner = LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
@@ -218,6 +229,15 @@ class MainActivity : ComponentActivity() {
                 ViewModelProvider.AndroidViewModelFactory.getInstance(application)
             )[MusicViewModel::class.java]
             vm.triggerUpdater()
+        }
+        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
+                val vm = ViewModelProvider(
+                    this,
+                    ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+                )[MusicViewModel::class.java]
+                vm.handleSharedYoutubeLink(text)
+            }
         }
     }
 
@@ -267,6 +287,10 @@ fun AudiobasicsApp(
     val isLoading by vm.isLoading.collectAsState()
     val showStorageLow by vm.showStorageLow.collectAsState()
     val navigateToUpdater by vm.navigateToUpdater.collectAsState()
+    val smartInputsVisible by vm.smartInputsVisible.collectAsState()
+    val smartInputsLoading by vm.smartInputsLoading.collectAsState()
+    val smartInputsLinkSong by vm.smartInputsLinkSong.collectAsState()
+    val smartInputsMatches by vm.smartInputsMatches.collectAsState()
 
     val backStack = rememberNavBackStack(HomeKey)
     var showPlayerDialog by remember { mutableStateOf(false) }
@@ -356,6 +380,24 @@ fun AudiobasicsApp(
             isDarkMode = isDarkMode,
             onDismiss = { addToSheetSong = null },
             onCreateNew = { showCreatePlaylistFromSheet = true }
+        )
+    }
+
+    // Smart Inputs — shown after sharing a YouTube link into Audiobasics (see MainActivity)
+    if (smartInputsVisible) {
+        val context = LocalContext.current
+        val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+        SmartInputsDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            loading = smartInputsLoading,
+            linkSong = smartInputsLinkSong,
+            matches = smartInputsMatches,
+            vm = vm,
+            onDismiss = { vm.dismissSmartInputs() },
+            onPlayLinkSong = { vm.playSmartInputsLinkSong() },
+            onAddToSheet = { song -> addToSheetSong = song }
         )
     }
     if (showCreatePlaylistFromSheet) {
