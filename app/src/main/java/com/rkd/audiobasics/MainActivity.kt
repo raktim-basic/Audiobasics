@@ -203,6 +203,9 @@ class MainActivity : ComponentActivity() {
                 if (intent.action == Intent.ACTION_VIEW) {
                     handleAudiobasicsLinkUri(intent.data, vm)
                 }
+                // One-time nudge toward manually enabling Audiobasics Link handling in
+                // Settings, in case automatic verification didn't take effect.
+                vm.checkAppLinksNudge(this@MainActivity)
             }
 
             val lifecycleOwner = LocalLifecycleOwner.current
@@ -316,6 +319,7 @@ fun AudiobasicsApp(
     val smartInputsLinkSong by vm.smartInputsLinkSong.collectAsState()
     val smartInputsMatches by vm.smartInputsMatches.collectAsState()
     val pendingAlbumLinkNavigation by vm.pendingAlbumLinkNavigation.collectAsState()
+    val showAppLinksNudge by vm.showAppLinksNudge.collectAsState()
 
     val backStack = rememberNavBackStack(HomeKey)
     var showPlayerDialog by remember { mutableStateOf(false) }
@@ -430,6 +434,23 @@ fun AudiobasicsApp(
             onDismiss = { vm.dismissSmartInputs() },
             onPlayLinkSong = { vm.playSmartInputsLinkSong() },
             onAddToSheet = { song -> addToSheetSong = song }
+        )
+    }
+
+    // One-time nudge toward enabling Audiobasics Link handling in Settings (see MainActivity's
+    // vm.checkAppLinksNudge call and AudiobasicsLinks.isDomainLinkHandlingEnabled)
+    if (showAppLinksNudge) {
+        val context = LocalContext.current
+        val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+        AppLinksNudgeDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onEnable = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.openLinkHandlingSettings(context)
+                vm.dismissAppLinksNudge()
+            },
+            onDismiss = { vm.dismissAppLinksNudge() }
         )
     }
     if (showCreatePlaylistFromSheet) {
