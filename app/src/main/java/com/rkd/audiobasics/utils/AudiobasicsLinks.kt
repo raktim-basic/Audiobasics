@@ -2,7 +2,11 @@ package com.rkd.audiobasics.utils
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.verify.domain.DomainVerificationManager
+import android.content.pm.verify.domain.DomainVerificationUserState
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 
 /**
  * Audiobasics Links — deep links that open a song or album directly inside Audiobasics
@@ -54,5 +58,37 @@ object AudiobasicsLinks {
             putExtra(Intent.EXTRA_TEXT, text)
         }
         context.startActivity(Intent.createChooser(intent, chooserTitle))
+    }
+
+    /** Whether Android has already verified (or the user has manually approved via Settings)
+     *  this app as the handler for HOST's /l/... links. Only meaningful on API 31+
+     *  (DomainVerificationManager) — returns true on older versions since there's nothing to
+     *  nudge the user toward there: an unverified link on pre-12 shows a disambiguation
+     *  chooser rather than silently opening a browser, so the problem this solves doesn't
+     *  really exist in the same form. Fails open (returns true) on any lookup error rather
+     *  than risk nagging the user over something we can't actually diagnose. */
+    fun isDomainLinkHandlingEnabled(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return try {
+            val manager = context.getSystemService(DomainVerificationManager::class.java)
+            val hostState = manager
+                ?.getDomainVerificationUserState(context.packageName)
+                ?.hostToStateMap
+                ?.get(HOST)
+            hostState == DomainVerificationUserState.DOMAIN_STATE_VERIFIED ||
+                hostState == DomainVerificationUserState.DOMAIN_STATE_SELECTED
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    /** Deep-links straight to this app's "Open by default" settings screen (API 31+) — the
+     *  exact screen with the domain toggle — rather than the generic app-info page. */
+    fun openLinkHandlingSettings(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val intent = Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+        context.startActivity(intent)
     }
 }
