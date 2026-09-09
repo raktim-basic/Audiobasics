@@ -450,8 +450,7 @@ fun AudiobasicsApp(
             onEnable = {
                 com.rkd.audiobasics.utils.AudiobasicsLinks.openLinkHandlingSettings(context)
                 vm.dismissAppLinksNudge()
-            },
-            onDismiss = { vm.dismissAppLinksNudge() }
+            }
         )
     }
     if (showCreatePlaylistFromSheet) {
