@@ -328,9 +328,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
      *  Smart Inputs so the played song gets proper catalog title/artist/thumbnail when
      *  available. */
     fun handleAudiobasicsSongLink(videoId: String) {
-        // Same "show something immediately" pattern as playByUrl() — without this, the gap
-        // between tapping the link and metadata actually resolving (network calls) had no
-        // loading indication at all, so the tap looked like it did nothing.
+        // Same guarded "show something immediately" pattern as playByUrl() — pause whatever's
+        // currently playing and flip to a loading placeholder synchronously, before any
+        // suspending/network work starts, and guard the periodic controller sync from
+        // stomping it back to the old (still technically "current") song in the meantime.
+        isResolvingPlayByUrl = true
+        controller?.pause()
         _isLoading.value = true
         _currentSong.value = Song(
             id = videoId, title = "Loading...", artist = "",
@@ -349,6 +352,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 Log.e("YTLite", "Audiobasics song link resolve error: ${e.message}", e)
                 Toast.makeText(getApplication(), "Couldn't open that link", Toast.LENGTH_SHORT).show()
                 _isLoading.value = false
+            } finally {
+                isResolvingPlayByUrl = false
             }
         }
     }
@@ -381,11 +386,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private var fallbackRetryCount = 0
 
-    // True from the moment "Play with Link" is tapped until the new MediaItem is actually
-    // handed to the controller. While true, syncStateFromController() must not overwrite
-    // _currentSong/_isLoading from the controller's still-stale (old song, paused) state —
-    // otherwise onEvents()'s periodic sync stomps the placeholder/loading UI we just set,
-    // making the tap look like it did nothing.
+    // True from the moment "Play with Link" (or an incoming Audiobasics song link) is tapped
+    // until the new MediaItem is actually handed to the controller. While true,
+    // syncStateFromController() must not overwrite _currentSong/_isLoading from the
+    // controller's still-stale (old song, paused) state — otherwise onEvents()'s periodic
+    // sync stomps the placeholder/loading UI we just set, making the tap look like it did
+    // nothing.
     private var isResolvingPlayByUrl = false
 
     // ─────────────────────────────────────────────────────────────────────────
