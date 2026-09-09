@@ -33,6 +33,7 @@ import com.rkd.audiobasics.data.db.AppDatabase
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.data.db.PlaylistSongEntity
 import com.rkd.audiobasics.player.MusicService
+import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.utils.MigrationMessageProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -302,6 +303,23 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onAudiobasicsAlbumLinkNavigated() {
         _pendingAlbumLinkNavigation.value = null
+    }
+
+    // Shown once (unless already dismissed or already enabled) to nudge the user toward
+    // manually approving Audiobasics as the /l/... link handler in system Settings — a
+    // fallback for when Android's automatic verification doesn't take effect, since the app
+    // can't grant itself this permission programmatically. See AudiobasicsLinks.kt.
+    private val _showAppLinksNudge = MutableStateFlow(false)
+    val showAppLinksNudge: StateFlow<Boolean> = _showAppLinksNudge
+
+    fun checkAppLinksNudge(context: android.content.Context) {
+        if (prefs.getBoolean("app_links_nudge_dismissed", false)) return
+        _showAppLinksNudge.value = !AudiobasicsLinks.isDomainLinkHandlingEnabled(context)
+    }
+
+    fun dismissAppLinksNudge() {
+        _showAppLinksNudge.value = false
+        prefs.edit().putBoolean("app_links_nudge_dismissed", true).apply()
     }
 
     /** Incoming Audiobasics song link — auto-plays immediately (unlike Smart Inputs' generic
