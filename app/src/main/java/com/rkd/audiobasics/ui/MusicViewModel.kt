@@ -328,6 +328,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
      *  Smart Inputs so the played song gets proper catalog title/artist/thumbnail when
      *  available. */
     fun handleAudiobasicsSongLink(videoId: String) {
+        // Same "show something immediately" pattern as playByUrl() — without this, the gap
+        // between tapping the link and metadata actually resolving (network calls) had no
+        // loading indication at all, so the tap looked like it did nothing.
+        _isLoading.value = true
+        _currentSong.value = Song(
+            id = videoId, title = "Loading...", artist = "",
+            thumbnail = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+        )
+
         viewModelScope.launch {
             try {
                 val rawMetadata = Innertube.getVideoMetadata(videoId)
@@ -339,6 +348,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) {
                 Log.e("YTLite", "Audiobasics song link resolve error: ${e.message}", e)
                 Toast.makeText(getApplication(), "Couldn't open that link", Toast.LENGTH_SHORT).show()
+                _isLoading.value = false
             }
         }
     }
