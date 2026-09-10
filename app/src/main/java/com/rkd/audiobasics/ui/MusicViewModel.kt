@@ -361,6 +361,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     /** Incoming Audiobasics album link — just navigates to the album screen (no auto-play),
      *  which resolves the full tracklist itself from the id. */
     fun handleAudiobasicsAlbumLink(albumId: String) {
+        Timber.tag("AlbumLink").d("received albumId='$albumId'")
         _pendingAlbumLinkNavigation.value = Album(id = albumId, title = "", artist = "", thumbnail = "")
     }
 
