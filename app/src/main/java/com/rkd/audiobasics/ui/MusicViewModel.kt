@@ -360,9 +360,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Incoming Audiobasics album link — just navigates to the album screen (no auto-play),
      *  which resolves the full tracklist itself from the id. */
-    fun handleAudiobasicsAlbumLink(albumId: String) {
-        Timber.tag("AlbumLink").d("received albumId='$albumId'")
-        _pendingAlbumLinkNavigation.value = Album(id = albumId, title = "", artist = "", thumbnail = "")
+    /** Incoming Audiobasics album link — just navigates to the album screen (no auto-play),
+     *  which resolves the full tracklist itself from the id. [title]/[thumbnail] come from the
+     *  link's own query params (see AudiobasicsLinks.albumLink) and are used as the initial
+     *  placeholder so the header has something correct to show even for browse ids where
+     *  Innertube's own title/thumbnail parsing comes back blank (see AlbumScreen's existing
+     *  enrichedAlbum.title.ifBlank { album.title } fallback chain — this is exactly what it
+     *  was already designed to fall back to). */
+    fun handleAudiobasicsAlbumLink(albumId: String, title: String, thumbnail: String) {
+        Timber.tag("AlbumLink").d("received albumId='$albumId' title='$title'")
+        _pendingAlbumLinkNavigation.value = Album(id = albumId, title = title, artist = "", thumbnail = thumbnail)
     }
 
     private val _isRefreshingCipherEngine = MutableStateFlow(false)
