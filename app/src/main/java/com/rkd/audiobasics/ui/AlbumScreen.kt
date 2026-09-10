@@ -342,7 +342,9 @@ fun AlbumScreen(
                                     } else {
                                         com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
                                             context,
-                                            com.rkd.audiobasics.utils.AudiobasicsLinks.albumLink(album.id),
+                                            com.rkd.audiobasics.utils.AudiobasicsLinks.albumLink(
+                                                album.id, enrichedAlbum.title, enrichedAlbum.thumbnail
+                                            ),
                                             "Share album"
                                         )
                                     }
@@ -585,7 +587,9 @@ fun AlbumScreen(
             onAudiobasicsLink = {
                 com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
                     context,
-                    com.rkd.audiobasics.utils.AudiobasicsLinks.albumLink(album.id),
+                    com.rkd.audiobasics.utils.AudiobasicsLinks.albumLink(
+                        album.id, enrichedAlbum.title, enrichedAlbum.thumbnail
+                    ),
                     "Share album"
                 )
             },
