@@ -367,9 +367,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
      *  Innertube's own title/thumbnail parsing comes back blank (see AlbumScreen's existing
      *  enrichedAlbum.title.ifBlank { album.title } fallback chain — this is exactly what it
      *  was already designed to fall back to). */
-    fun handleAudiobasicsAlbumLink(albumId: String, title: String, thumbnail: String) {
-        Timber.tag("AlbumLink").d("received albumId='$albumId' title='$title'")
-        _pendingAlbumLinkNavigation.value = Album(id = albumId, title = title, artist = "", thumbnail = thumbnail)
+    fun handleAudiobasicsAlbumLink(albumId: String, title: String, thumbnail: String, year: String) {
+        Timber.tag("AlbumLink").d("received albumId='$albumId' title='$title' year='$year'")
+        _pendingAlbumLinkNavigation.value = Album(id = albumId, title = title, artist = "", thumbnail = thumbnail, year = year)
     }
 
     private val _isRefreshingCipherEngine = MutableStateFlow(false)
