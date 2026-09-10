@@ -25,7 +25,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,7 +48,9 @@ import com.rkd.audiobasics.utils.HapticUtils
 sealed class SettingsPage {
     object Main : SettingsPage()
     object Appearance : SettingsPage()
-    object Cache : SettingsPage()
+    object General : SettingsPage()
+    // Library now also carries what used to be the standalone "Downloads" (Cache) page —
+    // renamed "Library management" in the UI. openCache/openLibrary both route here.
     object Library : SettingsPage()
     object DevTools : SettingsPage()
     object EngineInfo : SettingsPage()
@@ -66,9 +68,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     var currentPage by remember { 
         mutableStateOf<SettingsPage>(
+            // Downloads settings live inside the merged Library management page now, so
+            // both deep links land there.
             when {
-                openCache -> SettingsPage.Cache
-                openLibrary -> SettingsPage.Library
+                openCache || openLibrary -> SettingsPage.Library
                 else -> SettingsPage.Main
             }
         ) 
@@ -109,7 +112,7 @@ fun SettingsScreen(
                 onBack = onBack,
                 onNavigateUpdater = onNavigateUpdater,
                 onNavigateAppearance = { goTo(SettingsPage.Appearance) },
-                onNavigateCache = { goTo(SettingsPage.Cache) },
+                onNavigateGeneral = { goTo(SettingsPage.General) },
                 onNavigateLibrary = { goTo(SettingsPage.Library) },
                 onNavigateDevTools = { goTo(SettingsPage.DevTools) }
             )
@@ -118,7 +121,7 @@ fun SettingsScreen(
                 isDarkMode = isDarkMode,
                 onBack = { goBack(SettingsPage.Main) }
             )
-            is SettingsPage.Cache -> CachePage(
+            is SettingsPage.General -> GeneralPage(
                 vm = vm,
                 isDarkMode = isDarkMode,
                 onBack = { goBack(SettingsPage.Main) }
@@ -149,7 +152,7 @@ private fun SettingsMainPage(
     onBack: () -> Unit,
     onNavigateUpdater: () -> Unit,
     onNavigateAppearance: () -> Unit,
-    onNavigateCache: () -> Unit,
+    onNavigateGeneral: () -> Unit,
     onNavigateLibrary: () -> Unit,
     onNavigateDevTools: () -> Unit
 ) {
@@ -249,11 +252,11 @@ private fun SettingsMainPage(
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Downloads",
-                    subtitle = "Offline songs management",
+                    title = "General",
+                    subtitle = "The usual settings",
                     icon = {
                         Icon(
-                            Icons.Default.Storage,
+                            Icons.Default.Settings,
                             contentDescription = null,
                             tint = textColor,
                             modifier = Modifier.size(24.dp)
@@ -261,7 +264,7 @@ private fun SettingsMainPage(
                     },
                     onClick = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateCache()
+                        onNavigateGeneral()
                     }
                 )
             }
@@ -271,8 +274,8 @@ private fun SettingsMainPage(
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Library",
-                    subtitle = "Export and import your playlists",
+                    title = "Library management",
+                    subtitle = "Downloads and export/import",
                     icon = {
                         Icon(
                             Icons.Default.LibraryMusic,
@@ -537,6 +540,67 @@ private fun AppearancePage(
             }
         }
 
+        Spacer(Modifier.weight(1f))
+
+        Box(
+            modifier = Modifier.fillMaxWidth().height(1.dp)
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(barColor)
+                .padding(vertical = 12.dp, horizontal = 20.dp)
+        ) {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onBack()
+            }) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = textColor,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeneralPage(
+    vm: MusicViewModel,
+    isDarkMode: Boolean,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val tempoPitchApplyToAll by vm.tempoPitchApplyToAll.collectAsState()
+    val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
+
+    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "General",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                color = textColor
+            )
+        }
+
+        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -564,6 +628,78 @@ private fun AppearancePage(
                 onCheckedChange = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     vm.toggleHaptics()
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color.Red,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.Gray
+                )
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Tempo/Pitch applies to all songs",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor
+                )
+                Text(
+                    text = "Off: each song remembers its own tempo/pitch",
+                    fontSize = 12.sp,
+                    color = textColor.copy(alpha = 0.6f)
+                )
+            }
+            Switch(
+                checked = tempoPitchApplyToAll,
+                onCheckedChange = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    vm.toggleTempoPitchApplyToAll()
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color.Red,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.Gray
+                )
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Show YouTube Link option on share",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor
+                )
+                Text(
+                    text = "Off: Share only ever sends the Audiobasics Link",
+                    fontSize = 12.sp,
+                    color = textColor.copy(alpha = 0.6f)
+                )
+            }
+            Switch(
+                checked = shareYoutubeLinkEnabled,
+                onCheckedChange = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    vm.toggleShareYoutubeLinkEnabled()
                 },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
@@ -603,141 +739,6 @@ private fun AppearancePage(
 }
 
 @Composable
-private fun CachePage(
-    vm: MusicViewModel,
-    isDarkMode: Boolean,
-    onBack: () -> Unit
-) {
-    val context = LocalContext.current
-    val textColor = if (isDarkMode) Color.White else Color.Black
-    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
-    val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val cacheSize by vm.cacheSize.collectAsState()
-    val cacheProgress by vm.cacheProgress.collectAsState()
-    val hapticsEnabled by vm.hapticsEnabled.collectAsState()
-
-    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Downloads",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 24.sp,
-                color = textColor
-            )
-        }
-
-        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Download Size",
-                    subtitle = if (cacheSize.isBlank()) "No downloads" else cacheSize,
-                    icon = {},
-                    onClick = {}
-                )
-            }
-
-            item {
-                val isCurrentlyCaching = cacheProgress != null
-
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Download All",
-                    subtitle = when {
-                        isCurrentlyCaching -> {
-                            val (done, total) = cacheProgress!!
-                            val percent = if (total > 0)
-                                ((done.toFloat() / total.toFloat()) * 100).toInt() else 0
-                            "Downloading... $done / $total ($percent%)"
-                        }
-                        else -> "Download every song in your library"
-                    },
-                    icon = {
-                        if (isCurrentlyCaching) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.Red
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.Download,
-                                contentDescription = null,
-                                tint = textColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    },
-                    onClick = {
-                        if (!isCurrentlyCaching) {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.cacheAllLibrary()
-                        }
-                    }
-                )
-
-                if (isCurrentlyCaching) {
-                    val (done, total) = cacheProgress!!
-                    val progress = if (total > 0) done.toFloat() / total.toFloat() else 0f
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 4.dp),
-                        color = Color.Red,
-                        trackColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
-                    )
-                    Text(
-                        text = "Starting the download.. do not close the app",
-                        fontFamily = NothingFont,
-                        fontSize = 12.sp,
-                        color = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-
-        Box(
-            modifier = Modifier.fillMaxWidth().height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(barColor)
-                .padding(vertical = 12.dp, horizontal = 20.dp)
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun LibraryPage(
     vm: MusicViewModel,
     isDarkMode: Boolean,
@@ -745,6 +746,8 @@ private fun LibraryPage(
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val cacheSize by vm.cacheSize.collectAsState()
+    val cacheProgress by vm.cacheProgress.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -838,7 +841,7 @@ private fun LibraryPage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Library",
+                text = "Library management",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 24.sp,
@@ -852,6 +855,82 @@ private fun LibraryPage(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(vertical = 8.dp)
         ) {
+            // Downloads (formerly the standalone "Downloads" settings page)
+            item {
+                SettingsRow(
+                    isDarkMode = isDarkMode,
+                    title = "Download Size",
+                    subtitle = if (cacheSize.isBlank()) "No downloads" else cacheSize,
+                    icon = {},
+                    onClick = {}
+                )
+            }
+
+            item {
+                val isCurrentlyCaching = cacheProgress != null
+
+                SettingsRow(
+                    isDarkMode = isDarkMode,
+                    title = "Download All",
+                    subtitle = when {
+                        isCurrentlyCaching -> {
+                            val (done, total) = cacheProgress!!
+                            val percent = if (total > 0)
+                                ((done.toFloat() / total.toFloat()) * 100).toInt() else 0
+                            "Downloading... $done / $total ($percent%)"
+                        }
+                        else -> "Download every song in your library"
+                    },
+                    icon = {
+                        if (isCurrentlyCaching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.Red
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Download,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    },
+                    onClick = {
+                        if (!isCurrentlyCaching) {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            vm.cacheAllLibrary()
+                        }
+                    }
+                )
+
+                if (isCurrentlyCaching) {
+                    val (done, total) = cacheProgress!!
+                    val progress = if (total > 0) done.toFloat() / total.toFloat() else 0f
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                        color = Color.Red,
+                        trackColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
+                    )
+                    Text(
+                        text = "Starting the download.. do not close the app",
+                        fontFamily = NothingFont,
+                        fontSize = 12.sp,
+                        color = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            item { SettingsDivider(isDarkMode) }
+
+            // Export / import (originally this page's own content)
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
@@ -961,12 +1040,6 @@ fun SettingsRow(
                 )
             }
         }
-        Icon(
-            Icons.Default.ArrowForward,
-            contentDescription = null,
-            tint = if (isDarkMode) Color(0xFF555555) else Color(0xFFCCCCCC),
-            modifier = Modifier.size(16.dp)
-        )
     }
 }
 
@@ -991,8 +1064,6 @@ private fun DevToolsPage(
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val logsEnabled by vm.logsEnabled.collectAsState()
-    val tempoPitchApplyToAll by vm.tempoPitchApplyToAll.collectAsState()
-    val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -1054,78 +1125,6 @@ private fun DevToolsPage(
                 onCheckedChange = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     vm.toggleLogs()
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color.Red,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.Gray
-                )
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Tempo/Pitch applies to all songs",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = textColor
-                )
-                Text(
-                    text = "Off: each song remembers its own tempo/pitch",
-                    fontSize = 12.sp,
-                    color = textColor.copy(alpha = 0.6f)
-                )
-            }
-            Switch(
-                checked = tempoPitchApplyToAll,
-                onCheckedChange = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    vm.toggleTempoPitchApplyToAll()
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color.Red,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.Gray
-                )
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Show YouTube Link option on share",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = textColor
-                )
-                Text(
-                    text = "Off: Share only ever sends the Audiobasics Link",
-                    fontSize = 12.sp,
-                    color = textColor.copy(alpha = 0.6f)
-                )
-            }
-            Switch(
-                checked = shareYoutubeLinkEnabled,
-                onCheckedChange = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    vm.toggleShareYoutubeLinkEnabled()
                 },
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
