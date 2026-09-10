@@ -23,12 +23,26 @@ object AudiobasicsLinks {
     private const val KEY_SHOW_YOUTUBE_SHARE_OPTION = "share_show_youtube_option"
 
     fun songLink(videoId: String): String = "https://$HOST$PATH_PREFIX/song/$videoId"
-    fun albumLink(albumId: String): String = "https://$HOST$PATH_PREFIX/album/$albumId"
+
+    /** [title]/[thumbnail] ride along as query params so the receiving side has a known-good
+     *  fallback even when Innertube's own album metadata parsing comes back blank for this
+     *  browse id's response shape (seen in practice for OLAK5uy_... playlist-style album ids,
+     *  where the title/thumbnail header fields don't parse but the track list still does) —
+     *  the sender already has this from [Album] at share time, no reason to make the
+     *  receiver re-derive what's already known. */
+    fun albumLink(albumId: String, title: String, thumbnail: String): String {
+        val base = "https://$HOST$PATH_PREFIX/album/$albumId"
+        val params = buildList {
+            if (title.isNotBlank()) add("t=${Uri.encode(title)}")
+            if (thumbnail.isNotBlank()) add("th=${Uri.encode(thumbnail)}")
+        }
+        return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
+    }
 
     /** Parsed result of an incoming Audiobasics Link, or null if the Uri doesn't match one. */
     sealed class ParsedLink {
         data class SongLink(val videoId: String) : ParsedLink()
-        data class AlbumLink(val albumId: String) : ParsedLink()
+        data class AlbumLink(val albumId: String, val title: String, val thumbnail: String) : ParsedLink()
     }
 
     fun parse(uri: Uri?): ParsedLink? {
@@ -39,7 +53,11 @@ object AudiobasicsLinks {
         if (id.isBlank()) return null
         return when (segments[1]) {
             "song" -> ParsedLink.SongLink(id)
-            "album" -> ParsedLink.AlbumLink(id)
+            "album" -> ParsedLink.AlbumLink(
+                albumId = id,
+                title = uri.getQueryParameter("t").orEmpty(),
+                thumbnail = uri.getQueryParameter("th").orEmpty()
+            )
             else -> null
         }
     }
