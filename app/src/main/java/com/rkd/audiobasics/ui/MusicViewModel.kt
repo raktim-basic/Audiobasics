@@ -1679,6 +1679,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         return _savedAlbums.value.any { normalizeAlbumTitle(it.title) == normalizeAlbumTitle(albumTitle) }
     }
 
+    // YouTube can expose the same album under more than one browse-id variant (e.g. an
+    // artist-page listing vs. a search result) that resolve to different tracklists/video
+    // ids for what a user sees as "the same album" they already saved. isAlbumSaved()
+    // already tolerates this via a normalized-title fallback, but any code that needs the
+    // *actual saved album's id* (to look up its persisted offline tracklist, for example)
+    // needs that same fallback — otherwise a saved+downloaded album opened via a different
+    // id variant looks unsaved/undownloaded even though it's fully available offline.
+    // Returns the id under which the album is actually saved, or null if it isn't saved.
+    fun findSavedAlbumId(albumId: String, albumTitle: String = ""): String? {
+        _savedAlbums.value.firstOrNull { it.id == albumId }?.let { return it.id }
+        if (albumTitle.isBlank()) return null
+        return _savedAlbums.value.firstOrNull {
+            normalizeAlbumTitle(it.title) == normalizeAlbumTitle(albumTitle)
+        }?.id
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Cache helpers
     // ─────────────────────────────────────────────────────────────────────────
