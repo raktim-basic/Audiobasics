@@ -264,7 +264,7 @@ class MainActivity : ComponentActivity() {
     private fun handleAudiobasicsLinkUri(uri: Uri?, vm: MusicViewModel) {
         when (val parsed = AudiobasicsLinks.parse(uri)) {
             is AudiobasicsLinks.ParsedLink.SongLink -> vm.handleAudiobasicsSongLink(parsed.videoId)
-            is AudiobasicsLinks.ParsedLink.AlbumLink -> vm.handleAudiobasicsAlbumLink(parsed.albumId, parsed.title, parsed.thumbnail)
+            is AudiobasicsLinks.ParsedLink.AlbumLink -> vm.handleAudiobasicsAlbumLink(parsed.albumId, parsed.title, parsed.thumbnail, parsed.year)
             null -> {}
         }
     }
