@@ -30,11 +30,12 @@ object AudiobasicsLinks {
      *  where the title/thumbnail header fields don't parse but the track list still does) —
      *  the sender already has this from [Album] at share time, no reason to make the
      *  receiver re-derive what's already known. */
-    fun albumLink(albumId: String, title: String, thumbnail: String): String {
+    fun albumLink(albumId: String, title: String, thumbnail: String, year: String): String {
         val base = "https://$HOST$PATH_PREFIX/album/$albumId"
         val params = buildList {
             if (title.isNotBlank()) add("t=${Uri.encode(title)}")
             if (thumbnail.isNotBlank()) add("th=${Uri.encode(thumbnail)}")
+            if (year.isNotBlank()) add("y=${Uri.encode(year)}")
         }
         return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
     }
@@ -42,7 +43,12 @@ object AudiobasicsLinks {
     /** Parsed result of an incoming Audiobasics Link, or null if the Uri doesn't match one. */
     sealed class ParsedLink {
         data class SongLink(val videoId: String) : ParsedLink()
-        data class AlbumLink(val albumId: String, val title: String, val thumbnail: String) : ParsedLink()
+        data class AlbumLink(
+            val albumId: String,
+            val title: String,
+            val thumbnail: String,
+            val year: String
+        ) : ParsedLink()
     }
 
     fun parse(uri: Uri?): ParsedLink? {
@@ -56,7 +62,8 @@ object AudiobasicsLinks {
             "album" -> ParsedLink.AlbumLink(
                 albumId = id,
                 title = uri.getQueryParameter("t").orEmpty(),
-                thumbnail = uri.getQueryParameter("th").orEmpty()
+                thumbnail = uri.getQueryParameter("th").orEmpty(),
+                year = uri.getQueryParameter("y").orEmpty()
             )
             else -> null
         }
