@@ -261,8 +261,14 @@ fun AlbumScreen(
                             com.rkd.audiobasics.api.Innertube.splitArtistNames(displayedArtist)
                         }
 
-                        Row(
-                            modifier = Modifier.padding(horizontal = 20.dp),
+                        // FlowRow (not Row) so that when there are many artists, extra names
+                        // wrap onto new lines instead of each getting squeezed into whatever
+                        // horizontal space is left by earlier siblings — a plain Row shrinks
+                        // later children's available width instead of wrapping the whole
+                        // group, which on a long artist list forced individual names into a
+                        // near-zero-width column, wrapping letter-by-letter down the screen.
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.Center
                         ) {
                             Text(
