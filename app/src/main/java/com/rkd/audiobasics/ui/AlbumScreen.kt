@@ -78,9 +78,14 @@ fun AlbumScreen(
 
     var enrichedAlbum by remember { mutableStateOf(album) }
 
-    val isSaved by remember(vm.savedAlbums.collectAsState().value, enrichedAlbum) {
-        derivedStateOf { vm.isAlbumSaved(album.id, enrichedAlbum.title) }
+    // The same album can show up under a different browse-id variant depending on where it
+    // was opened from (e.g. an artist page listing vs. search) — resolve to the id it's
+    // actually saved under (falling back to a normalized-title match, same as isAlbumSaved)
+    // so a saved+downloaded album is recognized regardless of which variant we were opened with.
+    val savedAlbumId by remember(vm.savedAlbums.collectAsState().value, enrichedAlbum) {
+        derivedStateOf { vm.findSavedAlbumId(album.id, enrichedAlbum.title) }
     }
+    val isSaved = savedAlbumId != null
 
     var albumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -104,12 +109,13 @@ fun AlbumScreen(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
     val savedAlbumSongsMap by vm.savedAlbumSongs.collectAsState()
-    val persistedForThisAlbum = savedAlbumSongsMap[album.id]
+    val persistedForThisAlbum = savedAlbumId?.let { savedAlbumSongsMap[it] }
 
-    LaunchedEffect(album.id, persistedForThisAlbum != null) {
-        // If this album has a persisted offline tracklist, show it immediately —
-        // this is what lets a saved album open fully offline.
-        val persisted = savedAlbumSongsMap[album.id]
+    LaunchedEffect(album.id, savedAlbumId, persistedForThisAlbum != null) {
+        // If this album has a persisted offline tracklist — looked up via the resolved saved
+        // id, not necessarily the id we were opened with — show it immediately. This is what
+        // lets a saved album open fully offline, from any entry point.
+        val persisted = savedAlbumId?.let { savedAlbumSongsMap[it] }
         if (persisted != null) {
             albumSongs = persisted.map { it.copy(albumTitle = album.title.ifBlank { it.albumTitle }) }
             isLoading = false
@@ -129,13 +135,21 @@ fun AlbumScreen(
             // throwing on network errors — don't let a failed live refresh clobber a
             // working persisted tracklist with an empty one.
             val resolvedTitle = (meta?.title?.ifBlank { null } ?: album.title)
-            if (songs.isNotEmpty() || persisted == null) {
+            // If we're viewing via a different browse-id variant than the one this album was
+            // actually saved/downloaded under (savedAlbumId != album.id), the live fetch above
+            // was keyed on OUR variant's id and can return a different video-id set for what
+            // is nominally "the same" catalog entry — none of those ids would be cached. In
+            // that case keep the persisted (correctly cached) tracklist as canonical rather
+            // than letting the live fetch's uncached variant clobber it; live metadata (title
+            // etc.) below still applies normally.
+            val fetchWasForSavedVariant = savedAlbumId == null || savedAlbumId == album.id
+            if (fetchWasForSavedVariant && (songs.isNotEmpty() || persisted == null)) {
                 // Stamp the album's own title directly onto each song — this is what Song
                 // Info reads immediately, with no separate browse-id lookup needed.
                 albumSongs = songs.map { it.copy(albumTitle = resolvedTitle) }
             } else if (persisted != null) {
-                // Live fetch failed but we still have persisted songs shown — make sure
-                // they at least carry the most accurate title we have.
+                // Live fetch failed, or was for a different unsaved variant — we still have
+                // persisted songs shown; make sure they at least carry the most accurate title.
                 albumSongs = albumSongs.map { it.copy(albumTitle = resolvedTitle) }
             }
             if (meta != null) {
