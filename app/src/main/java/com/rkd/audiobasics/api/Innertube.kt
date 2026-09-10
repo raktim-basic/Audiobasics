@@ -1034,6 +1034,10 @@ object Innertube {
                 } catch (e: Exception) { emptyMap() }
                 albumArtistIdByName = albumArtistIdByNameResult
             } catch (e: Exception) { Log.e("Innertube", "getAlbumSongs error: ${e.message}") }
+            Timber.tag("Innertube").d(
+                "getAlbumSongs browseId='$browseId' fallbackArtist='$fallbackArtist' caller='$caller' " +
+                    "-> title='$albumTitle' thumb='${albumThumb.take(60)}' artist='$albumArtist' songs=${songs.size}"
+            )
             Pair(Album(id = browseId, title = albumTitle, artist = albumArtist,
                 thumbnail = albumThumb, year = albumYear,
                 artistNames = albumArtistNames, artistIds = albumArtistIdByName), songs)
