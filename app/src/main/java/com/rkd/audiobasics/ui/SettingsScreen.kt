@@ -230,8 +230,8 @@ private fun SettingsMainPage(
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
-                    title = "Appearance and feel",
-                    subtitle = "Theme, haptics",
+                    title = "Appearance",
+                    subtitle = "Theme and more soon",
                     icon = {
                         Icon(
                             Icons.Default.Palette,
@@ -654,7 +654,7 @@ private fun GeneralPage(
                     color = textColor
                 )
                 Text(
-                    text = "Off: each song remembers its own tempo/pitch",
+                    text = "Apply the set tempo/pitch to all songs",
                     fontSize = 12.sp,
                     color = textColor.copy(alpha = 0.6f)
                 )
@@ -690,7 +690,7 @@ private fun GeneralPage(
                     color = textColor
                 )
                 Text(
-                    text = "Off: Share only ever sends the Audiobasics Link",
+                    text = "Show option to share Youtube links on share alongside Audiobasics link",
                     fontSize = 12.sp,
                     color = textColor.copy(alpha = 0.6f)
                 )
