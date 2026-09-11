@@ -215,6 +215,12 @@ class MainActivity : ComponentActivity() {
                     if (event == Lifecycle.Event.ON_RESUME) {
                         vm.syncState()
                         vm.checkForUpdate()
+                        // Re-check every resume, not just cold start — the user can revoke
+                        // Audiobasics Link handling from system Settings at any time (or back
+                        // out of the Enable flow without finishing it), so a one-time check
+                        // wouldn't catch that. This is mandatory — there's no way to opt out
+                        // of it short of actually enabling the link in Settings.
+                        vm.checkAppLinksNudge(this@MainActivity)
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
