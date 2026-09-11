@@ -928,7 +928,9 @@ private fun LibraryPage(
                 }
             }
 
+            item { Spacer(Modifier.height(20.dp)) }
             item { SettingsDivider(isDarkMode) }
+            item { Spacer(Modifier.height(4.dp)) }
 
             // Export / import (originally this page's own content)
             item {
