@@ -305,21 +305,21 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _pendingAlbumLinkNavigation.value = null
     }
 
-    // Shown once (unless already dismissed or already enabled) to nudge the user toward
-    // manually approving Audiobasics as the /l/... link handler in system Settings — a
-    // fallback for when Android's automatic verification doesn't take effect, since the app
-    // can't grant itself this permission programmatically. See AudiobasicsLinks.kt.
+    // Enabling Audiobasics Link handling is mandatory — re-checked live (not gated behind a
+    // one-time "dismissed" flag) so that if the user backs out of the Enable flow, or later
+    // revokes it from system Settings, this comes back instead of staying silently disabled.
     private val _showAppLinksNudge = MutableStateFlow(false)
     val showAppLinksNudge: StateFlow<Boolean> = _showAppLinksNudge
 
     fun checkAppLinksNudge(context: android.content.Context) {
-        if (prefs.getBoolean("app_links_nudge_dismissed", false)) return
         _showAppLinksNudge.value = !AudiobasicsLinks.isDomainLinkHandlingEnabled(context)
     }
 
+    // Only hides the dialog for the moment the user is sent off to system Settings to enable
+    // it — not a permanent dismissal. The next checkAppLinksNudge() (every app resume) is
+    // what actually determines whether it should be showing.
     fun dismissAppLinksNudge() {
         _showAppLinksNudge.value = false
-        prefs.edit().putBoolean("app_links_nudge_dismissed", true).apply()
     }
 
     /** Incoming Audiobasics song link — auto-plays immediately (unlike Smart Inputs' generic
