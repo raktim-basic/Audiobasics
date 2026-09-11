@@ -15,8 +15,8 @@ android {
         applicationId 'com.rkd.audiobasics'
         minSdk 26
         targetSdk 36
-        versionCode 14
-        versionName '2.4.3'
+        versionCode 15
+        versionName '2.5'
     }
 
     signingConfigs {
