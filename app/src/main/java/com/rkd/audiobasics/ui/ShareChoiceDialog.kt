@@ -48,7 +48,7 @@ fun ShareChoiceDialog(
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = textColor,
+                    color = Color.Red,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                 )
 
