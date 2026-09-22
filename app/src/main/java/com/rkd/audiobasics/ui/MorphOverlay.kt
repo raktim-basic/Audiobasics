@@ -10,7 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*import androidx.compose.ui.Alignment
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -96,18 +97,27 @@ internal class MorphEntry(
     var closing by mutableStateOf(false)
 }
 
+/**
+ * Holds every currently-open popup for one window, as a stack: [show] pushes a new one on top
+ * without disturbing whatever's already open underneath (e.g. Create Playlist opening on top of
+ * Add to Playlist), and each is closed independently — closing the top one reveals the one below,
+ * unchanged. Back press closes only the topmost, since Compose's BackHandler already resolves to
+ * the most-recently-registered callback first, matching stack order.
+ */
 @Stable
 class MorphOverlayState {
-    internal var entry by mutableStateOf<MorphEntry?>(null)
-        private set
+    private val _entries = mutableStateListOf<MorphEntry>()
+    internal val entries: List<MorphEntry> get() = _entries
 
     /**
-     * Opens a popup. [anchor] is the trigger's bounds (from [MorphAnchor.bounds]); pass null to
-     * get a plain scale-in instead. [content] receives a `close` callback that plays the exit
-     * animation. [onDismissRequest] fires once, as soon as closing starts (backdrop tap, back
-     * press, or `close()`) — use it to reset whatever boolean state made you call show() in the
-     * first place, so the caller and the overlay never end up disagreeing about open/closed.
-     * Calling show() while another popup is open replaces it.
+     * Opens a popup on top of whatever's already open. [anchor] is the trigger's bounds (from
+     * [MorphAnchor.bounds]); pass null to get a plain scale-in instead. [content] receives a
+     * `close` callback that plays this popup's own exit animation. [onDismissRequest] fires once,
+     * as soon as this popup starts closing (backdrop tap, back press, or `close()`) — use it to
+     * reset whatever boolean state made you call show() in the first place, so the caller and the
+     * overlay never end up disagreeing about open/closed. Returns the entry, so callers that open
+     * a popup outside of a click handler (see [MorphPopup]) can close that specific one later,
+     * regardless of what else has been pushed on top of it since.
      */
     fun show(
         anchor: Rect?,
@@ -115,22 +125,27 @@ class MorphOverlayState {
         containerColor: Color = Color.Unspecified,
         onDismissRequest: () -> Unit = {},
         content: @Composable (close: () -> Unit) -> Unit
-    ) {
-        entry = MorphEntry(anchor, placement, containerColor, onDismissRequest, content)
+    ): MorphEntry {
+        val e = MorphEntry(anchor, placement, containerColor, onDismissRequest, content)
+        _entries.add(e)
+        return e
     }
 
-    /** Closes the current popup (with the exit animation) and fires its onDismissRequest, if any. */
+    /** Closes the topmost popup (with its exit animation), if any. */
     fun close() {
-        entry?.let { e ->
-            if (!e.closing) {
-                e.closing = true
-                e.onDismissRequest()
-            }
+        _entries.lastOrNull()?.let { requestClose(it) }
+    }
+
+    /** Starts closing [e] specifically, wherever it sits in the stack. Safe to call more than once. */
+    internal fun requestClose(e: MorphEntry) {
+        if (!e.closing) {
+            e.closing = true
+            e.onDismissRequest()
         }
     }
 
-    internal fun clear(e: MorphEntry) {
-        if (entry === e) entry = null
+    internal fun remove(e: MorphEntry) {
+        _entries.remove(e)
     }
 }
 
@@ -179,20 +194,22 @@ fun MorphPopup(
     content: @Composable (close: () -> Unit) -> Unit
 ) {
     DisposableEffect(Unit) {
-        overlay.show(anchor, placement, containerColor, onDismissRequest, content)
-        onDispose { overlay.close() }
+        val e = overlay.show(anchor, placement, containerColor, onDismissRequest, content)
+        onDispose { overlay.requestClose(e) }
     }
 }
 
 /**
- * Draws the current popup (if any) above everything else. Place exactly once per window,
- * as the last child of a full-screen Box, and provide the same state via LocalMorphOverlay.
+ * Draws every currently-open popup for this [state], stacked in open order (most recently
+ * opened on top). Place exactly once per window, as the last child of a full-screen Box, and
+ * provide the same state via LocalMorphOverlay.
  */
 @Composable
 fun MorphOverlayHost(state: MorphOverlayState) {
-    val entry = state.entry ?: return
-    key(entry) {
-        MorphContainer(entry = entry, state = state)
+    for (entry in state.entries) {
+        key(entry) {
+            MorphContainer(entry = entry, state = state)
+        }
     }
 }
 
@@ -248,19 +265,12 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val cornerRadius = if (isAnchored) 12.dp else 16.dp
     val elevation = if (isAnchored) 8.dp else 0.dp
 
-    val requestClose = remember(entry) {
-        {
-            if (!entry.closing) {
-                entry.closing = true
-                entry.onDismissRequest()
-            }
-        }
-    }
+    val requestClose = remember(entry) { { state.requestClose(entry) } }
 
     LaunchedEffect(entry.closing) {
         if (entry.closing) {
             progress.animateTo(0f, tween(MORPH_EXIT_MS, easing = MorphEasing))
-            state.clear(entry)
+            state.remove(entry)
         } else {
             progress.animateTo(1f, tween(MORPH_ENTER_MS, easing = MorphEasing))
         }
