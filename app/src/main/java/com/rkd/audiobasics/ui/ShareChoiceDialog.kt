@@ -12,14 +12,6 @@ import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
-/**
- * Only shown at all when the (temporary, dev-tools-only) "show YouTube link on share" setting
- * is on — see AudiobasicsLinks.isYoutubeShareOptionEnabled. With it off, sharing just sends the
- * Audiobasics Link directly with no picker step, since there's only one option.
- *
- * Opened from the 3-dot menu, so it has no button of its own to grow out of — it morphs from
- * the screen center instead (MorphPlacement.Center, no anchor).
- */
 @Composable
 fun ShareChoiceDialog(
     isDarkMode: Boolean,
@@ -37,8 +29,8 @@ fun ShareChoiceDialog(
         placement = MorphPlacement.Center,
         containerColor = bgColor
     ) { close ->
+            // ShareChoiceRow already fires its own haptic on tap; this just closes the popup.
             fun dismiss() {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 close()
             }
             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
