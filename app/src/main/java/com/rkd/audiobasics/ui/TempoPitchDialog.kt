@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -36,14 +35,14 @@ fun TempoPitchDialog(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val iconColor = textColor.copy(alpha = 0.7f)
 
-    Dialog(onDismissRequest = {
-        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        onDismiss()
-    }) {
+    MorphPopup(
+        onDismissRequest = onDismiss,
+        placement = MorphPlacement.Center,
+        containerColor = bgColor
+    ) { close ->
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(bgColor, RoundedCornerShape(16.dp))
                 .padding(20.dp)
         ) {
             Column {
@@ -108,7 +107,7 @@ fun TempoPitchDialog(
                     }
                     TextButton(onClick = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onDismiss()
+                        close()
                     }) {
                         Text("Done", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
                     }
