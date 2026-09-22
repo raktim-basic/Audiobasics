@@ -22,7 +22,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.ui.theme.NothingFont
 
 // Emojis already used elsewhere in the app to represent Liked Songs' download state —
@@ -55,12 +54,14 @@ fun CreatePlaylistDialog(
         trimmed.isNotEmpty() && existingNames.any { it.equals(trimmed, ignoreCase = true) }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    MorphPopup(
+        onDismissRequest = onDismiss,
+        placement = MorphPlacement.Center,
+        containerColor = bgColor
+    ) { close ->
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(bgColor)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -211,7 +212,7 @@ fun CreatePlaylistDialog(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onDismiss) {
+                TextButton(onClick = close) {
                     Text("Cancel", fontFamily = NothingFont, color = textColor)
                 }
                 Spacer(Modifier.width(8.dp))
