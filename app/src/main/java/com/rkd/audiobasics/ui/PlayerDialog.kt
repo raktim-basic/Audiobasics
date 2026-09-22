@@ -75,7 +75,6 @@ fun PlayerDialog(
     var showSongInfo by remember { mutableStateOf(false) }
     var showAddToSheet by remember { mutableStateOf(false) }
     var showCreatePlaylist by remember { mutableStateOf(false) }
-    var showThreeDotMenu by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
     var showTempoPitchDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
@@ -99,6 +98,12 @@ fun PlayerDialog(
             usePlatformDefaultWidth = false
         )
     ) {
+        // Own overlay for popups opened from within this window — PlayerDialog is a real
+        // separate Android Dialog window, so it can't see the app-root LocalMorphOverlay
+        // provided in MainActivity (that host draws in the main window, underneath this one).
+        val playerOverlay = remember { MorphOverlayState() }
+        CompositionLocalProvider(LocalMorphOverlay provides playerOverlay) {
+        Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -353,149 +358,141 @@ fun PlayerDialog(
                         )
 
                         // 3-dot dropdown
-                        Box {
-                            IconButton(onClick = {
+                        val overlay = LocalMorphOverlay.current
+                        val threeDotAnchor = rememberMorphAnchor()
+                        IconButton(
+                            onClick = {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                showThreeDotMenu = true
-                            }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor, modifier = Modifier.size(26.dp))
-                            }
-
-                            DropdownMenu(
-                                expanded = showThreeDotMenu,
-                                onDismissRequest = { showThreeDotMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                                    text = { Text("Share", fontFamily = NothingFont) },
-                                    onClick = {
-                                        showThreeDotMenu = false
-                                        song?.let { s ->
-                                            if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
-                                                showShareChoice = true
-                                            } else {
-                                                AudiobasicsLinks.shareText(
-                                                    context, AudiobasicsLinks.songLink(s.id), "Share song"
-                                                )
+                                overlay.show(anchor = threeDotAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                                    MorphMenuColumn {
+                                        MorphMenuItem(
+                                            text = "Share",
+                                            leadingIcon = Icons.Default.Share,
+                                            onClick = {
+                                                close()
+                                                song?.let { s ->
+                                                    if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                                        showShareChoice = true
+                                                    } else {
+                                                        AudiobasicsLinks.shareText(
+                                                            context, AudiobasicsLinks.songLink(s.id), "Share song"
+                                                        )
+                                                    }
+                                                }
                                             }
-                                        }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = { Icon(Icons.Default.QueueMusic, contentDescription = null) },
-                                    text = { Text("Queue", fontFamily = NothingFont) },
-                                    onClick = {
-                                        showThreeDotMenu = false
-                                        onDismiss()
-                                        onNavigateQueue()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.Bedtime,
-                                            contentDescription = null,
-                                            tint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else LocalContentColor.current
                                         )
-                                    },
-                                    text = {
-                                        Text(
+                                        MorphMenuItem(
+                                            text = "Queue",
+                                            leadingIcon = Icons.Default.QueueMusic,
+                                            onClick = {
+                                                close()
+                                                onDismiss()
+                                                onNavigateQueue()
+                                            }
+                                        )
+                                        MorphMenuItem(
                                             text = when (sleepTimerMode) {
                                                 MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "Sleep timer (end of this song)"
                                                 MusicViewModel.SLEEP_TIMER_CUSTOM -> "Sleep timer (${formatCountdown(sleepTimerRemaining)})"
                                                 else -> "Sleep timer"
                                             },
-                                            fontFamily = NothingFont,
-                                            color = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified
+                                            leadingIcon = Icons.Default.Bedtime,
+                                            iconTint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
+                                            textColor = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
+                                            onClick = {
+                                                close()
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                if (song == null) {
+                                                    Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
+                                                } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
+                                                    vm.cancelSleepTimer()
+                                                } else {
+                                                    showSleepDialog = true
+                                                }
+                                            }
                                         )
-                                    },
-                                    onClick = {
-                                        showThreeDotMenu = false
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        if (song == null) {
-                                            Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
-                                        } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
-                                            vm.cancelSleepTimer()
-                                        } else {
-                                            showSleepDialog = true
-                                        }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.Speed,
-                                            contentDescription = null,
-                                            tint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else LocalContentColor.current
-                                        )
-                                    },
-                                    text = {
-                                        Text(
+                                        MorphMenuItem(
                                             text = "Tempo and Pitch",
-                                            fontFamily = NothingFont,
-                                            color = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified
+                                            leadingIcon = Icons.Default.Speed,
+                                            iconTint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
+                                            textColor = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
+                                            onClick = {
+                                                close()
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                showTempoPitchDialog = true
+                                            }
                                         )
-                                    },
-                                    onClick = {
-                                        showThreeDotMenu = false
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        showTempoPitchDialog = true
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                                            contentDescription = null,
-                                            tint = if (repeatMode == 0) LocalContentColor.current else Color.Red
-                                        )
-                                    },
-                                    text = {
-                                        Text(
+                                        MorphMenuItem(
                                             text = when (repeatMode) {
                                                 1 -> "Repeat list"
                                                 2 -> "Repeat one"
                                                 else -> "Repeat off"
                                             },
-                                            fontFamily = NothingFont,
-                                            color = if (repeatMode == 0) Color.Unspecified else Color.Red
+                                            leadingIcon = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                                            iconTint = if (repeatMode == 0) Color.Unspecified else Color.Red,
+                                            textColor = if (repeatMode == 0) Color.Unspecified else Color.Red,
+                                            onClick = {
+                                                // Matches the old menu: toggling repeat does NOT close the
+                                                // menu, so tapping repeatedly cycles through its modes.
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                vm.toggleRepeatMode()
+                                            }
                                         )
-                                    },
-                                    onClick = {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        vm.toggleRepeatMode()
                                     }
-                                )
-                            }
+                                }
+                            },
+                            modifier = Modifier.morphAnchor(threeDotAnchor)
+                        ) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor, modifier = Modifier.size(26.dp))
                         }
                     }
                 }
             }
         }
-    }
 
-    // ── Add to playlist sheet ──────────────────────────────────────────────
-    if (showAddToSheet && song != null) {
-        AddToPlaylistSheet(
-            song = song!!,
-            vm = vm,
-            isDarkMode = isDarkMode,
-            onDismiss = { showAddToSheet = false },
-            onCreateNew = { showCreatePlaylist = true }
-        )
-    }
+        // ── Add to playlist sheet ──────────────────────────────────────────────
+        if (showAddToSheet && song != null) {
+            AddToPlaylistSheet(
+                song = song!!,
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onDismiss = { showAddToSheet = false },
+                onCreateNew = { showCreatePlaylist = true }
+            )
+        }
 
-    // ── Create playlist dialog ─────────────────────────────────────────────
-    if (showCreatePlaylist) {
-        CreatePlaylistDialog(
-            isDarkMode = isDarkMode,
-            existingNames = customPlaylists.map { it.name },
-            onDismiss = { showCreatePlaylist = false },
-            onCreate = { name, emoji ->
-                vm.createPlaylist(name, emoji)
-                showCreatePlaylist = false
-            }
-        )
+        // ── Create playlist dialog ─────────────────────────────────────────────
+        if (showCreatePlaylist) {
+            CreatePlaylistDialog(
+                isDarkMode = isDarkMode,
+                existingNames = customPlaylists.map { it.name },
+                onDismiss = { showCreatePlaylist = false },
+                onCreate = { name, emoji ->
+                    vm.createPlaylist(name, emoji)
+                    showCreatePlaylist = false
+                }
+            )
+        }
+
+        // ── Share choice dialog ──────────────────────────────────────────────────
+        if (showShareChoice && song != null) {
+            ShareChoiceDialog(
+                isDarkMode = isDarkMode,
+                hapticsEnabled = hapticsEnabled,
+                context = context,
+                onAudiobasicsLink = {
+                    AudiobasicsLinks.shareText(context, AudiobasicsLinks.songLink(song!!.id), "Share song")
+                },
+                onYoutubeLink = {
+                    AudiobasicsLinks.shareText(context, "https://www.youtube.com/watch?v=${song!!.id}", "Share song")
+                },
+                onDismiss = { showShareChoice = false }
+            )
+        }
+
+        MorphOverlayHost(state = playerOverlay)
+        }
+        }
     }
 
     // ── Sleep timer dialog ─────────────────────────────────────────────────
@@ -529,22 +526,6 @@ fun PlayerDialog(
             onPitchChange = { vm.setTempoPitch(it) },
             onReset = { vm.resetTempoPitch() },
             onDismiss = { showTempoPitchDialog = false }
-        )
-    }
-
-    // ── Share choice dialog ──────────────────────────────────────────────────
-    if (showShareChoice && song != null) {
-        ShareChoiceDialog(
-            isDarkMode = isDarkMode,
-            hapticsEnabled = hapticsEnabled,
-            context = context,
-            onAudiobasicsLink = {
-                AudiobasicsLinks.shareText(context, AudiobasicsLinks.songLink(song!!.id), "Share song")
-            },
-            onYoutubeLink = {
-                AudiobasicsLinks.shareText(context, "https://www.youtube.com/watch?v=${song!!.id}", "Share song")
-            },
-            onDismiss = { showShareChoice = false }
         )
     }
 
