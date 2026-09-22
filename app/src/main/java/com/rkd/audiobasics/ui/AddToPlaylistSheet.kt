@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
 @Composable
@@ -26,6 +27,8 @@ fun AddToPlaylistSheet(
     song: Song,
     vm: MusicViewModel,
     isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
     onDismiss: () -> Unit,
     onCreateNew: () -> Unit
 ) {
@@ -88,6 +91,7 @@ fun AddToPlaylistSheet(
                         isSelected = isIn,
                         isDarkMode = isDarkMode,
                         onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             if (isIn) {
                                 removeConfirm = Pair(MusicViewModel.LIKED_PLAYLIST_ID, "Liked songs")
                             } else {
@@ -108,6 +112,7 @@ fun AddToPlaylistSheet(
                         isSelected = isIn,
                         isDarkMode = isDarkMode,
                         onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             if (isIn) {
                                 removeConfirm = Pair(pl.id, pl.name)
                             } else {
@@ -131,7 +136,10 @@ fun AddToPlaylistSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = { onCreateNew() }) {
+                TextButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onCreateNew()
+                }) {
                     Text(
                         "Create a new playlist",
                         fontFamily = NothingFont,
@@ -140,7 +148,10 @@ fun AddToPlaylistSheet(
                     )
                 }
                 Button(
-                    onClick = close,
+                    onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        close()
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
                     shape = RoundedCornerShape(20.dp)
                 ) {
@@ -169,6 +180,7 @@ fun AddToPlaylistSheet(
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     if (playlistId == MusicViewModel.LIKED_PLAYLIST_ID) {
                         vm.toggleLike(song)
                         containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = false
@@ -184,7 +196,10 @@ fun AddToPlaylistSheet(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { removeConfirm = null }) {
+                TextButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    removeConfirm = null
+                }) {
                     Text("No", fontFamily = NothingFont, fontSize = 18.sp)
                 }
             },
