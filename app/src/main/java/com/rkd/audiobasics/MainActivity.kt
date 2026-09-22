@@ -428,10 +428,14 @@ fun AudiobasicsApp(
 
     // Global Add-to-playlist sheet
     addToSheetSong?.let { song ->
+        val context = LocalContext.current
+        val hapticsEnabled by vm.hapticsEnabled.collectAsState()
         AddToPlaylistSheet(
             song = song,
             vm = vm,
             isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
             onDismiss = { addToSheetSong = null },
             onCreateNew = { showCreatePlaylistFromSheet = true }
         )
@@ -471,8 +475,10 @@ fun AudiobasicsApp(
         )
     }
     if (showCreatePlaylistFromSheet) {
+        val hapticsEnabled by vm.hapticsEnabled.collectAsState()
         CreatePlaylistDialog(
             isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
             onDismiss = { showCreatePlaylistFromSheet = false },
             onCreate = { name, emoji ->
                 vm.createPlaylist(name, emoji)
