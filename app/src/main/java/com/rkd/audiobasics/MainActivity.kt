@@ -32,6 +32,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
+import com.rkd.audiobasics.ui.LocalMorphOverlay
+import com.rkd.audiobasics.ui.MorphOverlayHost
+import com.rkd.audiobasics.ui.MorphOverlayState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -472,6 +476,13 @@ fun AudiobasicsApp(
 
     val rootBgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
 
+    // Single overlay host for morph (container-transform) popups — see MorphOverlay.kt.
+    // Anything under LocalMorphOverlay can call overlay.show(...) and have its popup grow
+    // out of the trigger that opened it. Placed outside systemBarsPadding()/imePadding() so
+    // the overlay can size itself against the real screen and inset around the bars itself.
+    val morphOverlay = remember { MorphOverlayState() }
+    CompositionLocalProvider(LocalMorphOverlay provides morphOverlay) {
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -661,5 +672,8 @@ fun AudiobasicsApp(
             onAddTo = { currentSong?.let { addToSheetSong = it } },
             onTap = { showPlayerDialog = true }
         )
+    }
+    MorphOverlayHost(state = morphOverlay)
+    }
     }
 }
