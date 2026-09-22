@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.utils.HapticUtils
 
 // Emojis already used elsewhere in the app to represent Liked Songs' download state —
 // reserved so playlists can't be confused with that UI.
@@ -31,6 +32,7 @@ private val RESERVED_EMOJIS = setOf("❤️", "💔", "❤️\u200D🩹")
 @Composable
 fun CreatePlaylistDialog(
     isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
     initialName: String = "",
     initialEmoji: String = "🎵",
     title: String = "Create playlist",
@@ -92,6 +94,7 @@ fun CreatePlaylistDialog(
                     .clip(CircleShape)
                     .border(2.dp, if (isEmojiFieldFocused) Color.Red else subColor, CircleShape)
                     .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         val et = emojiEditTextRef.value ?: return@clickable
                         et.requestFocus()
                         val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
@@ -212,12 +215,16 @@ fun CreatePlaylistDialog(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = close) {
+                TextButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    close()
+                }) {
                     Text("Cancel", fontFamily = NothingFont, color = textColor)
                 }
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         if (name.isNotBlank() && !isDuplicate) onCreate(name.trim(), selectedEmoji)
                     },
                     enabled = name.isNotBlank() && !isDuplicate,
