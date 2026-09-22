@@ -18,16 +18,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
-/**
- * The sleep timer entry dialog: "End of this song" / "Custom timer" / "Cancel".
- *
- * Deliberately standalone (not owned by QueueScreen) so it can be launched from anywhere the
- * player can be controlled from — the player dialog's overflow menu, the queue screen, etc. —
- * without those callers needing to navigate to the queue first.
- */
+
 @Composable
 fun SleepTimerDialog(
     isDarkMode: Boolean,
@@ -43,14 +36,14 @@ fun SleepTimerDialog(
 
     var showCustomTimer by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = {
-        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        onDismiss()
-    }) {
+    MorphPopup(
+        onDismissRequest = onDismiss,
+        placement = MorphPlacement.Center,
+        containerColor = bgColor
+    ) { close ->
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(bgColor, RoundedCornerShape(16.dp))
                 .padding(20.dp)
         ) {
             if (showCustomTimer) {
@@ -125,7 +118,7 @@ fun SleepTimerDialog(
                             .background(Color.Red, RoundedCornerShape(8.dp))
                             .clickable {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onDismiss()
+                                close()
                             }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center
