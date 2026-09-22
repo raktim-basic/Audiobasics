@@ -22,7 +22,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -54,7 +53,6 @@ fun SongItem(
     removeLabel: String = "Remove from liked",
     isCaching: Boolean = false
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
 
@@ -209,152 +207,149 @@ fun SongItem(
         }
 
         if (showMenu) {
-            Box {
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    menuExpanded = true
-                }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = subTextColor)
-                }
+            val overlay = LocalMorphOverlay.current
+            val menuAnchor = rememberMorphAnchor()
 
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    if (isInQueue) {
-                        DropdownMenuItem(
-                            text = { Text("Share", fontFamily = NothingFont) },
-                            onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                menuExpanded = false
-                                if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
-                                    showShareChoice = true
-                                } else {
-                                    com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
-                                        context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
-                                    )
-                                }
-                            }
-                        )
-                        // Add to playlist or Like
-                        if (onAddTo != null) {
-                            DropdownMenuItem(
-                                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                text = { Text("Add to playlist...", fontFamily = NothingFont) },
+            fun openMenu() {
+                overlay.show(anchor = menuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                    MorphMenuColumn {
+                        if (isInQueue) {
+                            MorphMenuItem(
+                                text = "Share",
                                 onClick = {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    menuExpanded = false
-                                    onAddTo()
+                                    close()
+                                    if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                        showShareChoice = true
+                                    } else {
+                                        com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                            context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
+                                        )
+                                    }
+                                }
+                            )
+                            // Add to playlist or Like
+                            if (onAddTo != null) {
+                                MorphMenuItem(
+                                    text = "Add to playlist...",
+                                    leadingIcon = Icons.Default.Add,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close()
+                                        onAddTo()
+                                    }
+                                )
+                            } else {
+                                MorphMenuItem(
+                                    text = if (isLiked) "Unlike" else "Like",
+                                    leadingIcon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    iconTint = if (isLiked) Color.Red else subTextColor,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close()
+                                        onLike()
+                                    }
+                                )
+                            }
+                            MorphMenuItem(
+                                text = if (isDragging) "Cancel reorder" else "Reorder",
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close()
+                                    onReorder?.invoke()
+                                }
+                            )
+                            MorphMenuItem(
+                                text = "Remove from queue",
+                                textColor = Color.Red,
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close()
+                                    onRemoveFromQueue?.invoke()
                                 }
                             )
                         } else {
-                            DropdownMenuItem(
-                                text = { Text(if (isLiked) "Unlike" else "Like", fontFamily = NothingFont) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                        contentDescription = null,
-                                        tint = if (isLiked) Color.Red else subTextColor
-                                    )
-                                },
+                            MorphMenuItem(
+                                text = "Share",
                                 onClick = {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    menuExpanded = false
-                                    onLike()
+                                    close()
+                                    if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                        showShareChoice = true
+                                    } else {
+                                        com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                            context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
+                                        )
+                                    }
                                 }
                             )
-                        }
-                        DropdownMenuItem(
-                            text = { Text(if (isDragging) "Cancel reorder" else "Reorder", fontFamily = NothingFont) },
-                            onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                menuExpanded = false
-                                onReorder?.invoke()
+                            // Add to playlist or Like
+                            if (onAddTo != null) {
+                                MorphMenuItem(
+                                    text = "Add to playlist...",
+                                    leadingIcon = Icons.Default.Add,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close()
+                                        onAddTo()
+                                    }
+                                )
+                            } else {
+                                MorphMenuItem(
+                                    text = if (isLiked) "Unlike" else "Like",
+                                    leadingIcon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    iconTint = if (isLiked) Color.Red else subTextColor,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close()
+                                        onLike()
+                                    }
+                                )
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Remove from queue", fontFamily = NothingFont, color = Color.Red) },
-                            onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                menuExpanded = false
-                                onRemoveFromQueue?.invoke()
+                            onPlayNext?.let { action ->
+                                MorphMenuItem(
+                                    text = "Play next",
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close()
+                                        action()
+                                    }
+                                )
                             }
-                        )
-                    } else {
-                        DropdownMenuItem(
-                            text = { Text("Share", fontFamily = NothingFont) },
-                            onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                menuExpanded = false
-                                if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
-                                    showShareChoice = true
-                                } else {
-                                    com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
-                                        context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
-                                    )
-                                }
+                            onAddToQueue?.let { action ->
+                                MorphMenuItem(
+                                    text = "Add to queue",
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close()
+                                        action()
+                                    }
+                                )
                             }
-                        )
-                        // Add to playlist or Like
-                        if (onAddTo != null) {
-                            DropdownMenuItem(
-                                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                text = { Text("Add to playlist...", fontFamily = NothingFont) },
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    menuExpanded = false
-                                    onAddTo()
-                                }
-                            )
-                        } else {
-                            DropdownMenuItem(
-                                text = { Text(if (isLiked) "Unlike" else "Like", fontFamily = NothingFont) },
-                                leadingIcon = {
-                                    Icon(
-                                        if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                        contentDescription = null,
-                                        tint = if (isLiked) Color.Red else subTextColor
-                                    )
-                                },
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    menuExpanded = false
-                                    onLike()
-                                }
-                            )
-                        }
-                        onPlayNext?.let {
-                            DropdownMenuItem(
-                                text = { Text("Play next", fontFamily = NothingFont) },
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    menuExpanded = false
-                                    it()
-                                }
-                            )
-                        }
-                        onAddToQueue?.let {
-                            DropdownMenuItem(
-                                text = { Text("Add to queue", fontFamily = NothingFont) },
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    menuExpanded = false
-                                    it()
-                                }
-                            )
-                        }
-                        onRemoveLike?.let {
-                            DropdownMenuItem(
-                                text = { Text(removeLabel, fontFamily = NothingFont, color = Color.Red) },
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    menuExpanded = false
-                                    it()
-                                }
-                            )
+                            onRemoveLike?.let { action ->
+                                MorphMenuItem(
+                                    text = removeLabel,
+                                    textColor = Color.Red,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close()
+                                        action()
+                                    }
+                                )
+                            }
                         }
                     }
                 }
+            }
+
+            IconButton(
+                onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    openMenu()
+                },
+                modifier = Modifier.morphAnchor(menuAnchor)
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = subTextColor)
             }
         }
     }
@@ -370,6 +365,11 @@ private fun shareYouTube(context: android.content.Context, songId: String) {
     context.startActivity(Intent.createChooser(i, "Share song"))
 }
 
+/**
+ * Opened from the "not downloaded" 💔 indicator, which is itself dynamic text rather than a
+ * stable button — so this morphs from the screen center too (MorphPlacement.Center, no anchor),
+ * same as ShareChoiceDialog.
+ */
 @Composable
 fun BrokenHeartDialog(
     song: Song,
@@ -385,18 +385,17 @@ fun BrokenHeartDialog(
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
 
-    Dialog(onDismissRequest = {
-        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        onDismiss()
-    }) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(bgColor)
-                .padding(20.dp)
-        ) {
-            Column {
+    MorphPopup(
+        onDismissRequest = onDismiss,
+        placement = MorphPlacement.Center,
+        containerColor = bgColor
+    ) { close ->
+            fun dismiss(action: () -> Unit) {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                close()
+                action()
+            }
+            Column(modifier = Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("💔", fontSize = 22.sp)
                     Spacer(Modifier.width(8.dp))
@@ -430,10 +429,7 @@ fun BrokenHeartDialog(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .background(bg)
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                action()
-                            }
+                            .clickable { dismiss(action) }
                             .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -448,6 +444,5 @@ fun BrokenHeartDialog(
                     Spacer(Modifier.height(8.dp))
                 }
             }
-        }
     }
 }
