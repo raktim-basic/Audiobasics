@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -57,13 +56,12 @@ fun AddToPlaylistSheet(
         containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = likedSongs.any { it.id == song.id }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(bgColor)
-        ) {
+    MorphPopup(
+        onDismissRequest = onDismiss,
+        placement = MorphPlacement.Center,
+        containerColor = bgColor
+    ) { close ->
+        Column(modifier = Modifier.fillMaxWidth()) {
             // Title
             Text(
                 text = "Add to...",
@@ -142,7 +140,7 @@ fun AddToPlaylistSheet(
                     )
                 }
                 Button(
-                    onClick = onDismiss,
+                    onClick = close,
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
                     shape = RoundedCornerShape(20.dp)
                 ) {
