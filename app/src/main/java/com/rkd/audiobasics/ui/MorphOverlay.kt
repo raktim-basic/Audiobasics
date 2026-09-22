@@ -86,7 +86,7 @@ enum class MorphPlacement {
 }
 
 @Stable
-internal class MorphEntry(
+class MorphEntry internal constructor(
     val anchor: Rect?,
     val placement: MorphPlacement,
     val containerColor: Color,
