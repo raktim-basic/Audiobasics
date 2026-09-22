@@ -386,50 +386,50 @@ fun AlbumScreen(
                             }
 
                             // Play dropdown
-                            var showPlayMenu by remember { mutableStateOf(false) }
-                            Box {
-                                IconButton(onClick = {
+                            val overlay = LocalMorphOverlay.current
+                            val playMenuAnchor = rememberMorphAnchor()
+                            IconButton(
+                                onClick = {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    showPlayMenu = true
-                                }) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = textColor, modifier = Modifier.size(26.dp))
-                                }
-                                DropdownMenu(
-                                    expanded = showPlayMenu,
-                                    onDismissRequest = { showPlayMenu = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Play all", fontFamily = NothingFont) },
-                                        onClick = {
-                                            showPlayMenu = false
-                                            if (albumSongs.isNotEmpty()) vm.playWithQueue(albumSongs.first(), albumSongs)
+                                    overlay.show(anchor = playMenuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                                        MorphMenuColumn {
+                                            MorphMenuItem(
+                                                text = "Play all",
+                                                onClick = {
+                                                    close()
+                                                    if (albumSongs.isNotEmpty()) vm.playWithQueue(albumSongs.first(), albumSongs)
+                                                }
+                                            )
+                                            MorphMenuItem(
+                                                text = "Shuffle",
+                                                onClick = {
+                                                    close()
+                                                    if (albumSongs.isNotEmpty()) {
+                                                        val shuffled = albumSongs.shuffled()
+                                                        vm.playWithQueue(shuffled.first(), shuffled)
+                                                    }
+                                                }
+                                            )
+                                            MorphMenuItem(
+                                                text = "Play next",
+                                                onClick = {
+                                                    close()
+                                                    albumSongs.forEach { vm.playNext(it) }
+                                                }
+                                            )
+                                            MorphMenuItem(
+                                                text = "Add to queue",
+                                                onClick = {
+                                                    close()
+                                                    albumSongs.forEach { vm.addToQueue(it) }
+                                                }
+                                            )
                                         }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Shuffle", fontFamily = NothingFont) },
-                                        onClick = {
-                                            showPlayMenu = false
-                                            if (albumSongs.isNotEmpty()) {
-                                                val shuffled = albumSongs.shuffled()
-                                                vm.playWithQueue(shuffled.first(), shuffled)
-                                            }
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Play next", fontFamily = NothingFont) },
-                                        onClick = {
-                                            showPlayMenu = false
-                                            albumSongs.forEach { vm.playNext(it) }
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Add to queue", fontFamily = NothingFont) },
-                                        onClick = {
-                                            showPlayMenu = false
-                                            albumSongs.forEach { vm.addToQueue(it) }
-                                        }
-                                    )
-                                }
+                                    }
+                                },
+                                modifier = Modifier.morphAnchor(playMenuAnchor)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = textColor, modifier = Modifier.size(26.dp))
                             }
                             } // end if (!titleExpanded)
                         }
@@ -647,7 +647,6 @@ fun AlbumSongRow(
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val titleColor = if (isPlaying) Color.Red else textColor
-    var menuExpanded by remember { mutableStateOf(false) }
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
 
     Row(
@@ -729,52 +728,60 @@ fun AlbumSongRow(
             )
         }
 
-        Box {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                menuExpanded = true
-            }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = subTextColor)
-            }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                if (onAddTo != null) {
-                    DropdownMenuItem(
-                        text = { Text("Add to playlist...", fontFamily = NothingFont) },
-                        onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            menuExpanded = false
-                            onAddTo()
+        run {
+            val overlay = LocalMorphOverlay.current
+            val menuAnchor = rememberMorphAnchor()
+
+            fun openMenu() {
+                overlay.show(anchor = menuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                    MorphMenuColumn {
+                        if (onAddTo != null) {
+                            MorphMenuItem(
+                                text = "Add to playlist...",
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close()
+                                    onAddTo()
+                                }
+                            )
+                        } else {
+                            MorphMenuItem(
+                                text = if (isLiked) "Unlike" else "Like",
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close()
+                                    onLike()
+                                }
+                            )
                         }
-                    )
-                } else {
-                    DropdownMenuItem(
-                        text = { Text(if (isLiked) "Unlike" else "Like", fontFamily = NothingFont) },
-                        onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            menuExpanded = false
-                            onLike()
-                        }
-                    )
+                        MorphMenuItem(
+                            text = "Play next",
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                onPlayNext()
+                            }
+                        )
+                        MorphMenuItem(
+                            text = "Add to queue",
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                onAddToQueue()
+                            }
+                        )
+                    }
                 }
-                DropdownMenuItem(
-                    text = { Text("Play next", fontFamily = NothingFont) },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        menuExpanded = false
-                        onPlayNext()
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Add to queue", fontFamily = NothingFont) },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        menuExpanded = false
-                        onAddToQueue()
-                    }
-                )
+            }
+
+            IconButton(
+                onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    openMenu()
+                },
+                modifier = Modifier.morphAnchor(menuAnchor)
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = subTextColor)
             }
         }
     }
