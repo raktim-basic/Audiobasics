@@ -456,6 +456,8 @@ fun PlayerDialog(
                 song = song!!,
                 vm = vm,
                 isDarkMode = isDarkMode,
+                hapticsEnabled = hapticsEnabled,
+                context = context,
                 onDismiss = { showAddToSheet = false },
                 onCreateNew = { showCreatePlaylist = true }
             )
@@ -465,6 +467,7 @@ fun PlayerDialog(
         if (showCreatePlaylist) {
             CreatePlaylistDialog(
                 isDarkMode = isDarkMode,
+                hapticsEnabled = hapticsEnabled,
                 existingNames = customPlaylists.map { it.name },
                 onDismiss = { showCreatePlaylist = false },
                 onCreate = { name, emoji ->
@@ -490,43 +493,43 @@ fun PlayerDialog(
             )
         }
 
+        // ── Sleep timer dialog ─────────────────────────────────────────────────
+        // Controlled directly from here — no need to navigate to the queue screen.
+        if (showSleepDialog) {
+            SleepTimerDialog(
+                isDarkMode = isDarkMode,
+                hapticsEnabled = hapticsEnabled,
+                context = context,
+                onDismiss = { showSleepDialog = false },
+                onEndOfSong = {
+                    showSleepDialog = false
+                    vm.startEndOfSongSleepTimer()
+                },
+                onCustom = { minutes ->
+                    showSleepDialog = false
+                    vm.startCustomSleepTimer(minutes)
+                }
+            )
+        }
+
+        // ── Tempo/Pitch dialog ───────────────────────────────────────────────────
+        if (showTempoPitchDialog) {
+            TempoPitchDialog(
+                isDarkMode = isDarkMode,
+                hapticsEnabled = hapticsEnabled,
+                context = context,
+                speed = tempoPitchSpeed,
+                pitchSemitones = tempoPitchPitch,
+                onSpeedChange = { vm.setTempoSpeed(it) },
+                onPitchChange = { vm.setTempoPitch(it) },
+                onReset = { vm.resetTempoPitch() },
+                onDismiss = { showTempoPitchDialog = false }
+            )
+        }
+
         MorphOverlayHost(state = playerOverlay)
         }
         }
-    }
-
-    // ── Sleep timer dialog ─────────────────────────────────────────────────
-    // Controlled directly from here — no need to navigate to the queue screen.
-    if (showSleepDialog) {
-        SleepTimerDialog(
-            isDarkMode = isDarkMode,
-            hapticsEnabled = hapticsEnabled,
-            context = context,
-            onDismiss = { showSleepDialog = false },
-            onEndOfSong = {
-                showSleepDialog = false
-                vm.startEndOfSongSleepTimer()
-            },
-            onCustom = { minutes ->
-                showSleepDialog = false
-                vm.startCustomSleepTimer(minutes)
-            }
-        )
-    }
-
-    // ── Tempo/Pitch dialog ───────────────────────────────────────────────────
-    if (showTempoPitchDialog) {
-        TempoPitchDialog(
-            isDarkMode = isDarkMode,
-            hapticsEnabled = hapticsEnabled,
-            context = context,
-            speed = tempoPitchSpeed,
-            pitchSemitones = tempoPitchPitch,
-            onSpeedChange = { vm.setTempoSpeed(it) },
-            onPitchChange = { vm.setTempoPitch(it) },
-            onReset = { vm.resetTempoPitch() },
-            onDismiss = { showTempoPitchDialog = false }
-        )
     }
 
     // ── Song info screen ───────────────────────────────────────────────────
