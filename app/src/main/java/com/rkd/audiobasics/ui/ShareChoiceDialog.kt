@@ -1,9 +1,7 @@
 package com.rkd.audiobasics.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -11,7 +9,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -19,6 +16,9 @@ import com.rkd.audiobasics.utils.HapticUtils
  * Only shown at all when the (temporary, dev-tools-only) "show YouTube link on share" setting
  * is on — see AudiobasicsLinks.isYoutubeShareOptionEnabled. With it off, sharing just sends the
  * Audiobasics Link directly with no picker step, since there's only one option.
+ *
+ * Opened from the 3-dot menu, so it has no button of its own to grow out of — it morphs from
+ * the screen center instead (MorphPlacement.Center, no anchor).
  */
 @Composable
 fun ShareChoiceDialog(
@@ -32,17 +32,16 @@ fun ShareChoiceDialog(
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
 
-    Dialog(onDismissRequest = {
-        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        onDismiss()
-    }) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(bgColor, RoundedCornerShape(16.dp))
-                .padding(vertical = 12.dp)
-        ) {
-            Column {
+    MorphPopup(
+        onDismissRequest = onDismiss,
+        placement = MorphPlacement.Center,
+        containerColor = bgColor
+    ) { close ->
+            fun dismiss() {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                close()
+            }
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
                 Text(
                     text = "Share",
                     fontFamily = NothingFont,
@@ -53,14 +52,13 @@ fun ShareChoiceDialog(
                 )
 
                 ShareChoiceRow("Audiobasics Link", textColor, hapticsEnabled, context) {
-                    onDismiss(); onAudiobasicsLink()
+                    dismiss(); onAudiobasicsLink()
                 }
                 ShareChoiceRow("YouTube Link", textColor, hapticsEnabled, context) {
-                    onDismiss(); onYoutubeLink()
+                    dismiss(); onYoutubeLink()
                 }
             }
         }
-    }
 }
 
 @Composable
