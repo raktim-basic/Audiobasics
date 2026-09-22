@@ -453,7 +453,6 @@ private fun LibraryRow(
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
-    var menuExpanded by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
@@ -487,22 +486,30 @@ private fun LibraryRow(
         Text(text = label, fontFamily = NothingFont, fontWeight = FontWeight.Bold,
             fontSize = 16.sp, color = textColor, modifier = Modifier.weight(1f))
         if (showMenu) {
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = subTextColor)
-                }
-                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                    DropdownMenuItem(text = { Text("Rename", fontFamily = NothingFont) },
-                        onClick = { menuExpanded = false; onRename?.invoke() })
-                    if (onReorder != null) {
-                        DropdownMenuItem(
-                            text = { Text(if (isDragging) "Cancel reorder" else "Reorder", fontFamily = NothingFont) },
-                            onClick = { menuExpanded = false; onReorder.invoke() })
+            val overlay = LocalMorphOverlay.current
+            val menuAnchor = rememberMorphAnchor()
+            IconButton(
+                onClick = {
+                    overlay.show(anchor = menuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                        MorphMenuColumn {
+                            MorphMenuItem(text = "Rename", onClick = { close(); onRename?.invoke() })
+                            if (onReorder != null) {
+                                MorphMenuItem(
+                                    text = if (isDragging) "Cancel reorder" else "Reorder",
+                                    onClick = { close(); onReorder.invoke() }
+                                )
+                            }
+                            MorphMenuItem(
+                                text = "Delete",
+                                textColor = Color.Red,
+                                onClick = { close(); onDelete?.invoke() }
+                            )
+                        }
                     }
-                    DropdownMenuItem(
-                        text = { Text("Delete", color = Color.Red, fontFamily = NothingFont) },
-                        onClick = { menuExpanded = false; onDelete?.invoke() })
-                }
+                },
+                modifier = Modifier.morphAnchor(menuAnchor)
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = subTextColor)
             }
         }
     }
