@@ -385,6 +385,13 @@ fun AudiobasicsApp(
         }
     }
 
+    // Single overlay host for morph (container-transform) popups — see MorphOverlay.kt.
+    // Opened here, around the whole rest of the function body, so every dialog/menu below
+    // (including ones declared before the Column, like PlayerDialog and AddToPlaylistSheet)
+    // can reach LocalMorphOverlay — not just ones inside the nav stack.
+    val morphOverlay = remember { MorphOverlayState() }
+    CompositionLocalProvider(LocalMorphOverlay provides morphOverlay) {
+
     if (showStorageLow) {
         AlertDialog(
             onDismissRequest = { vm.dismissStorageLow() },
@@ -476,12 +483,10 @@ fun AudiobasicsApp(
 
     val rootBgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
 
-    // Single overlay host for morph (container-transform) popups — see MorphOverlay.kt.
-    // Anything under LocalMorphOverlay can call overlay.show(...) and have its popup grow
-    // out of the trigger that opened it. Placed outside systemBarsPadding()/imePadding() so
-    // the overlay can size itself against the real screen and inset around the bars itself.
-    val morphOverlay = remember { MorphOverlayState() }
-    CompositionLocalProvider(LocalMorphOverlay provides morphOverlay) {
+    // Root box for the nav stack + player bar. MorphOverlayHost (below) draws above both;
+    // LocalMorphOverlay is provided further up, around this whole function body, so every
+    // dialog and menu declared earlier (storage-low alert, PlayerDialog, AddToPlaylistSheet,
+    // CreatePlaylistDialog, Smart Inputs, App Links nudge) can also call overlay.show(...).
     Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
