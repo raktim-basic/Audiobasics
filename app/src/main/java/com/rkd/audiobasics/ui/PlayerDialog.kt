@@ -34,12 +34,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -95,9 +98,24 @@ fun PlayerDialog(
         properties = DialogProperties(
             dismissOnBackPress = true,
             dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
         )
     ) {
+        // This is a real separate Android window, not part of the main Activity window — by
+        // default it's letterboxed to the space between the status and navigation bars, which
+        // is why it used to look visually inconsistent with the edge-to-edge MorphOverlay
+        // popups (those draw in the main window and inherit its edge-to-edge treatment for
+        // free). decorFitsSystemWindows = false above opts this window in too; this SideEffect
+        // is the other half — without it the window manager still reserves the system bar
+        // insets itself.
+        val dialogView = LocalView.current
+        SideEffect {
+            (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+            }
+        }
+
         // Own overlay for popups opened from within this window — PlayerDialog is a real
         // separate Android Dialog window, so it can't see the app-root LocalMorphOverlay
         // provided in MainActivity (that host draws in the main window, underneath this one).
