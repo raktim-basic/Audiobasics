@@ -1,7 +1,10 @@
 package com.rkd.audiobasics.ui
 
-import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -30,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -48,6 +52,22 @@ import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.utils.HapticUtils
+import kotlinx.coroutines.launch
+
+/**
+ * The three faces of the player's flip card. Player is "home": Lyrics and Info each flip back
+ * to Player only — there's no direct flip between Lyrics and Info themselves. See the rotation
+ * math where `currentFace`/the drag handler are defined for how that's enforced.
+ */
+private enum class PlayerFace { PLAYER, LYRICS, INFO }
+
+private fun faceFor(rotationDegrees: Float): PlayerFace = when {
+    rotationDegrees <= -90f -> PlayerFace.LYRICS
+    rotationDegrees >= 90f -> PlayerFace.INFO
+    else -> PlayerFace.PLAYER
+}
+
+private const val FLIP_DURATION_MS = 420
 
 @Composable
 fun PlayerDialog(
@@ -74,8 +94,6 @@ fun PlayerDialog(
     val tempoPitchSpeed by vm.currentSpeed.collectAsState()
     val tempoPitchPitch by vm.currentPitch.collectAsState()
 
-    var showLyrics by remember { mutableStateOf(false) }
-    var showSongInfo by remember { mutableStateOf(false) }
     var showAddToSheet by remember { mutableStateOf(false) }
     var showCreatePlaylist by remember { mutableStateOf(false) }
     var showSleepDialog by remember { mutableStateOf(false) }
@@ -88,9 +106,26 @@ fun PlayerDialog(
     val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
     val subTextColor = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
 
-    if (showLyrics) {
-        LyricsScreen(vm = vm, isDarkMode = isDarkMode, onBack = { showLyrics = false })
-        return
+    // ── Flip-card state ──────────────────────────────────────────────────────
+    // rotation is the card's Y-axis rotation in degrees: 0 = Player face-on, -180 = Lyrics
+    // face-on, +180 = Info face-on. It's a plain Float during an active drag (snapTo-style,
+    // updated synchronously so the card tracks the finger with no lag) and only animated with
+    // Animatable.animateTo when settling after a tap or a released drag.
+    val rotation = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var cardWidthPx by remember { mutableIntStateOf(1) }
+    val currentFace = faceFor(rotation.value)
+
+    suspend fun flipTo(target: Float) {
+        rotation.animateTo(target, tween(FLIP_DURATION_MS, easing = FastOutSlowInEasing))
+    }
+
+    // Back press/gesture flips back to Player instead of closing the dialog, while on another
+    // face. This is registered before the popup overlay below (MorphOverlayHost), so any open
+    // popup's own BackHandler registers later and wins first — a popup closes, then a flip,
+    // then finally the dialog itself (Dialog's native dismissOnBackPress).
+    BackHandler(enabled = currentFace != PlayerFace.PLAYER) {
+        scope.launch { flipTo(0f) }
     }
 
     Dialog(
@@ -126,342 +161,130 @@ fun PlayerDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.6f))
-                .clickable { onDismiss() },
+                .clickable(enabled = currentFace == PlayerFace.PLAYER) { onDismiss() },
             contentAlignment = Alignment.Center
         ) {
+            // The flip card itself. Same width/height for all three faces — a real card
+            // doesn't resize mid-flip — sized generously enough (75% height) to comfortably
+            // fit Lyrics' scrolling list and Info's rows; Player's shorter content is just
+            // centered within that space rather than stretched to fill it.
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.88f)
+                    .fillMaxHeight(0.75f)
+                    .onSizeChanged { cardWidthPx = it.width.coerceAtLeast(1) }
+                    .graphicsLayer {
+                        rotationY = rotation.value
+                        cameraDistance = 12f * density
+                    }
                     .clip(RoundedCornerShape(16.dp))
                     .background(bgColor)
-                    .clickable(enabled = false) {}
-            ) {
-                Column {
-                    // ── Top bar ─────────────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Speaker/cast (placeholder)
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
-                        }
-
-                        // Song info
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showSongInfo = true
-                        }) {
-                            Icon(Icons.Default.Info, contentDescription = "Song info", tint = textColor, modifier = Modifier.size(20.dp))
-                        }
-
-                        // Close
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            onDismiss()
-                        }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor, modifier = Modifier.size(20.dp))
-                        }
-                    }
-
-                    // ── Artwork + title ──────────────────────────────────
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                    ) {
-                        val cachedThumbPath = remember(song?.id) {
-                            song?.id?.let { com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, it) }
-                        }
-                        AsyncImage(
-                            model = cachedThumbPath ?: song?.thumbnail,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(110.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = song?.title ?: "Song Name",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = textColor,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (song?.isExplicit == true) {
-                                    val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
-                                    val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(3.dp))
-                                            .background(explicitBgColor)
-                                            .padding(horizontal = 5.dp, vertical = 1.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "E",
-                                            fontFamily = NothingFont,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 9.sp,
-                                            color = explicitTextColor
-                                        )
-                                    }
-                                    Spacer(Modifier.width(5.dp))
-                                }
-                                Text(
-                                    text = song?.artist ?: "Artist",
-                                    fontFamily = NothingFont,
-                                    fontWeight = FontWeight.Normal,
-                                    fontSize = 13.sp,
-                                    color = subTextColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(20.dp))
-
-                    // ── Progress bar ─────────────────────────────────────
-                    val displayPosition = dragPosition ?: position
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = formatTime(displayPosition),
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = textColor
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(20.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            DashedProgressBar(
-                                progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f,
-                                onSeek = { seekProgress ->
-                                    val newPos = (seekProgress * duration).toLong()
-                                    vm.seekTo(newPos)
-                                    dragPosition = null
-                                },
-                                onDragging = { dragProgress ->
-                                    dragPosition = (dragProgress * duration).toLong()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                hapticsEnabled = hapticsEnabled,
-                                context = context,
-                                isDarkMode = isDarkMode
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = formatTime(duration),
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = textColor
-                        )
-                    }
-
-                    Spacer(Modifier.height(20.dp))
-
-                    // ── Playback controls ────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.skipToPrevious()
-                        }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = textColor, modifier = Modifier.size(36.dp))
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(surfaceColor)
-                                .clickable {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    vm.togglePlayPause()
-                                }
-                                .padding(horizontal = 32.dp, vertical = 14.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = textColor)
-                            } else {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = if (isPlaying) "Pause" else "Play",
-                                        tint = textColor,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        text = if (isPlaying) "Pause" else "Play",
-                                        fontFamily = NothingFont,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
-                                        color = textColor
-                                    )
-                                }
-                            }
-                        }
-
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.skipToNext()
-                        }) {
-                            Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = textColor, modifier = Modifier.size(36.dp))
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // ── Bottom bar ───────────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor)
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // + Add to playlist
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showAddToSheet = true
-                        }) {
-                            Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = textColor, modifier = Modifier.size(26.dp))
-                        }
-
-                        // Lyrics
-                        Text(
-                            text = "LYRICS",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = textColor,
-                            modifier = Modifier.clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                showLyrics = true
-                            }
-                        )
-
-                        // 3-dot dropdown
-                        val overlay = LocalMorphOverlay.current
-                        val threeDotAnchor = rememberMorphAnchor()
-                        IconButton(
-                            onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                overlay.show(anchor = threeDotAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
-                                    MorphMenuColumn {
-                                        MorphMenuItem(
-                                            text = "Share",
-                                            leadingIcon = Icons.Default.Share,
-                                            onClick = {
-                                                close()
-                                                song?.let { s ->
-                                                    if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
-                                                        showShareChoice = true
-                                                    } else {
-                                                        AudiobasicsLinks.shareText(
-                                                            context, AudiobasicsLinks.songLink(s.id), "Share song"
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        )
-                                        MorphMenuItem(
-                                            text = "Queue",
-                                            leadingIcon = Icons.Default.QueueMusic,
-                                            onClick = {
-                                                close()
-                                                onDismiss()
-                                                onNavigateQueue()
-                                            }
-                                        )
-                                        MorphMenuItem(
-                                            text = when (sleepTimerMode) {
-                                                MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "End of the song"
-                                                MusicViewModel.SLEEP_TIMER_CUSTOM -> formatCountdown(sleepTimerRemaining)
-                                                else -> "Sleep timer"
-                                            },
-                                            leadingIcon = Icons.Default.Bedtime,
-                                            iconTint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
-                                            textColor = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
-                                            onClick = {
-                                                close()
-                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                                if (song == null) {
-                                                    Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
-                                                } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
-                                                    vm.cancelSleepTimer()
-                                                } else {
-                                                    showSleepDialog = true
-                                                }
-                                            }
-                                        )
-                                        MorphMenuItem(
-                                            text = "Tempo and Pitch",
-                                            leadingIcon = Icons.Default.Speed,
-                                            iconTint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
-                                            textColor = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
-                                            onClick = {
-                                                close()
-                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                                showTempoPitchDialog = true
-                                            }
-                                        )
-                                        MorphMenuItem(
-                                            text = when (repeatMode) {
-                                                1 -> "Repeat list"
-                                                2 -> "Repeat one"
-                                                else -> "Repeat off"
-                                            },
-                                            leadingIcon = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                                            iconTint = if (repeatMode == 0) Color.Unspecified else Color.Red,
-                                            textColor = if (repeatMode == 0) Color.Unspecified else Color.Red,
-                                            onClick = {
-                                                // Matches the old menu: toggling repeat does NOT close the
-                                                // menu, so tapping repeatedly cycles through its modes.
-                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                                vm.toggleRepeatMode()
-                                            }
-                                        )
-                                    }
+                    .pointerInput(Unit) {
+                        // A drag starting from Player can go either way (session bounds -180..180);
+                        // one starting from Lyrics or Info can only return to Player (never overshoot
+                        // into the far side in one continuous gesture) — see the enum doc above.
+                        var sessionMin = -180f
+                        var sessionMax = 180f
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                when (faceFor(rotation.value)) {
+                                    PlayerFace.LYRICS -> { sessionMin = -180f; sessionMax = 0f }
+                                    PlayerFace.INFO -> { sessionMin = 0f; sessionMax = 180f }
+                                    PlayerFace.PLAYER -> { sessionMin = -180f; sessionMax = 180f }
                                 }
                             },
-                            modifier = Modifier.morphAnchor(threeDotAnchor)
-                        ) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor, modifier = Modifier.size(26.dp))
+                            onDragEnd = {
+                                val target = when (faceFor(rotation.value)) {
+                                    PlayerFace.LYRICS -> -180f
+                                    PlayerFace.INFO -> 180f
+                                    PlayerFace.PLAYER -> 0f
+                                }
+                                scope.launch { flipTo(target) }
+                            },
+                            onDragCancel = {
+                                val target = when (faceFor(rotation.value)) {
+                                    PlayerFace.LYRICS -> -180f
+                                    PlayerFace.INFO -> 180f
+                                    PlayerFace.PLAYER -> 0f
+                                }
+                                scope.launch { flipTo(target) }
+                            },
+                            onHorizontalDrag = { _, dragAmount ->
+                                val degreesPerPx = 180f / cardWidthPx
+                                val next = (rotation.value + dragAmount * degreesPerPx)
+                                    .coerceIn(sessionMin, sessionMax)
+                                scope.launch { rotation.snapTo(next) }
+                            }
+                        )
+                    }
+            ) {
+                when (currentFace) {
+                    PlayerFace.PLAYER -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        PlayerFrontContent(
+                            vm = vm,
+                            context = context,
+                            hapticsEnabled = hapticsEnabled,
+                            song = song,
+                            isPlaying = isPlaying,
+                            isLoading = isLoading,
+                            position = position,
+                            duration = duration,
+                            isDarkMode = isDarkMode,
+                            textColor = textColor,
+                            surfaceColor = surfaceColor,
+                            subTextColor = subTextColor,
+                            dragPosition = dragPosition,
+                            onDragPositionChange = { dragPosition = it },
+                            sleepTimerMode = sleepTimerMode,
+                            sleepTimerRemaining = sleepTimerRemaining,
+                            repeatMode = repeatMode,
+                            tempoPitchSpeed = tempoPitchSpeed,
+                            tempoPitchPitch = tempoPitchPitch,
+                            onDismiss = onDismiss,
+                            onNavigateQueue = onNavigateQueue,
+                            onShowInfo = { scope.launch { flipTo(180f) } },
+                            onShowLyrics = { scope.launch { flipTo(-180f) } },
+                            onShowAddToSheet = { showAddToSheet = true },
+                            onShowShareChoice = { showShareChoice = true },
+                            onShowSleepDialog = { showSleepDialog = true },
+                            onShowTempoPitchDialog = { showTempoPitchDialog = true }
+                        )
+                    }
+                    PlayerFace.LYRICS -> Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { rotationY = 180f }
+                    ) {
+                        LyricsCardContent(
+                            vm = vm,
+                            isDarkMode = isDarkMode,
+                            onBack = { scope.launch { flipTo(0f) } }
+                        )
+                    }
+                    PlayerFace.INFO -> Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { rotationY = 180f }
+                    ) {
+                        if (song != null) {
+                            SongInfoCardContent(
+                                song = song!!,
+                                isDarkMode = isDarkMode,
+                                context = context,
+                                savedAlbums = savedAlbums,
+                                resolvedAlbumCache = resolvedAlbumCache,
+                                onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
+                                livePlaybackDurationMs = duration,
+                                onDismiss = { scope.launch { flipTo(0f) } },
+                                onArtistClick = { artistName, artistId ->
+                                    onDismiss()
+                                    onNavigateArtist(artistName, artistId)
+                                },
+                                onAlbumClick = { albumTitle ->
+                                    onDismiss()
+                                    onNavigateAlbum(albumTitle)
+                                }
+                            )
                         }
                     }
                 }
@@ -549,29 +372,370 @@ fun PlayerDialog(
         }
         }
     }
+}
 
-    // ── Song info screen ───────────────────────────────────────────────────
-    if (showSongInfo && song != null) {
-        SongInfoScreen(
-            song = song!!,
-            isDarkMode = isDarkMode,
-            context = context,
-            savedAlbums = savedAlbums,
-            resolvedAlbumCache = resolvedAlbumCache,
-            onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
-            livePlaybackDurationMs = duration,
-            onDismiss = { showSongInfo = false },
-            onArtistClick = { artistName, artistId ->
-                showSongInfo = false
-                onDismiss()
-                onNavigateArtist(artistName, artistId)
-            },
-            onAlbumClick = { albumTitle ->
-                showSongInfo = false
-                onDismiss()
-                onNavigateAlbum(albumTitle)
+/**
+ * The player face's content — extracted from PlayerDialog's card so the flip `when` above
+ * stays readable. [onShowInfo]/[onShowLyrics] flip the card rather than opening anything new.
+ */
+@Composable
+private fun PlayerFrontContent(
+    vm: MusicViewModel,
+    context: android.content.Context,
+    hapticsEnabled: Boolean,
+    song: com.rkd.audiobasics.data.Song?,
+    isPlaying: Boolean,
+    isLoading: Boolean,
+    position: Long,
+    duration: Long,
+    isDarkMode: Boolean,
+    textColor: Color,
+    surfaceColor: Color,
+    subTextColor: Color,
+    dragPosition: Long?,
+    onDragPositionChange: (Long?) -> Unit,
+    sleepTimerMode: Int,
+    sleepTimerRemaining: Long,
+    repeatMode: Int,
+    tempoPitchSpeed: Float,
+    tempoPitchPitch: Int,
+    onDismiss: () -> Unit,
+    onNavigateQueue: () -> Unit,
+    onShowInfo: () -> Unit,
+    onShowLyrics: () -> Unit,
+    onShowAddToSheet: () -> Unit,
+    onShowShareChoice: () -> Unit,
+    onShowSleepDialog: () -> Unit,
+    onShowTempoPitchDialog: () -> Unit
+) {
+    Column {
+        // ── Top bar ─────────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Speaker/cast (placeholder)
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+            }) {
+                Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
             }
-        )
+
+            // Song info — flips the card
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onShowInfo()
+            }) {
+                Icon(Icons.Default.Info, contentDescription = "Song info", tint = textColor, modifier = Modifier.size(20.dp))
+            }
+
+            // Close
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onDismiss()
+            }) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor, modifier = Modifier.size(20.dp))
+            }
+        }
+
+        // ── Artwork + title ──────────────────────────────────
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+        ) {
+            val cachedThumbPath = remember(song?.id) {
+                song?.id?.let { com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, it) }
+            }
+            AsyncImage(
+                model = cachedThumbPath ?: song?.thumbnail,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(110.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = song?.title ?: "Song Name",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = textColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (song?.isExplicit == true) {
+                        val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
+                        val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(explicitBgColor)
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "E",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp,
+                                color = explicitTextColor
+                            )
+                        }
+                        Spacer(Modifier.width(5.dp))
+                    }
+                    Text(
+                        text = song?.artist ?: "Artist",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 13.sp,
+                        color = subTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ── Progress bar ─────────────────────────────────────
+        val displayPosition = dragPosition ?: position
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = formatTime(displayPosition),
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = textColor
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                DashedProgressBar(
+                    progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f,
+                    onSeek = { seekProgress ->
+                        val newPos = (seekProgress * duration).toLong()
+                        vm.seekTo(newPos)
+                        onDragPositionChange(null)
+                    },
+                    onDragging = { dragProgress ->
+                        onDragPositionChange((dragProgress * duration).toLong())
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    hapticsEnabled = hapticsEnabled,
+                    context = context,
+                    isDarkMode = isDarkMode
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = formatTime(duration),
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = textColor
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ── Playback controls ────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                vm.skipToPrevious()
+            }) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = textColor, modifier = Modifier.size(36.dp))
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(surfaceColor)
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.togglePlayPause()
+                    }
+                    .padding(horizontal = 32.dp, vertical = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = textColor)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = textColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (isPlaying) "Pause" else "Play",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                    }
+                }
+            }
+
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                vm.skipToNext()
+            }) {
+                Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = textColor, modifier = Modifier.size(36.dp))
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // ── Bottom bar ───────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // + Add to playlist
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onShowAddToSheet()
+            }) {
+                Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = textColor, modifier = Modifier.size(26.dp))
+            }
+
+            // Lyrics — flips the card
+            Text(
+                text = "LYRICS",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = textColor,
+                modifier = Modifier.clickable {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onShowLyrics()
+                }
+            )
+
+            // 3-dot dropdown
+            val overlay = LocalMorphOverlay.current
+            val threeDotAnchor = rememberMorphAnchor()
+            IconButton(
+                onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    overlay.show(anchor = threeDotAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                        MorphMenuColumn {
+                            MorphMenuItem(
+                                text = "Share",
+                                leadingIcon = Icons.Default.Share,
+                                onClick = {
+                                    close()
+                                    song?.let { s ->
+                                        if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                            onShowShareChoice()
+                                        } else {
+                                            AudiobasicsLinks.shareText(
+                                                context, AudiobasicsLinks.songLink(s.id), "Share song"
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                            MorphMenuItem(
+                                text = "Queue",
+                                leadingIcon = Icons.Default.QueueMusic,
+                                onClick = {
+                                    close()
+                                    onDismiss()
+                                    onNavigateQueue()
+                                }
+                            )
+                            MorphMenuItem(
+                                text = when (sleepTimerMode) {
+                                    MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "End of the song"
+                                    MusicViewModel.SLEEP_TIMER_CUSTOM -> formatCountdown(sleepTimerRemaining)
+                                    else -> "Sleep timer"
+                                },
+                                leadingIcon = Icons.Default.Bedtime,
+                                iconTint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
+                                textColor = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
+                                onClick = {
+                                    close()
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    if (song == null) {
+                                        Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
+                                    } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
+                                        vm.cancelSleepTimer()
+                                    } else {
+                                        onShowSleepDialog()
+                                    }
+                                }
+                            )
+                            MorphMenuItem(
+                                text = "Tempo and Pitch",
+                                leadingIcon = Icons.Default.Speed,
+                                iconTint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
+                                textColor = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
+                                onClick = {
+                                    close()
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    onShowTempoPitchDialog()
+                                }
+                            )
+                            MorphMenuItem(
+                                text = when (repeatMode) {
+                                    1 -> "Repeat list"
+                                    2 -> "Repeat one"
+                                    else -> "Repeat off"
+                                },
+                                leadingIcon = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                                iconTint = if (repeatMode == 0) Color.Unspecified else Color.Red,
+                                textColor = if (repeatMode == 0) Color.Unspecified else Color.Red,
+                                onClick = {
+                                    // Matches the old menu: toggling repeat does NOT close the
+                                    // menu, so tapping repeatedly cycles through its modes.
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    vm.toggleRepeatMode()
+                                }
+                            )
+                        }
+                    }
+                },
+                modifier = Modifier.morphAnchor(threeDotAnchor)
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor, modifier = Modifier.size(26.dp))
+            }
+        }
     }
 }
 
