@@ -19,7 +19,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
-
+/**
+ * The sleep timer entry dialog — a single scrubber screen. Dragging/stepping down to the very
+ * start (0 filled dots, left of the first 5-minute dot) selects "End of the song" instead of a
+ * numeric duration; that's also where it opens by default.
+ *
+ * Deliberately standalone (not owned by QueueScreen) so it can be launched from anywhere the
+ * player can be controlled from — the player dialog's overflow menu, the queue screen, etc. —
+ * without those callers needing to navigate to the queue first.
+ */
 @Composable
 fun SleepTimerDialog(
     isDarkMode: Boolean,
@@ -87,7 +95,7 @@ private fun CustomSleepTimerContent(
 
     Column {
         Text(
-            text = if (selectedDots == 0) "End of the song" else "Sleep timer : ${minutes}m",
+            text = "Sleep timer : " + if (selectedDots == 0) "End of the song" else "${minutes}m",
             fontFamily = NothingFont,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
