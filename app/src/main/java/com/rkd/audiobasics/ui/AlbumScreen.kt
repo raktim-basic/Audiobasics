@@ -648,6 +648,7 @@ fun AlbumSongRow(
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val titleColor = if (isPlaying) Color.Red else textColor
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
+    var showShareChoice by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
@@ -735,6 +736,20 @@ fun AlbumSongRow(
             fun openMenu() {
                 overlay.show(anchor = menuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
                     MorphMenuColumn {
+                        MorphMenuItem(
+                            text = "Share",
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                    showShareChoice = true
+                                } else {
+                                    com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                        context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
+                                    )
+                                }
+                            }
+                        )
                         if (onAddTo != null) {
                             MorphMenuItem(
                                 text = "Add to playlist...",
@@ -801,6 +816,25 @@ fun AlbumSongRow(
                 showBrokenHeartDialog = false
                 onRetryCache?.invoke()
             }
+        )
+    }
+
+    if (showShareChoice) {
+        ShareChoiceDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onAudiobasicsLink = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                    context, com.rkd.audiobasics.utils.AudiobasicsLinks.songLink(song.id), "Share song"
+                )
+            },
+            onYoutubeLink = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                    context, "https://www.youtube.com/watch?v=${song.id}", "Share song"
+                )
+            },
+            onDismiss = { showShareChoice = false }
         )
     }
 }
