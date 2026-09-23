@@ -1,16 +1,15 @@
 package com.rkd.audiobasics.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -20,17 +19,23 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import android.content.Context
-import timber.log.Timber
 
+/**
+ * The song-info face of the player's flip card. This used to be its own floating Dialog window;
+ * it's now plain content, drawn inline on the back of [PlayerDialog]'s card once it's flipped
+ * there — same background/corner-clip/edge-to-edge treatment as the front (player) face, all
+ * supplied by the shared card container in PlayerDialog. [onDismiss] flips back to the player
+ * face rather than closing anything; artist/album taps still leave the player entirely (they
+ * navigate elsewhere), so those two continue to close everything as before.
+ */
 @Composable
-fun SongInfoScreen(
+fun SongInfoCardContent(
     song: Song,
     isDarkMode: Boolean,
     context: Context,
@@ -42,7 +47,6 @@ fun SongInfoScreen(
     onArtistClick: (String, String?) -> Unit,
     onAlbumClick: (String) -> Unit
 ) {
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     var albumTitle by remember(song.albumId) { mutableStateOf(song.albumTitle.ifBlank { null }) }
@@ -105,145 +109,141 @@ fun SongInfoScreen(
     val hasLyrics = remember(song.id) {
         CacheManager.isLyricsCached(context, song.id)
     }
-    
+
     val artists = remember(song.id, song.artist, song.artistNames) {
         song.artistNames.ifEmpty {
             com.rkd.audiobasics.api.Innertube.splitArtistNamesWithFeat(song.artist)
         }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Title
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(bgColor)
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // Title
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
+            Text(
+                text = "Song info.",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = Color.Red
+            )
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = subColor.copy(0.3f))
+
+        Spacer(Modifier.height(8.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+
+            InfoRow(label = "Name", value = song.title, textColor = textColor)
+
+            Spacer(Modifier.height(18.dp))
+
+            // Artists
+            Row(verticalAlignment = Alignment.Top) {
                 Text(
-                    text = "Song info.",
+                    text = "Artist(s) : ",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = Color.Red
+                    fontSize = 16.sp,
+                    color = textColor
                 )
+                Column {
+                    artists.forEachIndexed { i, artist ->
+                        Text(
+                            text = buildAnnotatedString {
+                                withStyle(SpanStyle(
+                                    color = Color.Red,
+                                    textDecoration = TextDecoration.Underline
+                                )) { append(artist) }
+                                if (i < artists.lastIndex) {
+                                    withStyle(SpanStyle(color = textColor)) { append(", ") }
+                                }
+                            },
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            modifier = Modifier.clickable { onArtistClick(artist, song.artistIdFor(artist)) }
+                        )
+                    }
+                }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = subColor.copy(0.3f))
+            Spacer(Modifier.height(16.dp))
 
-            Spacer(Modifier.height(8.dp))
-
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-
-                InfoRow(label = "Name", value = song.title, textColor = textColor)
-
-                Spacer(Modifier.height(18.dp))
-
-                // Artists
-                Row(verticalAlignment = Alignment.Top) {
+            // Album
+            if (song.albumId.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "Artist(s) : ",
+                        text = "Album/EP : ",
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = textColor
                     )
-                    Column {
-                        artists.forEachIndexed { i, artist ->
-                            Text(
-                                text = buildAnnotatedString {
-                                    withStyle(SpanStyle(
-                                        color = Color.Red,
-                                        textDecoration = TextDecoration.Underline
-                                    )) { append(artist) }
-                                    if (i < artists.lastIndex) {
-                                        withStyle(SpanStyle(color = textColor)) { append(", ") }
-                                    }
-                                },
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                modifier = Modifier.clickable { onArtistClick(artist, song.artistIdFor(artist)) }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                // Album
-                if (song.albumId.isNotBlank()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Album/EP : ",
+                    when {
+                        albumTitleLoading -> Text(
+                            text = "Loading…",
+                            fontFamily = NothingFont,
+                            fontStyle = FontStyle.Italic,
+                            fontSize = 16.sp,
+                            color = subColor
+                        )
+                        albumTitle != null -> Text(
+                            text = buildAnnotatedString {
+                                withStyle(SpanStyle(
+                                    color = Color.Red,
+                                    textDecoration = TextDecoration.Underline
+                                )) { append(albumTitle!!) }
+                            },
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
-                            color = textColor
+                            modifier = Modifier.clickable {
+                                val firstArtist = song.resolvedArtistNames.firstOrNull().orEmpty()
+                                onAlbumClick(albumTitle!! + if (firstArtist.isNotBlank()) " $firstArtist" else "")
+                            }
                         )
-                        when {
-                            albumTitleLoading -> Text(
-                                text = "Loading…",
-                                fontFamily = NothingFont,
-                                fontStyle = FontStyle.Italic,
-                                fontSize = 16.sp,
-                                color = subColor
-                            )
-                            albumTitle != null -> Text(
-                                text = buildAnnotatedString {
-                                    withStyle(SpanStyle(
-                                        color = Color.Red,
-                                        textDecoration = TextDecoration.Underline
-                                    )) { append(albumTitle!!) }
-                                },
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                modifier = Modifier.clickable {
-                                    val firstArtist = song.resolvedArtistNames.firstOrNull().orEmpty()
-                                    onAlbumClick(albumTitle!! + if (firstArtist.isNotBlank()) " $firstArtist" else "")
-                                }
-                            )
-                            else -> Text(
-                                text = "Unknown",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = subColor
-                            )
-                        }
+                        else -> Text(
+                            text = "Unknown",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = subColor
+                        )
                     }
-                    Spacer(Modifier.height(16.dp))
                 }
-
-                InfoRow(label = "Explicit", value = if (song.isExplicit) "Yes" else "No", textColor = textColor)
                 Spacer(Modifier.height(16.dp))
-                InfoRow(label = "Duration", value = durationText, textColor = textColor)
-                Spacer(Modifier.height(16.dp))
-                InfoRow(label = "Size", value = fileSizeText, textColor = textColor)
-                Spacer(Modifier.height(16.dp))
-                InfoRow(label = "Lyrics", value = if (hasLyrics) "Yes" else "No", textColor = textColor)
             }
 
-            Spacer(Modifier.height(8.dp))
+            InfoRow(label = "Explicit", value = if (song.isExplicit) "Yes" else "No", textColor = textColor)
+            Spacer(Modifier.height(16.dp))
+            InfoRow(label = "Duration", value = durationText, textColor = textColor)
+            Spacer(Modifier.height(16.dp))
+            InfoRow(label = "Size", value = fileSizeText, textColor = textColor)
+            Spacer(Modifier.height(16.dp))
+            InfoRow(label = "Lyrics", value = if (hasLyrics) "Yes" else "No", textColor = textColor)
+        }
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = subColor.copy(0.3f))
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = subColor.copy(0.3f))
 
-            // Back button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
-                }
+        // Back button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
             }
         }
     }
