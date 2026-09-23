@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Pause
@@ -17,20 +16,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
 import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.lyrics.LyricsCache
 import com.rkd.audiobasics.lyrics.LyricsRepository
@@ -38,11 +31,16 @@ import com.rkd.audiobasics.lyrics.LyricsResult
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
 
+/**
+ * The lyrics face of the player's flip card. This used to be its own floating Dialog window;
+ * it's now plain content, drawn inline on the back of [PlayerDialog]'s card once it's flipped
+ * there — same background/corner-clip/edge-to-edge treatment as the front (player) face, all
+ * supplied by the shared card container in PlayerDialog. [onBack] flips back to the player face
+ * rather than closing anything.
+ */
 @Composable
-fun LyricsScreen(
+fun LyricsCardContent(
     vm: MusicViewModel,
     isDarkMode: Boolean,
     onBack: () -> Unit
@@ -63,9 +61,8 @@ fun LyricsScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
-    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
 
     // Load lyrics — check cache first, fetch from network if needed
     LaunchedEffect(currentSong?.id, forceRefresh) {
@@ -126,204 +123,167 @@ fun LyricsScreen(
         }
     }
 
-    Dialog(
-        onDismissRequest = { onBack() },
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        // See PlayerDialog for why this SideEffect is needed alongside decorFitsSystemWindows
-        // above: without it this window still reserves the status/nav bar insets itself,
-        // leaving a visible seam against the edge-to-edge MorphOverlay popups elsewhere.
-        val dialogView = LocalView.current
-        SideEffect {
-            (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
-                WindowCompat.setDecorFitsSystemWindows(window, false)
+    Column(modifier = Modifier.fillMaxSize()) {
+
+        // ── Tabs + Refresh ──────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Real-time",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = if (isRealTime) Color.Red else Color.Gray,
+                modifier = Modifier.clickable {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    isRealTime = true
+                }
+            )
+            Spacer(Modifier.width(24.dp))
+            Text(
+                text = "Static",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = if (!isRealTime) Color.Red else Color.Gray,
+                modifier = Modifier.clickable {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    isRealTime = false
+                }
+            )
+            Spacer(Modifier.weight(1f))
+            // Refresh button
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                // Delete cached lyrics and re-fetch
+                currentSong?.let { song ->
+                    CacheManager.getLyricsFile(context, song.id).delete()
+                }
+                forceRefresh++
+            }) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "Refresh lyrics",
+                    tint = textColor,
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
 
+        // Dashed divider
+        Canvas(modifier = Modifier.fillMaxWidth().height(8.dp)) {
+            drawLine(
+                color = Color.Gray,
+                start = Offset(0f, size.height / 2),
+                end = Offset(size.width, size.height / 2),
+                strokeWidth = 2f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
+            )
+        }
+
+        // ── Lyrics content ──────────────────────────────────
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable { onBack() },
-            contentAlignment = Alignment.Center
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .fillMaxHeight(0.75f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(bgColor)
-                    .clickable(enabled = false) {}
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-
-                    // ── Tabs + Refresh ──────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Real-time",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = if (isRealTime) Color.Red else Color.Gray,
-                            modifier = Modifier.clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                isRealTime = true
-                            }
-                        )
-                        Spacer(Modifier.width(24.dp))
-                        Text(
-                            text = "Static",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = if (!isRealTime) Color.Red else Color.Gray,
-                            modifier = Modifier.clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                isRealTime = false
-                            }
-                        )
-                        Spacer(Modifier.weight(1f))
-                        // Refresh button
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            // Delete cached lyrics and re-fetch
-                            currentSong?.let { song ->
-                                CacheManager.getLyricsFile(context, song.id).delete()
-                            }
-                            forceRefresh++
-                        }) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh lyrics",
-                                tint = textColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
+            when {
+                isLoading -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.Red)
                     }
-
-                    // Dashed divider
-                    Canvas(modifier = Modifier.fillMaxWidth().height(8.dp)) {
-                        drawLine(
+                }
+                hasError || lyricsResult == null -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "Lyrics not found",
+                            fontFamily = NothingFont,
+                            fontSize = 16.sp,
                             color = Color.Gray,
-                            start = Offset(0f, size.height / 2),
-                            end = Offset(size.width, size.height / 2),
-                            strokeWidth = 2f,
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
+                            textAlign = TextAlign.Center
                         )
                     }
-
-                    // ── Lyrics content ──────────────────────────────────
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
+                }
+                isRealTime && lyricsResult!!.hasSynced -> {
+                    val syncedLines = lyricsResult!!.syncedLines
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(vertical = 16.dp)
                     ) {
-                        when {
-                            isLoading -> {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(color = Color.Red)
-                                }
-                            }
-                            hasError || lyricsResult == null -> {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = "Lyrics not found",
-                                        fontFamily = NothingFont,
-                                        fontSize = 16.sp,
-                                        color = Color.Gray,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
-                            isRealTime && lyricsResult!!.hasSynced -> {
-                                val syncedLines = lyricsResult!!.syncedLines
-                                LazyColumn(
-                                    state = listState,
-                                    modifier = Modifier.fillMaxSize(),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    contentPadding = PaddingValues(vertical = 16.dp)
-                                ) {
-                                    itemsIndexed(syncedLines) { index, line ->
-                                        val isCurrent = index == currentLineIndex
-                                        Text(
-                                            text = line.text.ifBlank { " " },
-                                            fontFamily = NothingFont,
-                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                            fontSize = 18.sp,
-                                            color = if (isCurrent) Color.Red else Color.Gray,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                }
-                            }
-                            else -> {
-                                val lines = lyricsResult!!.plainText.lines()
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(vertical = 16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    itemsIndexed(lines) { _, line ->
-                                        Text(
-                                            text = line.ifBlank { " " },
-                                            fontFamily = NothingFont,
-                                            fontSize = 17.sp,
-                                            color = Color.Gray,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ── Bottom bar ──────────────────────────────────────
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor)
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            onBack()
-                        }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
-                        }
-                        Text(
-                            text = "Powered by LRCLIB",
-                            fontFamily = NothingFont,
-                            fontSize = 12.sp,
-                            color = Color.Gray
-                        )
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.togglePlayPause()
-                        }) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play",
-                                tint = textColor,
-                                modifier = Modifier.size(26.dp)
+                        itemsIndexed(syncedLines) { index, line ->
+                            val isCurrent = index == currentLineIndex
+                            Text(
+                                text = line.text.ifBlank { " " },
+                                fontFamily = NothingFont,
+                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 18.sp,
+                                color = if (isCurrent) Color.Red else Color.Gray,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
                 }
+                else -> {
+                    val lines = lyricsResult!!.plainText.lines()
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        itemsIndexed(lines) { _, line ->
+                            Text(
+                                text = line.ifBlank { " " },
+                                fontFamily = NothingFont,
+                                fontSize = 17.sp,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Bottom bar ──────────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onBack()
+            }) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
+            }
+            Text(
+                text = "Powered by LRCLIB",
+                fontFamily = NothingFont,
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                vm.togglePlayPause()
+            }) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = textColor,
+                    modifier = Modifier.size(26.dp)
+                )
             }
         }
     }
