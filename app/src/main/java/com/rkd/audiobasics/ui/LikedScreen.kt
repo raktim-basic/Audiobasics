@@ -366,24 +366,37 @@ fun LikedScreen(
 
     // ── Remove confirmation ────────────────────────────────────────────────
     removeConfirm?.let { song ->
-        AlertDialog(
+        val confirmBg = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+        MorphPopup(
             onDismissRequest = { removeConfirm = null },
-            title = { Text("Are you sure?", fontFamily = NothingFont, fontWeight = FontWeight.Bold) },
-            text = { Text("Remove \"${song.title}\" from \"Liked Songs\"?", fontFamily = NothingFont) },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.toggleLike(song)
-                    removeConfirm = null
-                }) {
-                    Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            placement = MorphPlacement.Center,
+            containerColor = confirmBg
+        ) { close ->
+            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+                Text("Are you sure?", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
+                Spacer(Modifier.height(8.dp))
+                Text("Remove \"${song.title}\" from \"Liked Songs\"?", fontFamily = NothingFont, color = textColor)
+                Spacer(Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        close()
+                    }) {
+                        Text("No", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                    }
+                    TextButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.toggleLike(song)
+                        close()
+                    }) {
+                        Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { removeConfirm = null }) {
-                    Text("No", fontFamily = NothingFont, fontSize = 18.sp)
-                }
-            },
-            shape = RoundedCornerShape(20.dp)
-        )
+            }
+        }
     }
 }
