@@ -6,7 +6,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,9 +31,6 @@ fun SleepTimerDialog(
 ) {
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
-    val surfaceColor = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
-
-    var showCustomTimer by remember { mutableStateOf(false) }
 
     MorphPopup(
         onDismissRequest = onDismiss,
@@ -46,105 +42,31 @@ fun SleepTimerDialog(
                 .fillMaxWidth()
                 .padding(20.dp)
         ) {
-            if (showCustomTimer) {
-                CustomSleepTimerContent(
-                    isDarkMode = isDarkMode,
-                    hapticsEnabled = hapticsEnabled,
-                    context = context,
-                    textColor = textColor,
-                    onBack = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        showCustomTimer = false
-                    },
-                    onSet = { minutes -> onCustom(minutes) }
-                )
-            } else {
-                Column {
-                    Text(
-                        text = "Sleep timer",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = textColor
-                    )
-
-                    Spacer(Modifier.height(20.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onEndOfSong()
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "End of this song",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(surfaceColor, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                showCustomTimer = true
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Custom timer",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = textColor
-                        )
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Red, RoundedCornerShape(8.dp))
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                close()
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Cancel",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
+            CustomSleepTimerContent(
+                isDarkMode = isDarkMode,
+                hapticsEnabled = hapticsEnabled,
+                context = context,
+                textColor = textColor,
+                onCancel = close,
+                onSet = { minutes ->
+                    if (minutes <= 0L) onEndOfSong() else onCustom(minutes)
                 }
-            }
+            )
         }
     }
 }
 
-// One dot = 5 minutes; 36 dots = 3 hours, a sensible ceiling for a sleep timer.
+// One dot = 5 minutes; 36 dots = 3 hours, a sensible ceiling for a sleep timer. Selecting 0
+// filled dots (below the first dot) means "End of the song" instead of a duration.
 private const val MINUTES_PER_DOT = 5
 private const val TOTAL_DOTS = 36
-private const val DEFAULT_DOTS = 6 // 30 minutes
+private const val DEFAULT_DOTS = 0 // End of the song, by default
 
 /**
- * The "Custom timer" screen within [SleepTimerDialog] — a 36-dot scrubber (5 minutes per dot,
- * up to 180 minutes), with +/- steppers and drag-to-scrub, mirroring the player's own
- * [DashedProgressBar] interaction (same drag model, same per-step haptic pulse).
+ * The scrubber screen — a 36-dot scrubber (5 minutes per dot, up to 180 minutes) that can also
+ * be dragged/stepped all the way down to 0 filled dots for "End of the song", with +/- steppers
+ * and drag-to-scrub, mirroring the player's own [DashedProgressBar] interaction (same drag
+ * model, same per-step haptic pulse).
  */
 @Composable
 private fun CustomSleepTimerContent(
@@ -152,7 +74,7 @@ private fun CustomSleepTimerContent(
     hapticsEnabled: Boolean,
     context: android.content.Context,
     textColor: Color,
-    onBack: () -> Unit,
+    onCancel: () -> Unit,
     onSet: (Long) -> Unit
 ) {
     // Progress is tracked as a continuous 0f..1f fraction, exactly like DashedProgressBar's
@@ -160,12 +82,12 @@ private fun CustomSleepTimerContent(
     // never fed back in as the source of truth. Rounding a discrete dot count back into a
     // fraction every drag frame is what made the previous version feel broken.
     var progress by remember { mutableFloatStateOf(DEFAULT_DOTS.toFloat() / TOTAL_DOTS) }
-    val selectedDots = (progress * TOTAL_DOTS).toInt().coerceIn(1, TOTAL_DOTS)
+    val selectedDots = (progress * TOTAL_DOTS).toInt().coerceIn(0, TOTAL_DOTS)
     val minutes = selectedDots * MINUTES_PER_DOT
 
     Column {
         Text(
-            text = "Sleep timer : ${minutes}m",
+            text = if (selectedDots == 0) "End of the song" else "Sleep timer : ${minutes}m",
             fontFamily = NothingFont,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
@@ -177,13 +99,13 @@ private fun CustomSleepTimerContent(
         Row(verticalAlignment = Alignment.CenterVertically) {
             DotStepperButton(
                 symbol = "–",
-                enabled = selectedDots > 1,
+                enabled = selectedDots > 0,
                 textColor = textColor,
                 hapticsEnabled = hapticsEnabled,
                 context = context,
                 onStep = {
-                    if (selectedDots > 1) {
-                        progress = ((selectedDots - 1).toFloat() / TOTAL_DOTS).coerceAtLeast(1f / TOTAL_DOTS)
+                    if (selectedDots > 0) {
+                        progress = ((selectedDots - 1).toFloat() / TOTAL_DOTS).coerceAtLeast(0f)
                         true
                     } else false
                 }
@@ -220,28 +142,20 @@ private fun CustomSleepTimerContent(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onBack) {
-                Text("Back", fontFamily = NothingFont, color = Color.Gray)
+            TextButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onCancel()
+            }) {
+                Text("Cancel", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
             }
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .background(Color.Red, RoundedCornerShape(8.dp))
-                    .clickable {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onSet(minutes.toLong())
-                    }
-                    .padding(horizontal = 20.dp, vertical = 10.dp)
-            ) {
-                Text(
-                    "Set",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+            TextButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onSet(minutes.toLong())
+            }) {
+                Text("Set", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
             }
         }
     }
