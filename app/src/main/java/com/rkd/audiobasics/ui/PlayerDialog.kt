@@ -392,8 +392,8 @@ fun PlayerDialog(
                                         )
                                         MorphMenuItem(
                                             text = when (sleepTimerMode) {
-                                                MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "Sleep timer (end of this song)"
-                                                MusicViewModel.SLEEP_TIMER_CUSTOM -> "Sleep timer (${formatCountdown(sleepTimerRemaining)})"
+                                                MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "End of the song"
+                                                MusicViewModel.SLEEP_TIMER_CUSTOM -> formatCountdown(sleepTimerRemaining)
                                                 else -> "Sleep timer"
                                             },
                                             leadingIcon = Icons.Default.Bedtime,
