@@ -193,7 +193,7 @@ fun AddToPlaylistSheet(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         close()
                     }) {
-                        Text("No", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = confirmTextColor)
+                        Text("No", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
                     }
                     TextButton(onClick = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -208,7 +208,7 @@ fun AddToPlaylistSheet(
                         }
                         close()
                     }) {
-                        Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = confirmTextColor)
+                        Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
                     }
                 }
             }
