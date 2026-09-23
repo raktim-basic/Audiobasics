@@ -211,6 +211,8 @@ fun LibraryScreen(
                         },
                         label = "Liked songs (${likedSongs.size})",
                         isDarkMode = isDarkMode,
+                        hapticsEnabled = hapticsEnabled,
+                        context = context,
                         showMenu = false,
                         onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -230,6 +232,8 @@ fun LibraryScreen(
                         },
                         label = "Saved albums (${savedAlbums.size})",
                         isDarkMode = isDarkMode,
+                        hapticsEnabled = hapticsEnabled,
+                        context = context,
                         showMenu = false,
                         onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -286,6 +290,8 @@ fun LibraryScreen(
                                 emoji = playlist.emoji,
                                 icon = null,
                                 label = playlist.name,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
                                 isDarkMode = isDarkMode,
                                 showMenu = true,
                                 onClick = {
@@ -312,6 +318,8 @@ fun LibraryScreen(
                         emoji = playlist.emoji,
                         icon = null,
                         label = playlist.name,
+                        hapticsEnabled = hapticsEnabled,
+                        context = context,
                         isDarkMode = isDarkMode,
                         showMenu = true,
                         onClick = {
@@ -444,6 +452,8 @@ private fun LibraryRow(
     icon: (@Composable () -> Unit)?,
     label: String,
     isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
     showMenu: Boolean,
     onClick: () -> Unit,
     onRename: (() -> Unit)? = null,
@@ -490,19 +500,32 @@ private fun LibraryRow(
             val menuAnchor = rememberMorphAnchor()
             IconButton(
                 onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     overlay.show(anchor = menuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
                         MorphMenuColumn {
-                            MorphMenuItem(text = "Rename", onClick = { close(); onRename?.invoke() })
+                            MorphMenuItem(
+                                text = "Rename",
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close(); onRename?.invoke()
+                                }
+                            )
                             if (onReorder != null) {
                                 MorphMenuItem(
                                     text = if (isDragging) "Cancel reorder" else "Reorder",
-                                    onClick = { close(); onReorder.invoke() }
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close(); onReorder.invoke()
+                                    }
                                 )
                             }
                             MorphMenuItem(
                                 text = "Delete",
                                 textColor = Color.Red,
-                                onClick = { close(); onDelete?.invoke() }
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close(); onDelete?.invoke()
+                                }
                             )
                         }
                     }
