@@ -163,48 +163,56 @@ fun AddToPlaylistSheet(
 
     // Remove confirmation dialog
     removeConfirm?.let { (playlistId, playlistName) ->
-        AlertDialog(
+        val confirmTextColor = if (isDarkMode) Color.White else Color.Black
+        MorphPopup(
             onDismissRequest = { removeConfirm = null },
-            title = {
+            placement = MorphPlacement.Center,
+            containerColor = bgColor
+        ) { close ->
+            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
                 Text(
                     "Are you sure?",
                     fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = confirmTextColor
                 )
-            },
-            text = {
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "Remove \"${song.title}\" from \"$playlistName\"?",
-                    fontFamily = NothingFont
+                    fontFamily = NothingFont,
+                    color = confirmTextColor
                 )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    if (playlistId == MusicViewModel.LIKED_PLAYLIST_ID) {
-                        vm.toggleLike(song)
-                        containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = false
-                    } else {
-                        scope.launch {
-                            vm.toggleSongInPlaylist(song, playlistId)
-                            containsMap[playlistId] = false
-                        }
+                Spacer(Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        close()
+                    }) {
+                        Text("No", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = confirmTextColor)
                     }
-                    removeConfirm = null
-                }) {
-                    Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    TextButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        if (playlistId == MusicViewModel.LIKED_PLAYLIST_ID) {
+                            vm.toggleLike(song)
+                            containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = false
+                        } else {
+                            scope.launch {
+                                vm.toggleSongInPlaylist(song, playlistId)
+                                containsMap[playlistId] = false
+                            }
+                        }
+                        close()
+                    }) {
+                        Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = confirmTextColor)
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    removeConfirm = null
-                }) {
-                    Text("No", fontFamily = NothingFont, fontSize = 18.sp)
-                }
-            },
-            shape = RoundedCornerShape(20.dp)
-        )
+            }
+        }
     }
 }
 
