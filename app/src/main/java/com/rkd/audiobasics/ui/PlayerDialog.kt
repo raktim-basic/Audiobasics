@@ -109,17 +109,26 @@ fun PlayerDialog(
     val subTextColor = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
 
     // ── Flip-card state ──────────────────────────────────────────────────────
-    // rotation is the card's Y-axis rotation in degrees: 0 = Player face-on, -180 = Lyrics
-    // face-on, +180 = Info face-on. It's a plain Float during an active drag (snapTo-style,
-    // updated synchronously so the card tracks the finger with no lag) and only animated with
-    // Animatable.animateTo when settling after a tap or a released drag.
-    val rotation = remember { Animatable(0f) }
+    // rotationValue (degrees) is the single source of truth for the card's Y-axis rotation:
+    // 0 = Player face-on, -180 = Lyrics face-on, +180 = Info face-on. While actively dragging,
+    // it comes from `liveRotation`, a plain Float updated synchronously (no coroutine) so it
+    // can never lag behind the finger. Once released, it comes from `settleRotation`, an
+    // Animatable driving the settle-into-place animation. Mixing "many scope.launch{snapTo}
+    // calls, one per drag event" into the SAME Animatable used for the settle animation was
+    // the earlier bug here — Animatable serializes those calls through an internal mutex, so
+    // under fast/long drags (lots of events) the calls can back up, leaving rotation.value
+    // reading stale at release time and making the settle decision (and therefore the flip
+    // direction) inconsistent. Tracking the live drag synchronously sidesteps that entirely.
+    val settleRotation = remember { Animatable(0f) }
+    var liveRotation by remember { mutableFloatStateOf(0f) }
+    var isDragging by remember { mutableStateOf(false) }
+    val rotationValue = if (isDragging) liveRotation else settleRotation.value
     val scope = rememberCoroutineScope()
     var cardWidthPx by remember { mutableIntStateOf(1) }
-    val currentFace = faceFor(rotation.value)
+    val currentFace = faceFor(rotationValue)
 
     suspend fun flipTo(target: Float) {
-        rotation.animateTo(target, tween(FLIP_DURATION_MS, easing = FastOutSlowInEasing))
+        settleRotation.animateTo(target, tween(FLIP_DURATION_MS, easing = FastOutSlowInEasing))
     }
 
     // Back press/gesture flips back to Player instead of closing the dialog, while on another
@@ -162,7 +171,11 @@ fun PlayerDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f)),
+                .background(Color.Black.copy(alpha = 0.6f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { onDismiss() },
             contentAlignment = Alignment.Center
         ) {
             // Each face keeps its own original size — a real card's size doesn't visibly jump
@@ -187,78 +200,87 @@ fun PlayerDialog(
                     )
                     .onSizeChanged { cardWidthPx = it.width.coerceAtLeast(1) }
                     .graphicsLayer {
-                        rotationY = rotation.value
+                        rotationY = rotationValue
                         cameraDistance = 12f * density
                     }
                     .clip(RoundedCornerShape(16.dp))
                     .background(bgColor)
+                    // The card itself must not pass taps through to the scrim behind it (which
+                    // closes the whole dialog) — without this, tapping anywhere on the card that
+                    // isn't its own button would also dismiss.
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { }
                     .pointerInput(Unit) {
                         // A drag starting from Player can go either way (session bounds -180..180);
                         // one starting from Lyrics or Info can only return to Player (never overshoot
-                        // into the far side in one continuous gesture) — see the enum doc above.
-                        // dragSign flips the finger-to-rotation mapping for a return trip: the card
-                        // is already showing its (locally counter-rotated) back face at that point,
-                        // so the same physical drag direction needs the opposite sign to keep
-                        // "the card visually follows your finger" true from both faces.
+                        // into the far side in one continuous gesture) — see the enum doc above. The
+                        // finger-to-rotation mapping itself (drag right → rotation increases toward
+                        // Info; drag left → decreases toward Lyrics) stays the same sign in both
+                        // directions — it's the same physical rotation either way, just clamped to a
+                        // different half of the range depending on where the gesture starts.
                         var sessionMin = -180f
                         var sessionMax = 180f
-                        var dragSign = 1f
                         var startSettled = 0f
                         val velocityTracker = VelocityTracker()
 
-                        fun settledTarget() = when (faceFor(rotation.value)) {
+                        fun settledTargetFor(r: Float) = when (faceFor(r)) {
                             PlayerFace.LYRICS -> -180f
                             PlayerFace.INFO -> 180f
                             PlayerFace.PLAYER -> 0f
                         }
 
-                        fun commit(velocityDegPerSec: Float) {
-                            val startFace = when (startSettled) {
-                                -180f -> PlayerFace.LYRICS
-                                180f -> PlayerFace.INFO
-                                else -> PlayerFace.PLAYER
-                            }
-                            // A fast-enough flick commits the flip even if it didn't cross the
-                            // halfway point — otherwise quick real-world swipes (which rarely
-                            // travel a full 90°) would just snap back and feel broken. A flick
-                            // while returning from Lyrics/Info always completes the return, since
-                            // Player is the only possible destination from there.
-                            val target = if (kotlin.math.abs(velocityDegPerSec) > FLIP_FLING_VELOCITY) {
-                                if (startFace == PlayerFace.PLAYER) {
-                                    if (velocityDegPerSec < 0f) -180f else 180f
-                                } else {
-                                    0f
-                                }
-                            } else {
-                                settledTarget()
-                            }
-                            if (target != startSettled && hapticsEnabled) {
-                                HapticUtils.performSubtleHaptic(context)
-                            }
-                            scope.launch { flipTo(target) }
-                        }
-
                         detectHorizontalDragGestures(
-                            onDragStart = { offset ->
-                                startSettled = settledTarget()
-                                when (faceFor(rotation.value)) {
-                                    PlayerFace.LYRICS -> { sessionMin = -180f; sessionMax = 0f; dragSign = -1f }
-                                    PlayerFace.INFO -> { sessionMin = 0f; sessionMax = 180f; dragSign = -1f }
-                                    PlayerFace.PLAYER -> { sessionMin = -180f; sessionMax = 180f; dragSign = 1f }
+                            onDragStart = {
+                                val startRotation = settleRotation.value
+                                startSettled = settledTargetFor(startRotation)
+                                liveRotation = startRotation
+                                isDragging = true
+                                when (faceFor(startRotation)) {
+                                    PlayerFace.LYRICS -> { sessionMin = -180f; sessionMax = 0f }
+                                    PlayerFace.INFO -> { sessionMin = 0f; sessionMax = 180f }
+                                    PlayerFace.PLAYER -> { sessionMin = -180f; sessionMax = 180f }
                                 }
                                 velocityTracker.resetTracking()
                             },
                             onDragEnd = {
-                                val v = velocityTracker.calculateVelocity().x * (180f / cardWidthPx)
-                                commit(v)
+                                val velocityDegPerSec = velocityTracker.calculateVelocity().x * (180f / cardWidthPx)
+                                // A fast-enough flick commits the flip even if it didn't cross the
+                                // halfway point — otherwise quick real-world swipes (which rarely
+                                // travel a full 90°) would just snap back and feel broken. A flick
+                                // while returning from Lyrics/Info always completes the return,
+                                // since Player is the only possible destination from there.
+                                val target = if (kotlin.math.abs(velocityDegPerSec) > FLIP_FLING_VELOCITY) {
+                                    if (startSettled == 0f) {
+                                        if (velocityDegPerSec < 0f) -180f else 180f
+                                    } else 0f
+                                } else {
+                                    settledTargetFor(liveRotation)
+                                }
+                                if (target != startSettled && hapticsEnabled) {
+                                    HapticUtils.performSubtleHaptic(context)
+                                }
+                                val fromValue = liveRotation
+                                isDragging = false
+                                scope.launch {
+                                    settleRotation.snapTo(fromValue)
+                                    flipTo(target)
+                                }
                             },
-                            onDragCancel = { commit(0f) },
+                            onDragCancel = {
+                                val fromValue = liveRotation
+                                isDragging = false
+                                scope.launch {
+                                    settleRotation.snapTo(fromValue)
+                                    flipTo(startSettled)
+                                }
+                            },
                             onHorizontalDrag = { change, dragAmount ->
                                 velocityTracker.addPosition(change.uptimeMillis, change.position)
                                 val degreesPerPx = 180f / cardWidthPx
-                                val next = (rotation.value + dragSign * dragAmount * degreesPerPx)
+                                liveRotation = (liveRotation + dragAmount * degreesPerPx)
                                     .coerceIn(sessionMin, sessionMax)
-                                scope.launch { rotation.snapTo(next) }
                             }
                         )
                     }
