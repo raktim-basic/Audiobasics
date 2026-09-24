@@ -131,14 +131,6 @@ fun PlayerDialog(
         settleRotation.animateTo(target, tween(FLIP_DURATION_MS, easing = FastOutSlowInEasing))
     }
 
-    // Back press/gesture flips back to Player instead of closing the dialog, while on another
-    // face. This is registered before the popup overlay below (MorphOverlayHost), so any open
-    // popup's own BackHandler registers later and wins first — a popup closes, then a flip,
-    // then finally the dialog itself (Dialog's native dismissOnBackPress).
-    BackHandler(enabled = currentFace != PlayerFace.PLAYER) {
-        scope.launch { flipTo(0f) }
-    }
-
     Dialog(
         onDismissRequest = { onDismiss() },
         properties = DialogProperties(
@@ -160,6 +152,18 @@ fun PlayerDialog(
             (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
                 WindowCompat.setDecorFitsSystemWindows(window, false)
             }
+        }
+
+        // Back press/gesture flips back to Player instead of closing the dialog, while on
+        // another face. Compose's Dialog sets up its own OnBackPressedDispatcher scoped to this
+        // window — a BackHandler registered outside the Dialog{} content (as this used to be)
+        // listens on the Activity's dispatcher instead, which never gets a chance to intercept
+        // while this window has focus, so it silently did nothing. Registered here, before the
+        // popup overlay below, so any open popup's own BackHandler registers later and wins
+        // first — a popup closes, then a flip, then finally the dialog itself (Dialog's native
+        // dismissOnBackPress).
+        BackHandler(enabled = currentFace != PlayerFace.PLAYER) {
+            scope.launch { flipTo(0f) }
         }
 
         // Own overlay for popups opened from within this window — PlayerDialog is a real
@@ -233,6 +237,7 @@ fun PlayerDialog(
                         var sessionMin = -180f
                         var sessionMax = 180f
                         var startSettled = 0f
+                        var boundaryHapticFired = false
                         val velocityTracker = VelocityTracker()
 
                         fun settledTargetFor(r: Float) = when (faceFor(r)) {
@@ -241,12 +246,36 @@ fun PlayerDialog(
                             PlayerFace.PLAYER -> 0f
                         }
 
+                        // Elastic "give" past a boundary that's not allowed to actually open
+                        // anything — e.g. dragging further into Lyrics while already on Lyrics,
+                        // or past Player into the far side in one continuous gesture. Damped and
+                        // capped, like iOS's over-scroll bounce. Since the max overshoot (12°) is
+                        // always well short of the travel needed to commit anywhere (20-90°, see
+                        // onDragEnd), this "give" can never itself cause a flip — it's purely
+                        // tactile feedback that you've hit the edge.
+                        fun withResistance(raw: Float, min: Float, max: Float): Float {
+                            val maxOvershoot = 12f
+                            val resistance = 0.35f
+                            return when {
+                                raw < min -> {
+                                    val over = min - raw
+                                    min - maxOvershoot * (1f - 1f / (1f + over * resistance / maxOvershoot))
+                                }
+                                raw > max -> {
+                                    val over = raw - max
+                                    max + maxOvershoot * (1f - 1f / (1f + over * resistance / maxOvershoot))
+                                }
+                                else -> raw
+                            }
+                        }
+
                         detectHorizontalDragGestures(
                             onDragStart = {
                                 val startRotation = settleRotation.value
                                 startSettled = settledTargetFor(startRotation)
                                 liveRotation = startRotation
                                 isDragging = true
+                                boundaryHapticFired = false
                                 when (faceFor(startRotation)) {
                                     PlayerFace.LYRICS -> { sessionMin = -180f; sessionMax = 0f }
                                     PlayerFace.INFO -> { sessionMin = 0f; sessionMax = 180f }
@@ -255,23 +284,29 @@ fun PlayerDialog(
                                 velocityTracker.resetTracking()
                             },
                             onDragEnd = {
+                                // Velocity only ever lowers how far you need to have dragged to
+                                // commit — it never picks the direction on its own. Direction
+                                // always comes from which way liveRotation actually moved (which
+                                // tracks the finger correctly), never from the velocity's sign —
+                                // that sign was the source of the "hard swipe opens the wrong
+                                // side" bug: a very fast/short gesture can leave VelocityTracker's
+                                // estimate noisy enough to occasionally get the sign wrong, even
+                                // though the position it settled at is fine.
                                 val velocityDegPerSec = velocityTracker.calculateVelocity().x * (180f / cardWidthPx)
-                                // A fast-enough flick commits the flip even if it didn't cross the
-                                // halfway point — otherwise quick real-world swipes (which rarely
-                                // travel a full 90°) would just snap back and feel broken. A flick
-                                // while returning from Lyrics/Info always completes the return,
-                                // since Player is the only possible destination from there.
-                                val target = if (kotlin.math.abs(velocityDegPerSec) > FLIP_FLING_VELOCITY) {
-                                    if (startSettled == 0f) {
-                                        if (velocityDegPerSec < 0f) -180f else 180f
-                                    } else 0f
+                                val fast = kotlin.math.abs(velocityDegPerSec) > FLIP_FLING_VELOCITY
+                                val requiredTravel = if (fast) 20f else 90f
+                                val traveled = kotlin.math.abs(liveRotation - startSettled)
+                                val target = if (traveled < requiredTravel) {
+                                    startSettled
+                                } else if (startSettled == 0f) {
+                                    if (liveRotation < 0f) -180f else 180f
                                 } else {
-                                    settledTargetFor(liveRotation)
+                                    0f
                                 }
                                 if (target != startSettled && hapticsEnabled) {
                                     HapticUtils.performSubtleHaptic(context)
                                 }
-                                val fromValue = liveRotation
+                                val fromValue = liveRotation.coerceIn(sessionMin, sessionMax)
                                 isDragging = false
                                 scope.launch {
                                     settleRotation.snapTo(fromValue)
@@ -279,7 +314,7 @@ fun PlayerDialog(
                                 }
                             },
                             onDragCancel = {
-                                val fromValue = liveRotation
+                                val fromValue = liveRotation.coerceIn(sessionMin, sessionMax)
                                 isDragging = false
                                 scope.launch {
                                     settleRotation.snapTo(fromValue)
@@ -289,8 +324,14 @@ fun PlayerDialog(
                             onHorizontalDrag = { change, dragAmount ->
                                 velocityTracker.addPosition(change.uptimeMillis, change.position)
                                 val degreesPerPx = 180f / cardWidthPx
-                                liveRotation = (liveRotation + dragAmount * degreesPerPx)
-                                    .coerceIn(sessionMin, sessionMax)
+                                val raw = liveRotation + dragAmount * degreesPerPx
+                                val wasAtBoundary = liveRotation <= sessionMin || liveRotation >= sessionMax
+                                liveRotation = withResistance(raw, sessionMin, sessionMax)
+                                val atBoundaryNow = raw < sessionMin || raw > sessionMax
+                                if (atBoundaryNow && !wasAtBoundary && !boundaryHapticFired && hapticsEnabled) {
+                                    boundaryHapticFired = true
+                                    HapticUtils.performSubtleHaptic(context)
+                                }
                             }
                         )
                     }
