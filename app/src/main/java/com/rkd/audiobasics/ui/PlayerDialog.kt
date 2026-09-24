@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +69,7 @@ private fun faceFor(rotationDegrees: Float): PlayerFace = when {
 }
 
 private const val FLIP_DURATION_MS = 420
+private const val FLIP_FLING_VELOCITY = 300f // degrees/sec — a flick past this always commits
 
 @Composable
 fun PlayerDialog(
@@ -160,18 +162,29 @@ fun PlayerDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable(enabled = currentFace == PlayerFace.PLAYER) { onDismiss() },
+                .background(Color.Black.copy(alpha = 0.6f)),
             contentAlignment = Alignment.Center
         ) {
-            // The flip card itself. Same width/height for all three faces — a real card
-            // doesn't resize mid-flip — sized generously enough (75% height) to comfortably
-            // fit Lyrics' scrolling list and Info's rows; Player's shorter content is just
-            // centered within that space rather than stretched to fill it.
+            // Each face keeps its own original size — a real card's size doesn't visibly jump
+            // mid-flip, but since `currentFace` only changes exactly at the ±90° edge-on point
+            // (see faceFor below), switching the size modifier here happens at that same instant:
+            // the card is razor-thin from the viewer's perspective right then, so the resize is
+            // effectively invisible.
+            val cardWidthFraction = when (currentFace) {
+                PlayerFace.PLAYER -> 0.88f
+                PlayerFace.LYRICS -> 0.92f
+                PlayerFace.INFO -> 0.88f
+            }
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.88f)
-                    .fillMaxHeight(0.75f)
+                    .fillMaxWidth(cardWidthFraction)
+                    .then(
+                        when (currentFace) {
+                            PlayerFace.PLAYER -> Modifier.aspectRatio(1f) // square
+                            PlayerFace.LYRICS -> Modifier.fillMaxHeight(0.75f)
+                            PlayerFace.INFO -> Modifier.wrapContentHeight()
+                        }
+                    )
                     .onSizeChanged { cardWidthPx = it.width.coerceAtLeast(1) }
                     .graphicsLayer {
                         rotationY = rotation.value
@@ -183,35 +196,67 @@ fun PlayerDialog(
                         // A drag starting from Player can go either way (session bounds -180..180);
                         // one starting from Lyrics or Info can only return to Player (never overshoot
                         // into the far side in one continuous gesture) — see the enum doc above.
+                        // dragSign flips the finger-to-rotation mapping for a return trip: the card
+                        // is already showing its (locally counter-rotated) back face at that point,
+                        // so the same physical drag direction needs the opposite sign to keep
+                        // "the card visually follows your finger" true from both faces.
                         var sessionMin = -180f
                         var sessionMax = 180f
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                when (faceFor(rotation.value)) {
-                                    PlayerFace.LYRICS -> { sessionMin = -180f; sessionMax = 0f }
-                                    PlayerFace.INFO -> { sessionMin = 0f; sessionMax = 180f }
-                                    PlayerFace.PLAYER -> { sessionMin = -180f; sessionMax = 180f }
+                        var dragSign = 1f
+                        var startSettled = 0f
+                        val velocityTracker = VelocityTracker()
+
+                        fun settledTarget() = when (faceFor(rotation.value)) {
+                            PlayerFace.LYRICS -> -180f
+                            PlayerFace.INFO -> 180f
+                            PlayerFace.PLAYER -> 0f
+                        }
+
+                        fun commit(velocityDegPerSec: Float) {
+                            val startFace = when (startSettled) {
+                                -180f -> PlayerFace.LYRICS
+                                180f -> PlayerFace.INFO
+                                else -> PlayerFace.PLAYER
+                            }
+                            // A fast-enough flick commits the flip even if it didn't cross the
+                            // halfway point — otherwise quick real-world swipes (which rarely
+                            // travel a full 90°) would just snap back and feel broken. A flick
+                            // while returning from Lyrics/Info always completes the return, since
+                            // Player is the only possible destination from there.
+                            val target = if (kotlin.math.abs(velocityDegPerSec) > FLIP_FLING_VELOCITY) {
+                                if (startFace == PlayerFace.PLAYER) {
+                                    if (velocityDegPerSec < 0f) -180f else 180f
+                                } else {
+                                    0f
                                 }
+                            } else {
+                                settledTarget()
+                            }
+                            if (target != startSettled && hapticsEnabled) {
+                                HapticUtils.performSubtleHaptic(context)
+                            }
+                            scope.launch { flipTo(target) }
+                        }
+
+                        detectHorizontalDragGestures(
+                            onDragStart = { offset ->
+                                startSettled = settledTarget()
+                                when (faceFor(rotation.value)) {
+                                    PlayerFace.LYRICS -> { sessionMin = -180f; sessionMax = 0f; dragSign = -1f }
+                                    PlayerFace.INFO -> { sessionMin = 0f; sessionMax = 180f; dragSign = -1f }
+                                    PlayerFace.PLAYER -> { sessionMin = -180f; sessionMax = 180f; dragSign = 1f }
+                                }
+                                velocityTracker.resetTracking()
                             },
                             onDragEnd = {
-                                val target = when (faceFor(rotation.value)) {
-                                    PlayerFace.LYRICS -> -180f
-                                    PlayerFace.INFO -> 180f
-                                    PlayerFace.PLAYER -> 0f
-                                }
-                                scope.launch { flipTo(target) }
+                                val v = velocityTracker.calculateVelocity().x * (180f / cardWidthPx)
+                                commit(v)
                             },
-                            onDragCancel = {
-                                val target = when (faceFor(rotation.value)) {
-                                    PlayerFace.LYRICS -> -180f
-                                    PlayerFace.INFO -> 180f
-                                    PlayerFace.PLAYER -> 0f
-                                }
-                                scope.launch { flipTo(target) }
-                            },
-                            onHorizontalDrag = { _, dragAmount ->
+                            onDragCancel = { commit(0f) },
+                            onHorizontalDrag = { change, dragAmount ->
+                                velocityTracker.addPosition(change.uptimeMillis, change.position)
                                 val degreesPerPx = 180f / cardWidthPx
-                                val next = (rotation.value + dragAmount * degreesPerPx)
+                                val next = (rotation.value + dragSign * dragAmount * degreesPerPx)
                                     .coerceIn(sessionMin, sessionMax)
                                 scope.launch { rotation.snapTo(next) }
                             }
@@ -263,7 +308,7 @@ fun PlayerDialog(
                     }
                     PlayerFace.INFO -> Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
                             .graphicsLayer { rotationY = 180f }
                     ) {
                         if (song != null) {
