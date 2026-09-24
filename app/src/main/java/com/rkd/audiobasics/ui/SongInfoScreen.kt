@@ -116,7 +116,7 @@ fun SongInfoCardContent(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         // Title
         Box(
             modifier = Modifier
@@ -139,7 +139,7 @@ fun SongInfoCardContent(
 
         Column(
             modifier = Modifier
-                .weight(1f)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 8.dp)
         ) {
