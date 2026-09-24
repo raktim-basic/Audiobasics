@@ -180,10 +180,20 @@ fun PlayerDialog(
         ) {
             // Each face keeps its own original size — a real card's size doesn't visibly jump
             // mid-flip, but since `currentFace` only changes exactly at the ±90° edge-on point
-            // (see faceFor below), switching the size modifier here happens at that same instant:
-            // the card is razor-thin from the viewer's perspective right then, so the resize is
-            // effectively invisible.
-            val cardWidthFraction = when (currentFace) {
+            // (see faceFor below), switching the size modifier here happens at that same instant.
+            //
+            // Sized off settleRotation, NOT the live rotationValue: settleRotation only moves
+            // during the post-release settle animation, never while a finger is actually on the
+            // card, so the box's own bounds stay fixed for the whole gesture. That matters
+            // beyond the visual — this box's bounds are also the coordinate frame the drag
+            // gesture measures the finger against. Resizing it mid-drag (as this used to do,
+            // keyed off the live face) shifted that frame right in the middle of the gesture,
+            // which mostly rode through unnoticed in the rotation itself (frame-to-frame deltas)
+            // but could corrupt the release velocity calculation (which looks at a short window
+            // of recent absolute positions) if the resize happened to land inside that window —
+            // sign and all, which is exactly the "random" wrong-direction flips this was causing.
+            val sizingFace = faceFor(settleRotation.value)
+            val cardWidthFraction = when (sizingFace) {
                 PlayerFace.PLAYER -> 0.88f
                 PlayerFace.LYRICS -> 0.92f
                 PlayerFace.INFO -> 0.88f
@@ -192,7 +202,7 @@ fun PlayerDialog(
                 modifier = Modifier
                     .fillMaxWidth(cardWidthFraction)
                     .then(
-                        when (currentFace) {
+                        when (sizingFace) {
                             PlayerFace.PLAYER -> Modifier.aspectRatio(1f) // square
                             PlayerFace.LYRICS -> Modifier.fillMaxHeight(0.75f)
                             PlayerFace.INFO -> Modifier.wrapContentHeight()
