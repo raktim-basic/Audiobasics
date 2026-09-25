@@ -39,7 +39,9 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
@@ -108,6 +110,7 @@ class MorphEntry internal constructor(
     val containerColor: Color,
     val highlightBounds: Rect?,
     val wide: Boolean,
+    val bare: Boolean,
     val onDismissRequest: () -> Unit,
     val content: @Composable (close: () -> Unit) -> Unit
 ) {
@@ -145,6 +148,11 @@ class MorphOverlayState {
      *
      * [wide] relaxes the usual dialog max-width cap for a [MorphPlacement.Center] popup that
      * wants to use most of the screen width (the player card) rather than a compact alert size.
+     *
+     * [bare] skips MorphSurface's own container fill/shadow entirely, for content (the player)
+     * that already draws its own full surface — background, shape, corners — at its own size.
+     * Without this, MorphSurface's container paints a second, differently-sized rectangle
+     * behind that content, which is easy to mistake for "the card" not animating/rotating.
      */
     fun show(
         anchor: Rect?,
@@ -152,10 +160,11 @@ class MorphOverlayState {
         containerColor: Color = Color.Unspecified,
         highlightBounds: Rect? = anchor,
         wide: Boolean = false,
+        bare: Boolean = false,
         onDismissRequest: () -> Unit = {},
         content: @Composable (close: () -> Unit) -> Unit
     ): MorphEntry {
-        val e = MorphEntry(anchor, placement, containerColor, highlightBounds, wide, onDismissRequest, content)
+        val e = MorphEntry(anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest, content)
         _entries.add(e)
         return e
     }
@@ -224,11 +233,12 @@ fun MorphPopup(
     containerColor: Color = Color.Unspecified,
     highlightBounds: Rect? = anchor,
     wide: Boolean = false,
+    bare: Boolean = false,
     overlay: MorphOverlayState = LocalMorphOverlay.current,
     content: @Composable (close: () -> Unit) -> Unit
 ) {
     DisposableEffect(Unit) {
-        val e = overlay.show(anchor, placement, containerColor, highlightBounds, wide, onDismissRequest, content)
+        val e = overlay.show(anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest, content)
         onDispose { overlay.requestClose(e) }
     }
 }
@@ -439,11 +449,11 @@ private fun MorphSurface(
                     endRadiusPx,
                     p
                 )
-                shadowElevation = if (isDarkMenu) 0f else {
+                shadowElevation = if (isDarkMenu || entry.bare) 0f else {
                     with(density) { elevation.toPx() } * containerAlpha(p)
                 }
                 shape = MorphOutlineShape(frame.rect, frame.radius)
-                clip = true
+                clip = false
             }
             .drawWithContent {
                 val p = progress()
@@ -478,15 +488,31 @@ private fun MorphSurface(
                     }
                 }
 
-                drawRoundRect(
-                    color = containerColor,
-                    topLeft = frame.rect.topLeft,
-                    size = frame.rect.size,
-                    cornerRadius = CornerRadius(frame.radius),
-                    alpha = alpha
-                )
+                // Bare entries (the player) draw their own full surface — background, shape,
+                // shadow, corners — inside entry.content itself, at their own (often narrower)
+                // size. Drawing MorphSurface's own container fill on top of/behind that too
+                // would paint a second, larger, differently-colored, non-rotating rectangle
+                // behind the real card, which is exactly what made the player look like only
+                // its contents were flipping instead of the whole card: the real card *was*
+                // rotating the whole time, just dwarfed by this static backdrop rectangle
+                // sitting behind it. Skip it here; still clip to frame.rect below so the
+                // content can't spill past the popup's growing/shrinking bounds mid-animation.
+                if (!entry.bare) {
+                    drawRoundRect(
+                        color = containerColor,
+                        topLeft = frame.rect.topLeft,
+                        size = frame.rect.size,
+                        cornerRadius = CornerRadius(frame.radius),
+                        alpha = alpha
+                    )
+                }
 
-                this@drawWithContent.drawContent()
+                val reveal = Path().apply {
+                    addRoundRect(RoundRect(frame.rect, CornerRadius(frame.radius)))
+                }
+                clipPath(reveal) {
+                    this@drawWithContent.drawContent()
+                }
 
                 // Dark-mode anchored menus: draw a soft ambient light halo BEHIND the container,
                 // instead of a hard outline. This is the dark-mode analogue of the drop shadow
