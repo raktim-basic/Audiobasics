@@ -418,7 +418,8 @@ fun AudiobasicsApp(
             onDismissRequest = { showPlayerDialog = false },
             placement = MorphPlacement.Center,
             highlightBounds = playerBarAnchor.bounds(),
-            wide = true
+            wide = true,
+            bare = true
         ) { _ ->
             PlayerDialog(
                 vm = vm,
