@@ -39,15 +39,10 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -135,58 +130,24 @@ fun PlayerDialog(
         settleRotation.animateTo(target, tween(FLIP_DURATION_MS, easing = FastOutSlowInEasing))
     }
 
-    Dialog(
-        onDismissRequest = { onDismiss() },
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        // This is a real separate Android window, not part of the main Activity window — by
-        // default it's letterboxed to the space between the status and navigation bars, which
-        // is why it used to look visually inconsistent with the edge-to-edge MorphOverlay
-        // popups (those draw in the main window and inherit its edge-to-edge treatment for
-        // free). decorFitsSystemWindows = false above opts this window in too; this SideEffect
-        // is the other half — without it the window manager still reserves the system bar
-        // insets itself.
-        val dialogView = LocalView.current
-        SideEffect {
-            (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
-                WindowCompat.setDecorFitsSystemWindows(window, false)
-            }
-        }
+    // The player now opens as a MorphPopup (see MainActivity: MorphPlacement.Center, wide =
+    // true, anchored to the player bar) instead of a standalone Android Dialog window — it
+    // morphs open/closed like every other floating popup, and MorphContainer already supplies
+    // the backdrop scrim, outside-tap-to-dismiss, and back-press-to-close for free. Nested
+    // popups below (Add to playlist, Create playlist, Sleep timer, Tempo/Pitch, Share choice,
+    // this card's own 3-dot menu) now resolve LocalMorphOverlay to that same root overlay, so
+    // they stack correctly above the player instead of needing a window of their own.
+    //
+    // Back press/gesture flips back to Player instead of closing, while on another face.
+    // Registered here so it's the most-recently-registered BackHandler while this content is
+    // composed — MorphContainer's own BackHandler (which requests close) registered earlier,
+    // when this entry was created, so it only runs once this one is disabled (i.e. already on
+    // the Player face).
+    BackHandler(enabled = currentFace != PlayerFace.PLAYER) {
+        scope.launch { flipTo(0f) }
+    }
 
-        // Back press/gesture flips back to Player instead of closing the dialog, while on
-        // another face. Compose's Dialog sets up its own OnBackPressedDispatcher scoped to this
-        // window — a BackHandler registered outside the Dialog{} content (as this used to be)
-        // listens on the Activity's dispatcher instead, which never gets a chance to intercept
-        // while this window has focus, so it silently did nothing. Registered here, before the
-        // popup overlay below, so any open popup's own BackHandler registers later and wins
-        // first — a popup closes, then a flip, then finally the dialog itself (Dialog's native
-        // dismissOnBackPress).
-        BackHandler(enabled = currentFace != PlayerFace.PLAYER) {
-            scope.launch { flipTo(0f) }
-        }
-
-        // Own overlay for popups opened from within this window — PlayerDialog is a real
-        // separate Android Dialog window, so it can't see the app-root LocalMorphOverlay
-        // provided in MainActivity (that host draws in the main window, underneath this one).
-        val playerOverlay = remember { MorphOverlayState() }
-        CompositionLocalProvider(LocalMorphOverlay provides playerOverlay) {
-        Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) { onDismiss() },
-            contentAlignment = Alignment.Center
-        ) {
-            // Each face keeps its own original size — a real card's size doesn't visibly jump
+        // Each face keeps its own original size — a real card's size doesn't visibly jump
             // mid-flip, but since `currentFace` only changes exactly at the ±90° edge-on point
             // (see faceFor below), switching the size modifier here happens at that same instant.
             //
@@ -416,7 +377,6 @@ fun PlayerDialog(
                     }
                 }
             }
-        }
 
         // ── Add to playlist sheet ──────────────────────────────────────────────
         if (showAddToSheet && song != null) {
@@ -494,12 +454,7 @@ fun PlayerDialog(
                 onDismiss = { showTempoPitchDialog = false }
             )
         }
-
-        MorphOverlayHost(state = playerOverlay)
-        }
-        }
     }
-}
 
 /**
  * The player face's content — extracted from PlayerDialog's card so the flip `when` above
