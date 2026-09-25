@@ -37,7 +37,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
@@ -432,6 +431,28 @@ private fun MorphSurface(
                     p
                 )
 
+                if (isDarkMenu && alpha > 0f) {
+                    val glowLayers = 5
+                    val maxSpread = with(density) { 14.dp.toPx() }
+                    val peakAlpha = 0.07f
+                    for (i in glowLayers downTo 1) {
+                        val t = i / glowLayers.toFloat()
+                        val spread = maxSpread * t
+                        val layerAlpha = peakAlpha * (1f - t) * alpha
+                        if (layerAlpha <= 0f) continue
+                        drawRoundRect(
+                            color = Color(0xFFE8E8E8),
+                            topLeft = frame.rect.topLeft - Offset(spread, spread),
+                            size = Size(
+                                frame.rect.width + spread * 2f,
+                                frame.rect.height + spread * 2f
+                            ),
+                            cornerRadius = CornerRadius(frame.radius + spread),
+                            alpha = layerAlpha
+                        )
+                    }
+                }
+
                 drawRoundRect(
                     color = containerColor,
                     topLeft = frame.rect.topLeft,
@@ -447,25 +468,14 @@ private fun MorphSurface(
                     this@drawWithContent.drawContent()
                 }
 
-                // Dark-mode anchored menus get a simple, visible gray outline. Draw it LAST so
-                // popup content cannot cover it. Centered dialogs remain outline-free.
-                if (isDarkMenu && alpha > 0f) {
-                    val strokeWidth = with(density) { 2.dp.toPx() }
-                    val inset = strokeWidth / 2f
-                    drawRoundRect(
-                        color = Color(0xFF808080),
-                        topLeft = frame.rect.topLeft + Offset(inset, inset),
-                        size = Size(
-                            (frame.rect.width - strokeWidth).coerceAtLeast(0f),
-                            (frame.rect.height - strokeWidth).coerceAtLeast(0f)
-                        ),
-                        cornerRadius = CornerRadius(
-                            (frame.radius - inset).coerceAtLeast(0f)
-                        ),
-                        style = Stroke(width = strokeWidth),
-                        alpha = alpha
-                    )
-                }
+                // Dark-mode anchored menus: draw a soft ambient light halo BEHIND the container,
+                // instead of a hard outline. This is the dark-mode analogue of the drop shadow
+                // light mode already gets — a "negative shadow": soft light placed around a dark
+                // surface so the eye can read its boundary, rather than darkness cast around a
+                // light one. Approximated with a handful of expanding, increasingly transparent
+                // rounded-rect layers (a manual blur), since Compose has no free box-shadow blur.
+                // Drawn where it is (before the container fill below) so the container's own fill
+                // covers the inner layers, leaving only the soft-edged sliver outside its bounds.
             }
             // Taps on the popup itself must not fall through to the backdrop (which would close it).
             .pointerInput(Unit) {
