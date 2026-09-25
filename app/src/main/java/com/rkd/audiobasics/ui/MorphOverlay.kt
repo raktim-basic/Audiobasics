@@ -6,11 +6,22 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +88,11 @@ private val MorphMenuMaxWidth = 280.dp
 private val MorphDialogMaxWidth = 560.dp
 private val MorphMenuMargin = 8.dp
 private val MorphDialogMargin = 24.dp
+
+// Dark dialogs need physical room outside their surface for the light shadow to be painted.
+// This is deliberately large enough to make the effect visible, while still reading as a
+// soft shadow rather than a border.
+private val MorphDarkDialogShadowPad = 22.dp
 
 enum class MorphPlacement {
     /** Small popup positioned next to the trigger (menus). Right edge lines up with the trigger's right edge. */
@@ -230,19 +246,32 @@ private data class MorphOutlineShape(val rect: Rect, val radius: Float) : Shape 
 }
 
 /** Container bounds + corner radius at animation progress [p] (0 = trigger, 1 = fully open), in the popup's local coordinates. */
-private fun morphFrame(size: Size, origin: Offset, anchor: Rect?, endRadius: Float, p: Float): MorphFrame {
+private fun morphFrame(
+    size: Size,
+    origin: Offset,
+    anchor: Rect?,
+    endRadius: Float,
+    endInset: Float,
+    p: Float
+): MorphFrame {
     val t = p.coerceIn(0f, 1f)
     val start = if (anchor != null) {
         anchor.translate(-origin.x, -origin.y)
     } else {
         Rect(size.width * 0.1f, size.height * 0.1f, size.width * 0.9f, size.height * 0.9f)
     }
+    val end = Rect(
+        left = endInset,
+        top = endInset,
+        right = (size.width - endInset).coerceAtLeast(endInset),
+        bottom = (size.height - endInset).coerceAtLeast(endInset)
+    )
     val startRadius = if (anchor != null) min(start.width, start.height) / 2f else endRadius
     val rect = Rect(
-        left = start.left + (0f - start.left) * t,
-        top = start.top + (0f - start.top) * t,
-        right = start.right + (size.width - start.right) * t,
-        bottom = start.bottom + (size.height - start.bottom) * t
+        left = start.left + (end.left - start.left) * t,
+        top = start.top + (end.top - start.top) * t,
+        right = start.right + (end.right - start.right) * t,
+        bottom = start.bottom + (end.bottom - start.bottom) * t
     )
     val radius = (startRadius + (endRadius - startRadius) * t)
         .coerceIn(0f, min(rect.width, rect.height) / 2f)
@@ -262,13 +291,16 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val systemBars = WindowInsets.systemBars
     val containerColor = entry.containerColor.takeOrElse { MaterialTheme.colorScheme.surface }
     val isAnchored = entry.placement == MorphPlacement.Anchored
+    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkDialog = !isAnchored && isDarkTheme
     val scrimAlpha = if (isAnchored) 0f else 0.5f
     val cornerRadius = if (isAnchored) 12.dp else 16.dp
-    val isDarkTheme = isSystemInDarkTheme()
-    // Menus and dialogs both need a visible separation. In dark mode, use a soft
-    // light shadow instead of the nearly invisible dark default shadow.
-    val elevation = 8.dp
-    val shadowColor = if (!isAnchored && isDarkTheme) Color.White.copy(alpha = 0.22f) else Color.Unspecified
+    val elevation = if (isAnchored || !isDarkDialog) 8.dp else 0.dp
+    val shadowPadPx = if (isDarkDialog) {
+        with(LocalDensity.current) { MorphDarkDialogShadowPad.roundToPx() }
+    } else {
+        0
+    }
 
     val requestClose = remember(entry) { { state.requestClose(entry) } }
 
@@ -308,7 +340,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     containerColor = containerColor,
                     cornerRadius = cornerRadius,
                     elevation = elevation,
-                    shadowColor = shadowColor
+                    shadowPadding = if (isDarkDialog) MorphDarkDialogShadowPad else 0.dp
                 )
             }
         ) { measurables, constraints ->
@@ -331,8 +363,17 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     maxHeight = areaH
                 )
             } else {
-                val w = min(areaW, MorphDialogMaxWidth.roundToPx())
-                Constraints(minWidth = w, maxWidth = w, minHeight = 0, maxHeight = areaH)
+                // The dark-mode shadow is painted outside the dialog surface, so give the
+                // MorphSurface extra measured room without shrinking the actual dialog content.
+                val maxContentWidth = max(0, areaW - shadowPadPx * 2)
+                val contentWidth = min(maxContentWidth, MorphDialogMaxWidth.roundToPx())
+                val outerWidth = contentWidth + shadowPadPx * 2
+                Constraints(
+                    minWidth = outerWidth,
+                    maxWidth = outerWidth,
+                    minHeight = 0,
+                    maxHeight = areaH
+                )
             }
 
             val placeable = measurables[0].measure(childConstraints)
@@ -369,37 +410,82 @@ private fun MorphSurface(
     containerColor: Color,
     cornerRadius: Dp,
     elevation: Dp,
-    shadowColor: Color
+    shadowPadding: Dp
 ) {
     val density = LocalDensity.current
     val endRadiusPx = with(density) { cornerRadius.toPx() }
-    val elevationPx = with(density) { elevation.toPx() }
+    val shadowPaddingPx = with(density) { shadowPadding.toPx() }
     val close = remember(entry) { requestClose }
+    val isDarkDialog = shadowPaddingPx > 0f && entry.placement == MorphPlacement.Center
 
     Box(
         modifier = Modifier
-            // Shadow follows the animated container shape; dark-mode dialogs use a soft light shadow.
+            // Light mode keeps the standard elevation shadow. Dark dialogs deliberately use
+            // the custom light-shadow layer below instead of a dark Android shadow.
             .graphicsLayer {
                 val p = progress()
-                val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
-                shadowElevation = elevationPx * containerAlpha(p)
-                if (shadowColor != Color.Unspecified) {
-                    ambientShadowColor = shadowColor
-                    spotShadowColor = shadowColor
+                val frame = morphFrame(
+                    size,
+                    geometry.origin,
+                    entry.anchor,
+                    endRadiusPx,
+                    shadowPaddingPx,
+                    p
+                )
+                shadowElevation = if (isDarkDialog) 0f else {
+                    with(density) { elevation.toPx() } * containerAlpha(p)
                 }
                 shape = MorphOutlineShape(frame.rect, frame.radius)
                 clip = false
             }
             .drawWithContent {
                 val p = progress()
-                val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
+                val alpha = containerAlpha(p)
+                val frame = morphFrame(
+                    size,
+                    geometry.origin,
+                    entry.anchor,
+                    endRadiusPx,
+                    shadowPaddingPx,
+                    p
+                )
+
+                if (isDarkDialog && alpha > 0f) {
+                    // Paint an actual light shadow outside the dialog surface. The outer
+                    // container has shadowPaddingPx of breathing room, so these layers are
+                    // visible outside the dialog instead of being clipped by the node bounds.
+                    val steps = 22
+                    val maxSpread = shadowPaddingPx
+                    for (i in steps downTo 1) {
+                        val t = i.toFloat() / steps.toFloat() // 1 = farthest out
+                        val offset = maxSpread * t
+                        val haloRect = Rect(
+                            left = frame.rect.left - offset,
+                            top = frame.rect.top - offset,
+                            right = frame.rect.right + offset,
+                            bottom = frame.rect.bottom + offset
+                        )
+                        val falloff = 1f - t
+                        val haloAlpha = (0.0012f + 0.038f * falloff * falloff) * alpha
+                        drawRoundRect(
+                            color = Color.White,
+                            topLeft = haloRect.topLeft,
+                            size = haloRect.size,
+                            cornerRadius = CornerRadius(frame.radius + offset),
+                            alpha = haloAlpha
+                        )
+                    }
+                }
+
+                // The actual surface remains a crisp solid shape on top of the light shadow.
                 drawRoundRect(
                     color = containerColor,
                     topLeft = frame.rect.topLeft,
                     size = frame.rect.size,
                     cornerRadius = CornerRadius(frame.radius),
-                    alpha = containerAlpha(p)
+                    alpha = alpha
                 )
+
                 val reveal = Path().apply {
                     addRoundRect(RoundRect(frame.rect, CornerRadius(frame.radius)))
                 }
@@ -412,7 +498,13 @@ private fun MorphSurface(
                 detectTapGestures(onTap = { })
             }
     ) {
-        Box(modifier = Modifier.graphicsLayer { alpha = contentAlpha(progress()) }) {
+        // Keep the real dialog content inset inside the outer shadow room. At the fully-open
+        // position this exactly matches morphFrame's shadowPaddingPx inset.
+        Box(
+            modifier = Modifier
+                .padding(shadowPadding)
+                .graphicsLayer { alpha = contentAlpha(progress()) }
+        ) {
             entry.content(close)
         }
         if (entry.closing) {
@@ -447,6 +539,33 @@ fun MorphMenuItem(
     iconTint: Color = Color.Unspecified,
     textColor: Color = Color.Unspecified
 ) {
+    // Keep explicit icons when a caller needs a specific icon/state; otherwise infer the common
+    // action from its label so every Morph menu has the same visual language.
+    val actionIcon = leadingIcon ?: when {
+        text.equals("Share", ignoreCase = true) -> Icons.Default.Share
+        text.startsWith("Add to playlist", ignoreCase = true) -> Icons.Default.Add
+        text.equals("Play next", ignoreCase = true) -> Icons.Default.SkipNext
+        text.equals("Add to queue", ignoreCase = true) || text.equals("Queue", ignoreCase = true) -> Icons.Default.QueueMusic
+        text.equals("Play all", ignoreCase = true) -> Icons.Default.PlayArrow
+        text.equals("Shuffle", ignoreCase = true) -> Icons.Default.Shuffle
+        text.equals("Like", ignoreCase = true) -> Icons.Default.FavoriteBorder
+        text.equals("Unlike", ignoreCase = true) -> Icons.Default.Favorite
+        text.equals("Reorder", ignoreCase = true) || text.equals("Cancel reorder", ignoreCase = true) -> Icons.Default.SwapVert
+        text.equals("Rename", ignoreCase = true) -> Icons.Default.Edit
+        text.equals("Delete", ignoreCase = true) || text.startsWith("Remove from", ignoreCase = true) -> Icons.Default.Delete
+        else -> null
+    }
+
+    val destructive = text.equals("Unlike", ignoreCase = true) ||
+        text.equals("Delete", ignoreCase = true) ||
+        text.startsWith("Remove from", ignoreCase = true)
+
+    val resolvedIconTint = if (destructive) {
+        iconTint.takeOrElse { textColor.takeOrElse { Color.Red } }
+    } else {
+        iconTint.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -455,11 +574,11 @@ fun MorphMenuItem(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (leadingIcon != null) {
+        actionIcon?.let {
             Icon(
-                imageVector = leadingIcon,
+                imageVector = it,
                 contentDescription = null,
-                tint = iconTint.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant },
+                tint = resolvedIconTint,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(Modifier.width(12.dp))
