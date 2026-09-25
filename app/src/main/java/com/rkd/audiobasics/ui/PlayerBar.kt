@@ -34,7 +34,8 @@ fun PlayerBar(
     isDarkMode: Boolean,
     onToggle: () -> Unit,
     onAddTo: () -> Unit,
-    onTap: () -> Unit
+    onTap: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -45,7 +46,7 @@ fun PlayerBar(
 
     if (song == null) {
         Row(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
                 .background(bgColor)
                 .clickable(enabled = false) { }
@@ -84,7 +85,7 @@ fun PlayerBar(
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(bgColor)
             .clickable {
