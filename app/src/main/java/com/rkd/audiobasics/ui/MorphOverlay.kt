@@ -3,6 +3,7 @@ package com.rkd.audiobasics.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -359,7 +360,11 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
         ) { measurables, constraints ->
             val screenW = constraints.maxWidth
             val screenH = constraints.maxHeight
-            val margin = (if (isAnchored) MorphMenuMargin else MorphDialogMargin).roundToPx()
+            val margin = (
+                if (isAnchored) MorphMenuMargin
+                else if (entry.wide) 0.dp
+                else MorphDialogMargin
+            ).roundToPx()
 
             val areaL = systemBars.getLeft(this, layoutDirection) + margin
             val areaR = max(areaL, screenW - systemBars.getRight(this, layoutDirection) - margin)
@@ -617,18 +622,26 @@ fun MonochromeExcept(
     content: @Composable () -> Unit
 ) {
     val highlights = overlay.highlightBoundsList
-    val grayscalePaint = remember {
-        Paint().apply { colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
-    }
+    // Animated 0f..1f rather than an instant on/off switch, in both directions: ramps up to
+    // monochrome as soon as any popup opens, and eases back to full color once the last one
+    // has fully closed (entries stay in the list, so `highlights` stays non-empty, for the
+    // whole time a popup is playing its own closing animation).
+    val amount by animateFloatAsState(
+        targetValue = if (highlights.isEmpty()) 0f else 1f,
+        animationSpec = tween(durationMillis = 1500),
+        label = "monochromeAmount"
+    )
+    val paint = remember { Paint() }
     Box(
         modifier = modifier.drawWithContent {
-            if (highlights.isEmpty()) {
+            if (amount <= 0f) {
                 drawContent()
                 return@drawWithContent
             }
+            paint.colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1f - amount) })
             drawIntoCanvas { canvas ->
                 val bounds = Rect(Offset.Zero, size)
-                canvas.saveLayer(bounds, grayscalePaint)
+                canvas.saveLayer(bounds, paint)
                 this@drawWithContent.drawContent()
                 canvas.restore()
 
