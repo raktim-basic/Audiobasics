@@ -391,35 +391,28 @@ private fun MorphSurface(
             .graphicsLayer {
                 val p = progress()
                 val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
-                shadowElevation = elevationPx * containerAlpha(p)
+                val alpha = containerAlpha(p)
+
+                // Light mode keeps the normal dark elevation shadow. In dark mode the same
+                // mechanism is used as a deliberately visible *light shadow*: a soft white
+                // halo outside the popup, providing the same separation that elevation gives
+                // light surfaces. The shadow is rendered by the graphics layer so it can extend
+                // beyond the popup's bounds (unlike drawing an expanded rect inside this Box).
+                shadowElevation = if (darkTheme) {
+                    22.dp.toPx() * alpha
+                } else {
+                    elevationPx * alpha
+                }
+                if (darkTheme) {
+                    ambientShadowColor = Color.White.copy(alpha = 0.24f * alpha)
+                    spotShadowColor = Color.White.copy(alpha = 0.18f * alpha)
+                }
                 shape = MorphOutlineShape(frame.rect, frame.radius)
                 clip = false
             }
             .drawWithContent {
                 val p = progress()
                 val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
-                // Elevation shadows become effectively invisible against a dark surface.
-                // Paint a very soft, neutral ambient glow around the popup instead. It is
-                // intentionally built from several translucent layers rather than a bright
-                // outline, so the result reads as separation/floating rather than neon.
-                if (darkTheme) {
-                    val glowAlpha = containerAlpha(p)
-                    val layers = 10
-                    val maxExpansion = 20.dp.toPx()
-                    for (i in layers downTo 1) {
-                        val expansion = maxExpansion * (i.toFloat() / layers)
-                        val fade = 1f - (i.toFloat() / layers) * 0.82f
-                        drawRoundRect(
-                            color = Color.White.copy(alpha = 0.018f * fade * glowAlpha),
-                            topLeft = frame.rect.topLeft - Offset(expansion, expansion),
-                            size = Size(
-                                frame.rect.width + expansion * 2f,
-                                frame.rect.height + expansion * 2f
-                            ),
-                            cornerRadius = CornerRadius(frame.radius + expansion)
-                        )
-                    }
-                }
 
                 drawRoundRect(
                     color = containerColor,
