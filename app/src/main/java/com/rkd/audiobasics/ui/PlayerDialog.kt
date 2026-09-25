@@ -736,6 +736,11 @@ private fun PlayerFrontContent(
                 onClick = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     overlay.show(anchor = threeDotAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                        // Shadows the outer repeatMode param: repeat toggling deliberately keeps
+                        // this menu open for repeated taps (see below), so unlike every other
+                        // item here it needs to reflect changes made after the menu was opened,
+                        // not just the value that was current the moment it was opened.
+                        val repeatMode by vm.repeatMode.collectAsState()
                         MorphMenuColumn {
                             MorphMenuItem(
                                 text = "Share",
