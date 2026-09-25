@@ -288,10 +288,11 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val containerColor = entry.containerColor.takeOrElse { MaterialTheme.colorScheme.surface }
     val isAnchored = entry.placement == MorphPlacement.Anchored
     val isDarkTheme = isSystemInDarkTheme()
-    val isDarkDialog = !isAnchored && isDarkTheme
+    // In dark mode, only anchored menus get the explicit outline. Centered dialogs stay clean.
+    val isDarkMenu = isDarkTheme && isAnchored
     val scrimAlpha = if (isAnchored) 0f else 0.5f
     val cornerRadius = if (isAnchored) 12.dp else 16.dp
-    val elevation = if (isAnchored || !isDarkDialog) 8.dp else 0.dp
+    val elevation = if (isDarkMenu) 0.dp else 8.dp
 
     val requestClose = remember(entry) { { state.requestClose(entry) } }
 
@@ -331,7 +332,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     containerColor = containerColor,
                     cornerRadius = cornerRadius,
                     elevation = elevation,
-                    isDarkDialog = isDarkDialog
+                    isDarkMenu = isDarkMenu
                 )
             }
         ) { measurables, constraints ->
@@ -396,7 +397,7 @@ private fun MorphSurface(
     containerColor: Color,
     cornerRadius: Dp,
     elevation: Dp,
-    isDarkDialog: Boolean
+    isDarkMenu: Boolean
 ) {
     val density = LocalDensity.current
     val endRadiusPx = with(density) { cornerRadius.toPx() }
@@ -404,8 +405,7 @@ private fun MorphSurface(
 
     Box(
         modifier = Modifier
-            // Light mode keeps the standard elevation shadow. Dark dialogs use only the
-            // explicit gray outline below.
+            // Light mode and centered dialogs keep the standard elevation behavior.
             .graphicsLayer {
                 val p = progress()
                 val frame = morphFrame(
@@ -415,7 +415,7 @@ private fun MorphSurface(
                     endRadiusPx,
                     p
                 )
-                shadowElevation = if (isDarkDialog) 0f else {
+                shadowElevation = if (isDarkMenu) 0f else {
                     with(density) { elevation.toPx() } * containerAlpha(p)
                 }
                 shape = MorphOutlineShape(frame.rect, frame.radius)
@@ -447,15 +447,22 @@ private fun MorphSurface(
                     this@drawWithContent.drawContent()
                 }
 
-                // Dark-mode dialogs get a simple, visible gray outline. Draw it LAST so the
-                // dialog content cannot cover the outline. Light mode keeps the normal shadow.
-                if (isDarkDialog && alpha > 0f) {
+                // Dark-mode anchored menus get a simple, visible gray outline. Draw it LAST so
+                // popup content cannot cover it. Centered dialogs remain outline-free.
+                if (isDarkMenu && alpha > 0f) {
+                    val strokeWidth = with(density) { 2.dp.toPx() }
+                    val inset = strokeWidth / 2f
                     drawRoundRect(
-                        color = Color(0xFF6B6B6B),
-                        topLeft = frame.rect.topLeft,
-                        size = frame.rect.size,
-                        cornerRadius = CornerRadius(frame.radius),
-                        style = Stroke(width = with(density) { 2.dp.toPx() }),
+                        color = Color(0xFF808080),
+                        topLeft = frame.rect.topLeft + Offset(inset, inset),
+                        size = Size(
+                            (frame.rect.width - strokeWidth).coerceAtLeast(0f),
+                            (frame.rect.height - strokeWidth).coerceAtLeast(0f)
+                        ),
+                        cornerRadius = CornerRadius(
+                            (frame.radius - inset).coerceAtLeast(0f)
+                        ),
+                        style = Stroke(width = strokeWidth),
                         alpha = alpha
                     )
                 }
