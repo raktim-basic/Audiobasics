@@ -10,7 +10,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.runtime.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -367,6 +381,7 @@ private fun MorphSurface(
     val density = LocalDensity.current
     val endRadiusPx = with(density) { cornerRadius.toPx() }
     val elevationPx = with(density) { elevation.toPx() }
+    val darkTheme = isSystemInDarkTheme()
     val close = remember(entry) { requestClose }
 
     Box(
@@ -377,6 +392,13 @@ private fun MorphSurface(
                 val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
                 shadowElevation = elevationPx * containerAlpha(p)
                 shape = MorphOutlineShape(frame.rect, frame.radius)
+                // A normal black elevation shadow disappears against the dark surface.
+                // In dark mode, use a very soft light shadow as an ambient glow instead.
+                if (darkTheme && isAnchored) {
+                    ambientShadowColor = Color.White.copy(alpha = 0.16f)
+                    spotShadowColor = Color.White.copy(alpha = 0.12f)
+                    shadowElevation = elevationPx * 1.35f * containerAlpha(p)
+                }
                 clip = false
             }
             .drawWithContent {
@@ -436,6 +458,29 @@ fun MorphMenuItem(
     iconTint: Color = Color.Unspecified,
     textColor: Color = Color.Unspecified
 ) {
+    // Keep explicit icons when a caller needs a specific variant; otherwise give the
+    // common menu actions a consistent leading icon.
+    val actionIcon = leadingIcon ?: when {
+        text.equals("Share", ignoreCase = true) -> Icons.Default.Share
+        text.startsWith("Add to playlist", ignoreCase = true) -> Icons.Default.Add
+        text.equals("Play next", ignoreCase = true) -> Icons.Default.SkipNext
+        text.equals("Add to queue", ignoreCase = true) || text.equals("Queue", ignoreCase = true) -> Icons.Default.QueueMusic
+        text.equals("Play all", ignoreCase = true) -> Icons.Default.PlayArrow
+        text.equals("Shuffle", ignoreCase = true) -> Icons.Default.Shuffle
+        text.equals("Like", ignoreCase = true) -> Icons.Default.FavoriteBorder
+        text.equals("Unlike", ignoreCase = true) -> Icons.Default.Favorite
+        text.equals("Reorder", ignoreCase = true) || text.equals("Cancel reorder", ignoreCase = true) -> Icons.Default.SwapVert
+        text.equals("Rename", ignoreCase = true) -> Icons.Default.Edit
+        text.equals("Delete", ignoreCase = true) || text.startsWith("Remove from", ignoreCase = true) -> Icons.Default.Delete
+        else -> null
+    }
+    val resolvedIconTint = if (text.equals("Unlike", ignoreCase = true) ||
+        text.equals("Delete", ignoreCase = true) || text.startsWith("Remove from", ignoreCase = true)) {
+        iconTint.takeOrElse { textColor.takeOrElse { Color.Red } }
+    } else {
+        iconTint.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -444,11 +489,11 @@ fun MorphMenuItem(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (leadingIcon != null) {
+        if (actionIcon != null) {
             Icon(
-                imageVector = leadingIcon,
+                imageVector = actionIcon,
                 contentDescription = null,
-                tint = iconTint.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant },
+                tint = resolvedIconTint,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(Modifier.width(12.dp))
