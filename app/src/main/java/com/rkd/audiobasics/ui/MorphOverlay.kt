@@ -447,8 +447,6 @@ private fun MorphSurface(
                     p
                 )
 
-                // In dark mode, use a simple neutral-gray outline to separate the dialog
-                // from the dark background. Light mode keeps the normal elevation shadow.
                 drawRoundRect(
                     color = containerColor,
                     topLeft = frame.rect.topLeft,
@@ -457,22 +455,24 @@ private fun MorphSurface(
                     alpha = alpha
                 )
 
+                val reveal = Path().apply {
+                    addRoundRect(RoundRect(frame.rect, CornerRadius(frame.radius)))
+                }
+                clipPath(reveal) {
+                    this@drawWithContent.drawContent()
+                }
+
+                // Dark-mode dialogs get a simple, visible gray outline. Draw it LAST so the
+                // dialog content cannot cover the outline. Light mode keeps the normal shadow.
                 if (isDarkDialog && alpha > 0f) {
                     drawRoundRect(
                         color = Color(0xFF6B6B6B),
                         topLeft = frame.rect.topLeft,
                         size = frame.rect.size,
                         cornerRadius = CornerRadius(frame.radius),
-                        style = Stroke(width = with(density) { 1.dp.toPx() }),
+                        style = Stroke(width = with(density) { 2.dp.toPx() }),
                         alpha = alpha
                     )
-                }
-
-                val reveal = Path().apply {
-                    addRoundRect(RoundRect(frame.rect, CornerRadius(frame.radius)))
-                }
-                clipPath(reveal) {
-                    this@drawWithContent.drawContent()
                 }
             }
             // Taps on the popup itself must not fall through to the backdrop (which would close it).
