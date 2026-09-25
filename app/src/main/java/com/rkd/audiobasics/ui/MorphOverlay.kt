@@ -393,18 +393,34 @@ private fun MorphSurface(
                 val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
                 shadowElevation = elevationPx * containerAlpha(p)
                 shape = MorphOutlineShape(frame.rect, frame.radius)
-                // A normal black elevation shadow disappears against the dark surface.
-                // In dark mode, use a very soft light shadow as an ambient glow instead.
-                if (darkTheme && isAnchored) {
-                    ambientShadowColor = Color.White.copy(alpha = 0.16f)
-                    spotShadowColor = Color.White.copy(alpha = 0.12f)
-                    shadowElevation = elevationPx * 1.35f * containerAlpha(p)
-                }
                 clip = false
             }
             .drawWithContent {
                 val p = progress()
                 val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
+                // Elevation shadows become effectively invisible against a dark surface.
+                // Paint a very soft, neutral ambient glow around the popup instead. It is
+                // intentionally built from several translucent layers rather than a bright
+                // outline, so the result reads as separation/floating rather than neon.
+                if (darkTheme) {
+                    val glowAlpha = containerAlpha(p)
+                    val layers = 10
+                    val maxExpansion = 20.dp.toPx()
+                    for (i in layers downTo 1) {
+                        val expansion = maxExpansion * (i.toFloat() / layers)
+                        val fade = 1f - (i.toFloat() / layers) * 0.82f
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = 0.018f * fade * glowAlpha),
+                            topLeft = frame.rect.topLeft - Offset(expansion, expansion),
+                            size = Size(
+                                frame.rect.width + expansion * 2f,
+                                frame.rect.height + expansion * 2f
+                            ),
+                            cornerRadius = CornerRadius(frame.radius + expansion)
+                        )
+                    }
+                }
+
                 drawRoundRect(
                     color = containerColor,
                     topLeft = frame.rect.topLeft,
