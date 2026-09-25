@@ -91,10 +91,6 @@ private val MorphDialogMaxWidth = 560.dp
 private val MorphMenuMargin = 8.dp
 private val MorphDialogMargin = 24.dp
 
-// Dark dialogs need physical room outside their surface for the light shadow to be painted.
-// This is deliberately large enough to make the effect visible, while still reading as a
-// soft shadow rather than a border.
-
 enum class MorphPlacement {
     /** Small popup positioned next to the trigger (menus). Right edge lines up with the trigger's right edge. */
     Anchored,
@@ -252,7 +248,6 @@ private fun morphFrame(
     origin: Offset,
     anchor: Rect?,
     endRadius: Float,
-    endInset: Float,
     p: Float
 ): MorphFrame {
     val t = p.coerceIn(0f, 1f)
@@ -262,10 +257,10 @@ private fun morphFrame(
         Rect(size.width * 0.1f, size.height * 0.1f, size.width * 0.9f, size.height * 0.9f)
     }
     val end = Rect(
-        left = endInset,
-        top = endInset,
-        right = (size.width - endInset).coerceAtLeast(endInset),
-        bottom = (size.height - endInset).coerceAtLeast(endInset)
+        left = 0f,
+        top = 0f,
+        right = size.width,
+        bottom = size.height
     )
     val startRadius = if (anchor != null) min(start.width, start.height) / 2f else endRadius
     val rect = Rect(
@@ -297,7 +292,6 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val scrimAlpha = if (isAnchored) 0f else 0.5f
     val cornerRadius = if (isAnchored) 12.dp else 16.dp
     val elevation = if (isAnchored || !isDarkDialog) 8.dp else 0.dp
-    val shadowPadPx = 0
 
     val requestClose = remember(entry) { { state.requestClose(entry) } }
 
@@ -337,7 +331,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     containerColor = containerColor,
                     cornerRadius = cornerRadius,
                     elevation = elevation,
-                    shadowPadding = 0.dp
+                    isDarkDialog = isDarkDialog
                 )
             }
         ) { measurables, constraints ->
@@ -360,14 +354,9 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     maxHeight = areaH
                 )
             } else {
-                // The dark-mode shadow is painted outside the dialog surface, so give the
-                // MorphSurface extra measured room without shrinking the actual dialog content.
-                val maxContentWidth = max(0, areaW - shadowPadPx * 2)
-                val contentWidth = min(maxContentWidth, MorphDialogMaxWidth.roundToPx())
-                val outerWidth = contentWidth + shadowPadPx * 2
                 Constraints(
-                    minWidth = outerWidth,
-                    maxWidth = outerWidth,
+                    minWidth = 0,
+                    maxWidth = min(areaW, MorphDialogMaxWidth.roundToPx()),
                     minHeight = 0,
                     maxHeight = areaH
                 )
@@ -407,18 +396,16 @@ private fun MorphSurface(
     containerColor: Color,
     cornerRadius: Dp,
     elevation: Dp,
-    shadowPadding: Dp
+    isDarkDialog: Boolean
 ) {
     val density = LocalDensity.current
     val endRadiusPx = with(density) { cornerRadius.toPx() }
-    val shadowPaddingPx = with(density) { shadowPadding.toPx() }
     val close = remember(entry) { requestClose }
-    val isDarkDialog = shadowPaddingPx > 0f && entry.placement == MorphPlacement.Center
 
     Box(
         modifier = Modifier
-            // Light mode keeps the standard elevation shadow. Dark dialogs deliberately use
-            // the custom light-shadow layer below instead of a dark Android shadow.
+            // Light mode keeps the standard elevation shadow. Dark dialogs use only the
+            // explicit gray outline below.
             .graphicsLayer {
                 val p = progress()
                 val frame = morphFrame(
@@ -426,7 +413,6 @@ private fun MorphSurface(
                     geometry.origin,
                     entry.anchor,
                     endRadiusPx,
-                    shadowPaddingPx,
                     p
                 )
                 shadowElevation = if (isDarkDialog) 0f else {
@@ -443,7 +429,6 @@ private fun MorphSurface(
                     geometry.origin,
                     entry.anchor,
                     endRadiusPx,
-                    shadowPaddingPx,
                     p
                 )
 
@@ -482,8 +467,7 @@ private fun MorphSurface(
     ) {
         Box(
             modifier = Modifier
-                .padding(shadowPadding)
-                .graphicsLayer { alpha = contentAlpha(progress()) }
+                    .graphicsLayer { alpha = contentAlpha(progress()) }
         ) {
             entry.content(close)
         }
