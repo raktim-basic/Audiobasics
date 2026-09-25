@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
@@ -93,7 +94,6 @@ private val MorphDialogMargin = 24.dp
 // Dark dialogs need physical room outside their surface for the light shadow to be painted.
 // This is deliberately large enough to make the effect visible, while still reading as a
 // soft shadow rather than a border.
-private val MorphDarkDialogShadowPad = 22.dp
 
 enum class MorphPlacement {
     /** Small popup positioned next to the trigger (menus). Right edge lines up with the trigger's right edge. */
@@ -297,11 +297,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val scrimAlpha = if (isAnchored) 0f else 0.5f
     val cornerRadius = if (isAnchored) 12.dp else 16.dp
     val elevation = if (isAnchored || !isDarkDialog) 8.dp else 0.dp
-    val shadowPadPx = if (isDarkDialog) {
-        with(LocalDensity.current) { MorphDarkDialogShadowPad.roundToPx() }
-    } else {
-        0
-    }
+    val shadowPadPx = 0
 
     val requestClose = remember(entry) { { state.requestClose(entry) } }
 
@@ -341,7 +337,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     containerColor = containerColor,
                     cornerRadius = cornerRadius,
                     elevation = elevation,
-                    shadowPadding = if (isDarkDialog) MorphDarkDialogShadowPad else 0.dp
+                    shadowPadding = 0.dp
                 )
             }
         ) { measurables, constraints ->
@@ -451,34 +447,8 @@ private fun MorphSurface(
                     p
                 )
 
-                if (isDarkDialog && alpha > 0f) {
-                    // Paint an actual light shadow outside the dialog surface. The outer
-                    // container has shadowPaddingPx of breathing room, so these layers are
-                    // visible outside the dialog instead of being clipped by the node bounds.
-                    val steps = 22
-                    val maxSpread = shadowPaddingPx
-                    for (i in steps downTo 1) {
-                        val t = i.toFloat() / steps.toFloat() // 1 = farthest out
-                        val offset = maxSpread * t
-                        val haloRect = Rect(
-                            left = frame.rect.left - offset,
-                            top = frame.rect.top - offset,
-                            right = frame.rect.right + offset,
-                            bottom = frame.rect.bottom + offset
-                        )
-                        val falloff = 1f - t
-                        val haloAlpha = (0.0012f + 0.038f * falloff * falloff) * alpha
-                        drawRoundRect(
-                            color = Color.White,
-                            topLeft = haloRect.topLeft,
-                            size = haloRect.size,
-                            cornerRadius = CornerRadius(frame.radius + offset),
-                            alpha = haloAlpha
-                        )
-                    }
-                }
-
-                // The actual surface remains a crisp solid shape on top of the light shadow.
+                // In dark mode, use a simple neutral-gray outline to separate the dialog
+                // from the dark background. Light mode keeps the normal elevation shadow.
                 drawRoundRect(
                     color = containerColor,
                     topLeft = frame.rect.topLeft,
@@ -486,6 +456,17 @@ private fun MorphSurface(
                     cornerRadius = CornerRadius(frame.radius),
                     alpha = alpha
                 )
+
+                if (isDarkDialog && alpha > 0f) {
+                    drawRoundRect(
+                        color = Color(0xFF6B6B6B),
+                        topLeft = frame.rect.topLeft,
+                        size = frame.rect.size,
+                        cornerRadius = CornerRadius(frame.radius),
+                        style = Stroke(width = with(density) { 1.dp.toPx() }),
+                        alpha = alpha
+                    )
+                }
 
                 val reveal = Path().apply {
                     addRoundRect(RoundRect(frame.rect, CornerRadius(frame.radius)))
@@ -499,8 +480,6 @@ private fun MorphSurface(
                 detectTapGestures(onTap = { })
             }
     ) {
-        // Keep the real dialog content inset inside the outer shadow room. At the fully-open
-        // position this exactly matches morphFrame's shadowPaddingPx inset.
         Box(
             modifier = Modifier
                 .padding(shadowPadding)
