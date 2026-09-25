@@ -382,6 +382,7 @@ private fun MorphSurface(
     val endRadiusPx = with(density) { cornerRadius.toPx() }
     val elevationPx = with(density) { elevation.toPx() }
     val darkTheme = isSystemInDarkTheme()
+    val isAnchored = entry.placement == MorphPlacement.Anchored
     val close = remember(entry) { requestClose }
 
     Box(
