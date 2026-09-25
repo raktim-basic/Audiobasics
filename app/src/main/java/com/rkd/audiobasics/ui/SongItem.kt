@@ -63,6 +63,10 @@ fun SongItem(
     val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
 
     val titleColor = if (isPlaying) Color.Red else textColor
+    // Bounds of the whole row — used only so the 3-dot menu can keep this row in color while
+    // the rest of the list goes monochrome (see MorphOverlay's MonochromeExcept). The menu
+    // itself still grows from the icon (menuAnchor below), this is a separate, wider rect.
+    val rowAnchor = rememberMorphAnchor()
 
     if (showShareChoice) {
         ShareChoiceDialog(
@@ -109,6 +113,7 @@ fun SongItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .morphAnchor(rowAnchor)
             .background(bgColor)
             .clickable {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -211,7 +216,11 @@ fun SongItem(
             val menuAnchor = rememberMorphAnchor()
 
             fun openMenu() {
-                overlay.show(anchor = menuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                overlay.show(
+                    anchor = menuAnchor.bounds(),
+                    placement = MorphPlacement.Anchored,
+                    highlightBounds = rowAnchor.bounds()
+                ) { close ->
                     MorphMenuColumn {
                         if (isInQueue) {
                             MorphMenuItem(
