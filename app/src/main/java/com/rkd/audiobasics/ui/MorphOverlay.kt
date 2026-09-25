@@ -6,25 +6,12 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.runtime.*
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -277,7 +264,11 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val isAnchored = entry.placement == MorphPlacement.Anchored
     val scrimAlpha = if (isAnchored) 0f else 0.5f
     val cornerRadius = if (isAnchored) 12.dp else 16.dp
-    val elevation = if (isAnchored) 8.dp else 0.dp
+    val isDarkTheme = isSystemInDarkTheme()
+    // Menus and dialogs both need a visible separation. In dark mode, use a soft
+    // light shadow instead of the nearly invisible dark default shadow.
+    val elevation = 8.dp
+    val shadowColor = if (!isAnchored && isDarkTheme) Color.White.copy(alpha = 0.22f) else Color.Unspecified
 
     val requestClose = remember(entry) { { state.requestClose(entry) } }
 
@@ -316,7 +307,8 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     progress = { progress.value },
                     containerColor = containerColor,
                     cornerRadius = cornerRadius,
-                    elevation = elevation
+                    elevation = elevation,
+                    shadowColor = shadowColor
                 )
             }
         ) { measurables, constraints ->
@@ -376,36 +368,24 @@ private fun MorphSurface(
     progress: () -> Float,
     containerColor: Color,
     cornerRadius: Dp,
-    elevation: Dp
+    elevation: Dp,
+    shadowColor: Color
 ) {
     val density = LocalDensity.current
     val endRadiusPx = with(density) { cornerRadius.toPx() }
     val elevationPx = with(density) { elevation.toPx() }
-    val darkTheme = isSystemInDarkTheme()
-    val isAnchored = entry.placement == MorphPlacement.Anchored
     val close = remember(entry) { requestClose }
 
     Box(
         modifier = Modifier
-            // Shadow follows the animated container shape (menus only; dialogs use elevation 0).
+            // Shadow follows the animated container shape; dark-mode dialogs use a soft light shadow.
             .graphicsLayer {
                 val p = progress()
                 val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
-                val alpha = containerAlpha(p)
-
-                // Light mode keeps the normal dark elevation shadow. In dark mode the same
-                // mechanism is used as a deliberately visible *light shadow*: a soft white
-                // halo outside the popup, providing the same separation that elevation gives
-                // light surfaces. The shadow is rendered by the graphics layer so it can extend
-                // beyond the popup's bounds (unlike drawing an expanded rect inside this Box).
-                shadowElevation = if (darkTheme) {
-                    22.dp.toPx() * alpha
-                } else {
-                    elevationPx * alpha
-                }
-                if (darkTheme) {
-                    ambientShadowColor = Color.White.copy(alpha = 0.24f * alpha)
-                    spotShadowColor = Color.White.copy(alpha = 0.18f * alpha)
+                shadowElevation = elevationPx * containerAlpha(p)
+                if (shadowColor != Color.Unspecified) {
+                    ambientShadowColor = shadowColor
+                    spotShadowColor = shadowColor
                 }
                 shape = MorphOutlineShape(frame.rect, frame.radius)
                 clip = false
@@ -413,7 +393,6 @@ private fun MorphSurface(
             .drawWithContent {
                 val p = progress()
                 val frame = morphFrame(size, geometry.origin, entry.anchor, endRadiusPx, p)
-
                 drawRoundRect(
                     color = containerColor,
                     topLeft = frame.rect.topLeft,
@@ -468,29 +447,6 @@ fun MorphMenuItem(
     iconTint: Color = Color.Unspecified,
     textColor: Color = Color.Unspecified
 ) {
-    // Keep explicit icons when a caller needs a specific variant; otherwise give the
-    // common menu actions a consistent leading icon.
-    val actionIcon = leadingIcon ?: when {
-        text.equals("Share", ignoreCase = true) -> Icons.Default.Share
-        text.startsWith("Add to playlist", ignoreCase = true) -> Icons.Default.Add
-        text.equals("Play next", ignoreCase = true) -> Icons.Default.SkipNext
-        text.equals("Add to queue", ignoreCase = true) || text.equals("Queue", ignoreCase = true) -> Icons.Default.QueueMusic
-        text.equals("Play all", ignoreCase = true) -> Icons.Default.PlayArrow
-        text.equals("Shuffle", ignoreCase = true) -> Icons.Default.Shuffle
-        text.equals("Like", ignoreCase = true) -> Icons.Default.FavoriteBorder
-        text.equals("Unlike", ignoreCase = true) -> Icons.Default.Favorite
-        text.equals("Reorder", ignoreCase = true) || text.equals("Cancel reorder", ignoreCase = true) -> Icons.Default.SwapVert
-        text.equals("Rename", ignoreCase = true) -> Icons.Default.Edit
-        text.equals("Delete", ignoreCase = true) || text.startsWith("Remove from", ignoreCase = true) -> Icons.Default.Delete
-        else -> null
-    }
-    val resolvedIconTint = if (text.equals("Unlike", ignoreCase = true) ||
-        text.equals("Delete", ignoreCase = true) || text.startsWith("Remove from", ignoreCase = true)) {
-        iconTint.takeOrElse { textColor.takeOrElse { Color.Red } }
-    } else {
-        iconTint.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant }
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -499,11 +455,11 @@ fun MorphMenuItem(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (actionIcon != null) {
+        if (leadingIcon != null) {
             Icon(
-                imageVector = actionIcon,
+                imageVector = leadingIcon,
                 contentDescription = null,
-                tint = resolvedIconTint,
+                tint = iconTint.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant },
                 modifier = Modifier.size(24.dp)
             )
             Spacer(Modifier.width(12.dp))
