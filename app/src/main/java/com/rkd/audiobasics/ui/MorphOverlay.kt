@@ -39,9 +39,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
@@ -445,7 +443,7 @@ private fun MorphSurface(
                     with(density) { elevation.toPx() } * containerAlpha(p)
                 }
                 shape = MorphOutlineShape(frame.rect, frame.radius)
-                clip = false
+                clip = true
             }
             .drawWithContent {
                 val p = progress()
@@ -488,12 +486,7 @@ private fun MorphSurface(
                     alpha = alpha
                 )
 
-                val reveal = Path().apply {
-                    addRoundRect(RoundRect(frame.rect, CornerRadius(frame.radius)))
-                }
-                clipPath(reveal) {
-                    this@drawWithContent.drawContent()
-                }
+                this@drawWithContent.drawContent()
 
                 // Dark-mode anchored menus: draw a soft ambient light halo BEHIND the container,
                 // instead of a hard outline. This is the dark-mode analogue of the drop shadow
@@ -628,7 +621,7 @@ fun MonochromeExcept(
     // whole time a popup is playing its own closing animation).
     val amount by animateFloatAsState(
         targetValue = if (highlights.isEmpty()) 0f else 1f,
-        animationSpec = tween(durationMillis = 1500),
+        animationSpec = tween(durationMillis = 500),
         label = "monochromeAmount"
     )
     val paint = remember { Paint() }
