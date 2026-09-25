@@ -34,8 +34,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
 import com.rkd.audiobasics.ui.LocalMorphOverlay
+import com.rkd.audiobasics.ui.MonochromeExcept
 import com.rkd.audiobasics.ui.MorphOverlayHost
 import com.rkd.audiobasics.ui.MorphOverlayState
+import com.rkd.audiobasics.ui.MorphPlacement
+import com.rkd.audiobasics.ui.MorphPopup
+import com.rkd.audiobasics.ui.morphAnchor
+import com.rkd.audiobasics.ui.rememberMorphAnchor
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -336,6 +341,9 @@ fun AudiobasicsApp(
     var showPlayerDialog by remember { mutableStateOf(false) }
     var addToSheetSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
     var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
+    // The player bar is both the trigger the player card morphs open/closed from, and the
+    // region that should stay in color (via MonochromeExcept below) while the player is open.
+    val playerBarAnchor = rememberMorphAnchor()
 
     // Which special slide (if any) the transition currently in flight should use. Set
     // explicitly at each push()/navigateBack() call site, immediately before the backStack
@@ -406,24 +414,31 @@ fun AudiobasicsApp(
     }
 
     if (showPlayerDialog && currentSong != null) {
-        PlayerDialog(
-            vm = vm,
-            isDarkMode = isDarkMode,
-            onDismiss = { showPlayerDialog = false },
-            onNavigateQueue = { showPlayerDialog = false; push(QueueKey) },
-            onNavigateArtist = { name, artistId ->
-                showPlayerDialog = false
-                push(ArtistDetailKey(name, artistId ?: ""))
-            },
-            onNavigateAlbum = { albumTitle ->
-                showPlayerDialog = false
-                // Search for the album by name rather than browsing this specific id —
-                // YTM itself sometimes has more than one catalog entry for what's really
-                // the same album, so search reliably lands on a real, complete result
-                // instead of risking opening a different, possibly-incomplete duplicate.
-                push(SearchAlbumsKey(albumTitle))
-            }
-        )
+        MorphPopup(
+            onDismissRequest = { showPlayerDialog = false },
+            anchor = playerBarAnchor.bounds(),
+            placement = MorphPlacement.Center,
+            wide = true
+        ) { _ ->
+            PlayerDialog(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onDismiss = { showPlayerDialog = false },
+                onNavigateQueue = { showPlayerDialog = false; push(QueueKey) },
+                onNavigateArtist = { name, artistId ->
+                    showPlayerDialog = false
+                    push(ArtistDetailKey(name, artistId ?: ""))
+                },
+                onNavigateAlbum = { albumTitle ->
+                    showPlayerDialog = false
+                    // Search for the album by name rather than browsing this specific id —
+                    // YTM itself sometimes has more than one catalog entry for what's really
+                    // the same album, so search reliably lands on a real, complete result
+                    // instead of risking opening a different, possibly-incomplete duplicate.
+                    push(SearchAlbumsKey(albumTitle))
+                }
+            )
+        }
     }
 
     // Global Add-to-playlist sheet
@@ -494,6 +509,7 @@ fun AudiobasicsApp(
     // dialog and menu declared earlier (storage-low alert, PlayerDialog, AddToPlaylistSheet,
     // CreatePlaylistDialog, Smart Inputs, App Links nudge) can also call overlay.show(...).
     Box(modifier = Modifier.fillMaxSize()) {
+    MonochromeExcept(overlay = morphOverlay, modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -681,8 +697,10 @@ fun AudiobasicsApp(
             isDarkMode = isDarkMode,
             onToggle = vm::togglePlayPause,
             onAddTo = { currentSong?.let { addToSheetSong = it } },
-            onTap = { showPlayerDialog = true }
+            onTap = { showPlayerDialog = true },
+            modifier = Modifier.morphAnchor(playerBarAnchor)
         )
+    }
     }
     MorphOverlayHost(state = morphOverlay)
     }
