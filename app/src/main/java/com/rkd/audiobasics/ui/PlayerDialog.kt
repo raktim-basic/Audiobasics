@@ -32,7 +32,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -71,6 +70,10 @@ private fun faceFor(rotationDegrees: Float): PlayerFace = when {
 
 private const val FLIP_DURATION_MS = 420
 private const val FLIP_FLING_VELOCITY = 300f // degrees/sec — a flick past this always commits
+// Which physical swipe direction returns Lyrics/Info back to Player. I couldn't verify this by
+// eye and got it wrong twice; if it's still backwards, just flip this one value — 1f and -1f are
+// the only two possibilities, so one of them is definitely right.
+private const val RETURN_SWIPE_SIGN = -1f
 
 @Composable
 fun PlayerDialog(
@@ -283,8 +286,8 @@ fun PlayerDialog(
                                     // confirmed by testing that a Lyrics/Info return swipe should
                                     // go the opposite way from the "open" sessions below, not the
                                     // same way a pure continuous rotation would suggest.
-                                    PlayerFace.LYRICS -> { sessionMin = -180f; sessionMax = 0f; dragSign = -1f }
-                                    PlayerFace.INFO -> { sessionMin = 0f; sessionMax = 180f; dragSign = -1f }
+                                    PlayerFace.LYRICS -> { sessionMin = -180f; sessionMax = 0f; dragSign = RETURN_SWIPE_SIGN }
+                                    PlayerFace.INFO -> { sessionMin = 0f; sessionMax = 180f; dragSign = RETURN_SWIPE_SIGN }
                                     PlayerFace.PLAYER -> { sessionMin = -180f; sessionMax = 180f; dragSign = 1f }
                                 }
                                 velocityTracker.resetTracking()
@@ -411,28 +414,6 @@ fun PlayerDialog(
                             )
                         }
                     }
-                }
-
-                // Subtle far-side shading, like light catching a physical card as it turns —
-                // the edge rotating away from the viewer darkens a little. Left edge darkens
-                // while rotationValue is negative (turning toward Lyrics), right edge while
-                // positive (turning toward Info); fades back out toward 0 at either end, so
-                // it's essentially invisible at rest and only shows mid-flip.
-                val shadeStrength = (kotlin.math.abs(rotationValue) / 180f).coerceIn(0f, 1f) * 0.28f
-                if (shadeStrength > 0.005f) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = if (rotationValue < 0f) {
-                                        listOf(Color.Black.copy(alpha = shadeStrength), Color.Transparent)
-                                    } else {
-                                        listOf(Color.Transparent, Color.Black.copy(alpha = shadeStrength))
-                                    }
-                                )
-                            )
-                    )
                 }
             }
         }
