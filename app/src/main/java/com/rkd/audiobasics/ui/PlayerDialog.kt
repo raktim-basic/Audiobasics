@@ -333,7 +333,7 @@ fun PlayerDialog(
                             onHorizontalDrag = { change, dragAmount ->
                                 velocityTracker.addPosition(change.uptimeMillis, change.position)
                                 val degreesPerPx = 180f / cardWidthPx
-                                val raw = liveRotation + dragAmount * degreesPerPx
+                                val raw = liveRotation + dragAmount * degreesPerPx * dragSign
                                 val wasAtBoundary = liveRotation <= sessionMin || liveRotation >= sessionMax
                                 liveRotation = withResistance(raw, sessionMin, sessionMax)
                                 val atBoundaryNow = raw < sessionMin || raw > sessionMax
