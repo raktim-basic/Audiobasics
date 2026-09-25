@@ -34,10 +34,14 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -103,6 +107,8 @@ class MorphEntry internal constructor(
     val anchor: Rect?,
     val placement: MorphPlacement,
     val containerColor: Color,
+    val highlightBounds: Rect?,
+    val wide: Boolean,
     val onDismissRequest: () -> Unit,
     val content: @Composable (close: () -> Unit) -> Unit
 ) {
@@ -131,18 +137,32 @@ class MorphOverlayState {
      * overlay never end up disagreeing about open/closed. Returns the entry, so callers that open
      * a popup outside of a click handler (see [MorphPopup]) can close that specific one later,
      * regardless of what else has been pushed on top of it since.
+     *
+     * [highlightBounds] is the region (root coordinates) that should stay in color while this
+     * popup is open and the rest of the background goes monochrome (see [MonochromeExcept]).
+     * Defaults to [anchor] — for a menu that's usually right, but pass something wider (e.g. a
+     * whole list row instead of just its icon) when the trigger is smaller than what should stay
+     * highlighted. Pass null explicitly for "nothing behind this popup should be excluded."
+     *
+     * [wide] relaxes the usual dialog max-width cap for a [MorphPlacement.Center] popup that
+     * wants to use most of the screen width (the player card) rather than a compact alert size.
      */
     fun show(
         anchor: Rect?,
         placement: MorphPlacement = MorphPlacement.Center,
         containerColor: Color = Color.Unspecified,
+        highlightBounds: Rect? = anchor,
+        wide: Boolean = false,
         onDismissRequest: () -> Unit = {},
         content: @Composable (close: () -> Unit) -> Unit
     ): MorphEntry {
-        val e = MorphEntry(anchor, placement, containerColor, onDismissRequest, content)
+        val e = MorphEntry(anchor, placement, containerColor, highlightBounds, wide, onDismissRequest, content)
         _entries.add(e)
         return e
     }
+
+    /** Every open popup's [MorphEntry.highlightBounds], for [MonochromeExcept] to keep in color. */
+    internal val highlightBoundsList: List<Rect> get() = _entries.mapNotNull { it.highlightBounds }
 
     /** Closes the topmost popup (with its exit animation), if any. */
     fun close() {
@@ -203,11 +223,13 @@ fun MorphPopup(
     anchor: Rect? = null,
     placement: MorphPlacement = MorphPlacement.Center,
     containerColor: Color = Color.Unspecified,
+    highlightBounds: Rect? = anchor,
+    wide: Boolean = false,
     overlay: MorphOverlayState = LocalMorphOverlay.current,
     content: @Composable (close: () -> Unit) -> Unit
 ) {
     DisposableEffect(Unit) {
-        val e = overlay.show(anchor, placement, containerColor, onDismissRequest, content)
+        val e = overlay.show(anchor, placement, containerColor, highlightBounds, wide, onDismissRequest, content)
         onDispose { overlay.requestClose(e) }
     }
 }
@@ -356,7 +378,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
             } else {
                 Constraints(
                     minWidth = 0,
-                    maxWidth = min(areaW, MorphDialogMaxWidth.roundToPx()),
+                    maxWidth = if (entry.wide) areaW else min(areaW, MorphDialogMaxWidth.roundToPx()),
                     minHeight = 0,
                     maxHeight = areaH
                 )
@@ -569,5 +591,62 @@ fun MorphMenuItem(
             style = MaterialTheme.typography.labelLarge,
             color = textColor.takeOrElse { MaterialTheme.colorScheme.onSurface }
         )
+    }
+}
+
+/* ---------- Monochrome background while a popup is open ---------- */
+
+/**
+ * Wraps the app's main content (screens + player bar — NOT the popups themselves, those are
+ * drawn separately by [MorphOverlayHost] on top and stay full color). While [overlay] has any
+ * popup open, [content] is drawn desaturated, except for the region(s) named by each open
+ * entry's `highlightBounds` (see [MorphOverlayState.show]), which stay in color — e.g. the row
+ * whose 3-dot menu is open, or the player bar while the player itself is open.
+ *
+ * Place this at root coordinates (no offset/padding of its own above it) since highlightBounds
+ * are recorded in root coordinates by [MorphAnchor.bounds].
+ *
+ * Implementation note: content is recorded once by Compose and simply replayed a second time —
+ * once desaturated into an offscreen layer, once again clipped to each highlight rect — rather
+ * than duplicating the composable tree itself, so state and recomposition are unaffected.
+ */
+@Composable
+fun MonochromeExcept(
+    overlay: MorphOverlayState,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val highlights = overlay.highlightBoundsList
+    val grayscalePaint = remember {
+        Paint().apply { colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }) }
+    }
+    Box(
+        modifier = modifier.drawWithContent {
+            if (highlights.isEmpty()) {
+                drawContent()
+                return@drawWithContent
+            }
+            drawIntoCanvas { canvas ->
+                val bounds = Rect(Offset.Zero, size)
+                canvas.saveLayer(bounds, grayscalePaint)
+                this@drawWithContent.drawContent()
+                canvas.restore()
+
+                for (rect in highlights) {
+                    val left = rect.left.coerceIn(bounds.left, bounds.right)
+                    val top = rect.top.coerceIn(bounds.top, bounds.bottom)
+                    val right = rect.right.coerceIn(bounds.left, bounds.right)
+                    val bottom = rect.bottom.coerceIn(bounds.top, bounds.bottom)
+                    if (right > left && bottom > top) {
+                        canvas.save()
+                        canvas.clipRect(left, top, right, bottom)
+                        this@drawWithContent.drawContent()
+                        canvas.restore()
+                    }
+                }
+            }
+        }
+    ) {
+        content()
     }
 }
