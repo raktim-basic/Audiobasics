@@ -416,8 +416,8 @@ fun AudiobasicsApp(
     if (showPlayerDialog && currentSong != null) {
         MorphPopup(
             onDismissRequest = { showPlayerDialog = false },
-            anchor = playerBarAnchor.bounds(),
             placement = MorphPlacement.Center,
+            highlightBounds = playerBarAnchor.bounds(),
             wide = true
         ) { _ ->
             PlayerDialog(
