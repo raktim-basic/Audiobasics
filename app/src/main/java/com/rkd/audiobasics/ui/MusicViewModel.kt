@@ -263,7 +263,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     // Player design: false = classic (existing) player face, true = the new art-first,
     // immersive-mode player face. Settings > Appearance > Player design.
-    private val _newPlayerDesign = MutableStateFlow(prefs.getBoolean("new_player_design", false))
+    private val _newPlayerDesign = MutableStateFlow(prefs.getBoolean("new_player_design", true))
     val newPlayerDesign: StateFlow<Boolean> = _newPlayerDesign
 
     fun setNewPlayerDesign(enabled: Boolean) {
@@ -275,7 +275,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // automatically hides its controls 4s after entering/staying on the Player face; it does
     // not trigger while paused. See PlayerDialog's own LaunchedEffect for the timer itself —
     // this is just the persisted on/off switch, same pattern as newPlayerDesign above.
-    private val _autoImmerseEnabled = MutableStateFlow(prefs.getBoolean("player_auto_immerse", false))
+    private val _autoImmerseEnabled = MutableStateFlow(prefs.getBoolean("player_auto_immerse", true))
     val autoImmerseEnabled: StateFlow<Boolean> = _autoImmerseEnabled
 
     fun setAutoImmerseEnabled(enabled: Boolean) {
