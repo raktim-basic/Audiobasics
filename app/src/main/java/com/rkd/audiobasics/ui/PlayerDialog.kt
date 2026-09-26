@@ -95,6 +95,7 @@ fun PlayerDialog(
     val tempoPitchSpeed by vm.currentSpeed.collectAsState()
     val tempoPitchPitch by vm.currentPitch.collectAsState()
     val newPlayerDesign by vm.newPlayerDesign.collectAsState()
+    val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
 
     // Immersive mode (new player design only): tapping the open artwork surface hides every
     // control except a small corner pause button and brings the art up to full brightness;
@@ -138,6 +139,20 @@ fun PlayerDialog(
     // back always lands on the full-controls view rather than resuming hidden mid-flip.
     LaunchedEffect(currentFace) {
         if (currentFace != PlayerFace.PLAYER) isImmersive = false
+    }
+
+    // Auto-immerse (new player design + setting on): 4s after playback is running (and we're
+    // sat on the Player face, not already immersive), hide controls automatically. Keyed on
+    // everything that should restart or cancel the wait — pausing, leaving Player, or the
+    // setting being off all cancel it via a key change (LaunchedEffect cancels+restarts its
+    // block whenever any key differs), so there's no separate cancel logic needed here.
+    LaunchedEffect(newPlayerDesign, autoImmerseEnabled, isPlaying, currentFace, isImmersive) {
+        if (newPlayerDesign && autoImmerseEnabled && isPlaying &&
+            currentFace == PlayerFace.PLAYER && !isImmersive
+        ) {
+            kotlinx.coroutines.delay(4000)
+            isImmersive = true
+        }
     }
 
     suspend fun flipTo(target: Float) {
@@ -956,6 +971,12 @@ private fun PlayerFrontContentV2(
         label = "playerV2ScrimAlpha"
     )
 
+    // Play/pause buttons (both the normal-mode pill and the immersive corner button) follow
+    // the app theme rather than being hardcoded white — same colors the classic player's own
+    // button uses, so switching System/Light/Dark still looks intentional here.
+    val buttonBg = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
+    val buttonFg = if (isDarkMode) Color.White else Color.Black
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Art — always full brightness itself; the scrim on top is what dims it.
         val cachedThumbPath = remember(song?.id) {
@@ -978,10 +999,10 @@ private fun PlayerFrontContentV2(
                 .background(
                     androidx.compose.ui.graphics.Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.80f),
-                            Color.Black.copy(alpha = 0.45f),
-                            Color.Black.copy(alpha = 0.45f),
-                            Color.Black.copy(alpha = 0.85f)
+                            Color.Black.copy(alpha = 0.92f),
+                            Color.Black.copy(alpha = 0.65f),
+                            Color.Black.copy(alpha = 0.65f),
+                            Color.Black.copy(alpha = 0.95f)
                         )
                     )
                 )
@@ -1153,7 +1174,7 @@ private fun PlayerFrontContentV2(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color.White)
+                            .background(buttonBg)
                             .clickable {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 vm.togglePlayPause()
@@ -1162,13 +1183,13 @@ private fun PlayerFrontContentV2(
                         contentAlignment = Alignment.Center
                     ) {
                         if (isLoading) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.Black)
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = buttonFg)
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = if (isPlaying) "Pause" else "Play",
-                                    tint = Color.Black,
+                                    tint = buttonFg,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(Modifier.width(6.dp))
@@ -1177,7 +1198,7 @@ private fun PlayerFrontContentV2(
                                     fontFamily = NothingFont,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp,
-                                    color = Color.Black
+                                    color = buttonFg
                                 )
                             }
                         }
@@ -1241,6 +1262,10 @@ private fun PlayerFrontContentV2(
         }
 
         // ── Immersive-state pause button (bottom-right corner of the card) ─────
+        // Tapping it toggles play/pause AND returns to normal (full-controls) mode — it
+        // doesn't just play/pause in place. Opaque, theme-colored (not the old translucent
+        // black/white), but stays this same small size rather than growing to match the
+        // normal-mode pill.
         androidx.compose.animation.AnimatedVisibility(
             visible = isImmersive,
             enter = androidx.compose.animation.fadeIn(tween(IMMERSIVE_FADE_MS)),
@@ -1252,20 +1277,21 @@ private fun PlayerFrontContentV2(
                     .padding(14.dp)
                     .size(44.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(Color.Black.copy(alpha = 0.45f))
+                    .background(buttonBg)
                     .clickable {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.togglePlayPause()
+                        onToggleImmersive()
                     },
                 contentAlignment = Alignment.Center
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = buttonFg)
                 } else {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.White,
+                        tint = buttonFg,
                         modifier = Modifier.size(22.dp)
                     )
                 }
