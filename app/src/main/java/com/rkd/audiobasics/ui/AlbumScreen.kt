@@ -709,7 +709,7 @@ fun AlbumSongRow(
                     text = song.artist,
                     fontFamily = NothingFont,
                     fontSize = 12.sp,
-                    color = subTextColor,
+                    color = if (isPlaying) Color(0xFFFF8A80) else subTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
