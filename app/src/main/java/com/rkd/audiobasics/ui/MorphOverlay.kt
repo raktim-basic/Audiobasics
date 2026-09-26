@@ -328,6 +328,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val progress = remember { Animatable(0f) }
     val geometry = remember { MorphGeometry() }
     val systemBars = WindowInsets.systemBars
+    val imeInsets = WindowInsets.ime
     val containerColor = entry.containerColor.takeOrElse { MaterialTheme.colorScheme.surface }
     val isAnchored = entry.placement == MorphPlacement.Anchored
     val isDarkTheme = isSystemInDarkTheme()
@@ -390,7 +391,13 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
             val areaL = systemBars.getLeft(this, layoutDirection) + margin
             val areaR = max(areaL, screenW - systemBars.getRight(this, layoutDirection) - margin)
             val areaT = systemBars.getTop(this) + margin
-            val areaB = max(areaT, screenH - systemBars.getBottom(this) - margin)
+            // Bottom of the placement area backs off for whichever is taller — the nav bar or
+            // an open keyboard — so a Center-placed dialog (the create-playlist name field,
+            // for instance) re-centers itself above the keyboard instead of being covered by
+            // it. WindowInsets.ime is read here (not hoisted) so this recomputes on every
+            // keyboard show/hide, the same as it already does for rotation via systemBars.
+            val bottomInset = max(systemBars.getBottom(this), imeInsets.getBottom(this))
+            val areaB = max(areaT, screenH - bottomInset - margin)
             val areaW = areaR - areaL
             val areaH = areaB - areaT
 
