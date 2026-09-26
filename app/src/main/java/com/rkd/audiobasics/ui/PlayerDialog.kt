@@ -141,7 +141,7 @@ fun PlayerDialog(
         if (currentFace != PlayerFace.PLAYER) isImmersive = false
     }
 
-    // Auto-immerse (new player design + setting on): 4s after playback is running (and we're
+    // Auto-immerse (new player design + setting on): 3s after playback is running (and we're
     // sat on the Player face, not already immersive), hide controls automatically. Keyed on
     // everything that should restart or cancel the wait — pausing, leaving Player, or the
     // setting being off all cancel it via a key change (LaunchedEffect cancels+restarts its
@@ -150,7 +150,7 @@ fun PlayerDialog(
         if (newPlayerDesign && autoImmerseEnabled && isPlaying &&
             currentFace == PlayerFace.PLAYER && !isImmersive
         ) {
-            kotlinx.coroutines.delay(4000)
+            kotlinx.coroutines.delay(3000)
             isImmersive = true
         }
     }
@@ -764,7 +764,7 @@ private fun PlayerFrontContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(surfaceColor)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 24.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
