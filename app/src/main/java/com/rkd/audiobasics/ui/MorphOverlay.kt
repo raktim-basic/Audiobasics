@@ -254,9 +254,18 @@ fun MorphPopup(
  */
 @Composable
 fun MorphOverlayHost(state: MorphOverlayState) {
-    for (entry in state.entries) {
+    val entries = state.entries
+    for (i in entries.indices) {
+        val entry = entries[i]
         key(entry) {
-            MorphContainer(entry = entry, state = state)
+            val above = entries.subList(i + 1, entries.size)
+            MonochromeLayer(
+                active = above.isNotEmpty(),
+                highlights = above.mapNotNull { it.highlightBounds },
+                modifier = Modifier.fillMaxSize()
+            ) {
+                MorphContainer(entry = entry, state = state)
+            }
         }
     }
 }
@@ -648,12 +657,32 @@ fun MonochromeExcept(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val active = overlay.entries.isNotEmpty()
-    val highlights = overlay.highlightBoundsList
+    MonochromeLayer(
+        active = overlay.entries.isNotEmpty(),
+        highlights = overlay.highlightBoundsList,
+        modifier = modifier,
+        content = content
+    )
+}
+
+/**
+ * The actual desaturate-except-[highlights] effect, parameterized so it can wrap either the
+ * root screen content ([MonochromeExcept], "active" = any popup open at all) or a single popup
+ * inside [MorphOverlayHost] ("active" = something else is stacked on top of *that* popup) —
+ * every layer in the stack goes monochrome as soon as anything opens above it, the same rule
+ * applied uniformly instead of only ever being applied once at the root.
+ */
+@Composable
+private fun MonochromeLayer(
+    active: Boolean,
+    highlights: List<Rect>,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
     // Animated 0f..1f rather than an instant on/off switch, in both directions: ramps up to
-    // monochrome as soon as any popup opens, and eases back to full color once the last one
-    // has fully closed (entries stay in the list for the whole time a popup is playing its own
-    // closing animation, so `active` stays true until that finishes).
+    // monochrome as soon as [active] flips true, and eases back to full color once it flips
+    // back false (entries stay in the overlay's list for the whole time a popup is playing its
+    // own closing animation, so callers' `active` naturally stays true until that finishes).
     val amount by animateFloatAsState(
         targetValue = if (active) 1f else 0f,
         animationSpec = tween(durationMillis = 500),
