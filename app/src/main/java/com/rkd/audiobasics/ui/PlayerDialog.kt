@@ -77,7 +77,7 @@ fun PlayerDialog(
     onDismiss: () -> Unit,
     onNavigateQueue: () -> Unit,
     onNavigateArtist: (String, String?) -> Unit,
-    onNavigateAlbum: (String) -> Unit
+    onNavigateAlbum: (query: String, expectedTitle: String, expectedArtist: String) -> Unit
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -428,9 +428,9 @@ fun PlayerDialog(
                                     onDismiss()
                                     onNavigateArtist(artistName, artistId)
                                 },
-                                onAlbumClick = { albumTitle ->
+                                onAlbumClick = { query, expectedTitle, expectedArtist ->
                                     onDismiss()
-                                    onNavigateAlbum(albumTitle)
+                                    onNavigateAlbum(query, expectedTitle, expectedArtist)
                                 }
                             )
                         }
