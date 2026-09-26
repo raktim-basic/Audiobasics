@@ -463,9 +463,13 @@ private fun LibraryRow(
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+    // Bounds of the whole row — used only so the 3-dot menu can keep this row in color while
+    // the rest of the list goes monochrome (see MorphOverlay's MonochromeExcept). The menu
+    // itself still grows from the icon (menuAnchor below), this is a separate, wider rect.
+    val rowAnchor = rememberMorphAnchor()
 
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().morphAnchor(rowAnchor).clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -501,7 +505,11 @@ private fun LibraryRow(
             IconButton(
                 onClick = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    overlay.show(anchor = menuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                    overlay.show(
+                        anchor = menuAnchor.bounds(),
+                        placement = MorphPlacement.Anchored,
+                        highlightBounds = rowAnchor.bounds()
+                    ) { close ->
                         MorphMenuColumn {
                             MorphMenuItem(
                                 text = "Rename",
