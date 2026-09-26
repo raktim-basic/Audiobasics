@@ -718,13 +718,14 @@ private fun PlayerFrontContent(
 
             Box(
                 modifier = Modifier
+                    .width(140.dp)
+                    .height(48.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(surfaceColor)
                     .clickable {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.togglePlayPause()
-                    }
-                    .padding(horizontal = 32.dp, vertical = 14.dp),
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 if (isLoading) {
@@ -1073,6 +1074,10 @@ private fun PlayerFrontContentV2(
                 Spacer(Modifier.weight(1f))
 
                 // ── Title / artist ────────────────────────
+                // Title gets a fixed height sized for 2 lines (regardless of whether this
+                // particular title needs 1 or 2), so switching to a shorter/longer title
+                // doesn't nudge the progress bar/controls/bottom bar below it — those stay
+                // at a fixed position rather than reflowing per-song.
                 Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                     Text(
                         text = song?.title ?: "Song Name",
@@ -1081,7 +1086,8 @@ private fun PlayerFrontContentV2(
                         fontSize = 24.sp,
                         color = Color.White,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().height(66.dp)
                     )
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1182,13 +1188,14 @@ private fun PlayerFrontContentV2(
 
                     Box(
                         modifier = Modifier
+                            .width(140.dp)
+                            .height(48.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(buttonBg)
                             .clickable {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 vm.togglePlayPause()
-                            }
-                            .padding(horizontal = 32.dp, vertical = 14.dp),
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         if (isLoading) {
