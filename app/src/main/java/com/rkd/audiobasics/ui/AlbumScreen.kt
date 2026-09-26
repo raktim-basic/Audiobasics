@@ -271,12 +271,6 @@ fun AlbumScreen(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            Text(
-                                text = "(Album) ",
-                                fontFamily = NothingFont,
-                                fontSize = 14.sp,
-                                color = subTextColor
-                            )
                             artistList.forEachIndexed { i, artist ->
                                 Text(
                                     text = buildAnnotatedString {
