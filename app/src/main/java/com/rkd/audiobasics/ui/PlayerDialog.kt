@@ -978,16 +978,25 @@ private fun PlayerFrontContentV2(
     val buttonFg = if (isDarkMode) Color.White else Color.Black
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Art — always full brightness itself; the scrim on top is what dims it.
+        // Art — always full brightness itself; the scrim on top is what dims it. Crossfades
+        // between songs (keyed on song id, since the model itself — a cache path or a remote
+        // URL — can differ for the same song across recompositions) instead of the image
+        // snapping straight to the next cover.
         val cachedThumbPath = remember(song?.id) {
             song?.id?.let { com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, it) }
         }
-        AsyncImage(
-            model = cachedThumbPath ?: song?.thumbnail,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
+        androidx.compose.animation.Crossfade(
+            targetState = song?.id to (cachedThumbPath ?: song?.thumbnail),
+            animationSpec = tween(IMMERSIVE_FADE_MS),
+            label = "playerV2ArtCrossfade"
+        ) { (_, model) ->
+            AsyncImage(
+                model = model,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
 
         // Scrim: near-black at top/bottom for the icon row and text/controls, lighter in the
         // middle so the art still reads through even in normal (non-immersive) state. Fades
