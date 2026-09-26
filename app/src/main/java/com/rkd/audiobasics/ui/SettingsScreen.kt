@@ -649,7 +649,7 @@ private fun AppearancePage(
                     color = textColor
                 )
                 Text(
-                    text = "New player only — hides controls 4s after playback starts.",
+                    text = "New player only — hides controls 3s after playback starts.",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Normal,
                     fontSize = 12.sp,
