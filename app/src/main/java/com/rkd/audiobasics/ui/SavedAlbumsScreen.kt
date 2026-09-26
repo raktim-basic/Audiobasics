@@ -343,7 +343,7 @@ fun AlbumItem(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "(Album) ${album.artist}",
+                text = album.artist,
                 fontFamily = NothingFont,
                 fontSize = 12.sp,
                 color = subTextColor,
