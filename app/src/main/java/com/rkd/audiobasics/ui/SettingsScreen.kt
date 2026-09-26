@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
@@ -451,6 +452,7 @@ private fun AppearancePage(
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val themeMode by vm.themeMode.collectAsState()
+    val newPlayerDesign by vm.newPlayerDesign.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Row(
@@ -538,6 +540,78 @@ private fun AppearancePage(
                     }
                 }
             }
+        }
+
+        Box(
+            modifier = Modifier.fillMaxWidth().height(1.dp)
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 20.dp, vertical = 14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = "Player design",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                val playerDesignOptions = listOf(false to "Classic", true to "New")
+                playerDesignOptions.forEach { (value, label) ->
+                    val isSelected = newPlayerDesign == value
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) Color.Red else Color.Transparent)
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                vm.setNewPlayerDesign(value)
+                            }
+                            .padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = label,
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = if (isSelected) Color.White else textColor
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "New: full-art player with an immersive tap-to-hide-controls mode.",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Normal,
+                fontSize = 12.sp,
+                color = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
+            )
         }
 
         Spacer(Modifier.weight(1f))
