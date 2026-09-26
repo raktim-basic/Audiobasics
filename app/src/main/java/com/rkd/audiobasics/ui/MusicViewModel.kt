@@ -271,6 +271,18 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("new_player_design", enabled).apply()
     }
 
+    // Auto-immerse (new player design only): while playback is running, the player face
+    // automatically hides its controls 4s after entering/staying on the Player face; it does
+    // not trigger while paused. See PlayerDialog's own LaunchedEffect for the timer itself —
+    // this is just the persisted on/off switch, same pattern as newPlayerDesign above.
+    private val _autoImmerseEnabled = MutableStateFlow(prefs.getBoolean("player_auto_immerse", false))
+    val autoImmerseEnabled: StateFlow<Boolean> = _autoImmerseEnabled
+
+    fun setAutoImmerseEnabled(enabled: Boolean) {
+        _autoImmerseEnabled.value = enabled
+        prefs.edit().putBoolean("player_auto_immerse", enabled).apply()
+    }
+
     // ── Tempo / Pitch ────────────────────────────────────────────────────
     // Temporary dev-tools-only toggle (see MusicViewModel.toggleTempoPitchApplyToAll):
     // per-song is the default, global applies one speed/pitch to everything.
