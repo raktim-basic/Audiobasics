@@ -94,6 +94,14 @@ fun PlayerDialog(
     val repeatMode by vm.repeatMode.collectAsState()
     val tempoPitchSpeed by vm.currentSpeed.collectAsState()
     val tempoPitchPitch by vm.currentPitch.collectAsState()
+    val newPlayerDesign by vm.newPlayerDesign.collectAsState()
+
+    // Immersive mode (new player design only): tapping the open artwork surface hides every
+    // control except a small corner pause button and brings the art up to full brightness;
+    // tapping again brings controls back. Lives here (not inside PlayerFrontContentV2) so it
+    // resets to false whenever the dialog is recomposed fresh, and so a face-flip away from
+    // Player doesn't need to know about it.
+    var isImmersive by remember { mutableStateOf(false) }
 
     var showAddToSheet by remember { mutableStateOf(false) }
     var showCreatePlaylist by remember { mutableStateOf(false) }
@@ -125,6 +133,12 @@ fun PlayerDialog(
     val scope = rememberCoroutineScope()
     var cardWidthPx by remember { mutableIntStateOf(1) }
     val currentFace = faceFor(rotationValue)
+
+    // Leaving the Player face (flip to Lyrics/Info) always drops immersive mode, so flipping
+    // back always lands on the full-controls view rather than resuming hidden mid-flip.
+    LaunchedEffect(currentFace) {
+        if (currentFace != PlayerFace.PLAYER) isImmersive = false
+    }
 
     suspend fun flipTo(target: Float) {
         settleRotation.animateTo(target, tween(FLIP_DURATION_MS, easing = FastOutSlowInEasing))
@@ -308,35 +322,66 @@ fun PlayerDialog(
             ) {
                 when (currentFace) {
                     PlayerFace.PLAYER -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        PlayerFrontContent(
-                            vm = vm,
-                            context = context,
-                            hapticsEnabled = hapticsEnabled,
-                            song = song,
-                            isPlaying = isPlaying,
-                            isLoading = isLoading,
-                            position = position,
-                            duration = duration,
-                            isDarkMode = isDarkMode,
-                            textColor = textColor,
-                            surfaceColor = surfaceColor,
-                            subTextColor = subTextColor,
-                            dragPosition = dragPosition,
-                            onDragPositionChange = { dragPosition = it },
-                            sleepTimerMode = sleepTimerMode,
-                            sleepTimerRemaining = sleepTimerRemaining,
-                            repeatMode = repeatMode,
-                            tempoPitchSpeed = tempoPitchSpeed,
-                            tempoPitchPitch = tempoPitchPitch,
-                            onDismiss = onDismiss,
-                            onNavigateQueue = onNavigateQueue,
-                            onShowInfo = { scope.launch { flipTo(180f) } },
-                            onShowLyrics = { scope.launch { flipTo(-180f) } },
-                            onShowAddToSheet = { showAddToSheet = true },
-                            onShowShareChoice = { showShareChoice = true },
-                            onShowSleepDialog = { showSleepDialog = true },
-                            onShowTempoPitchDialog = { showTempoPitchDialog = true }
-                        )
+                        if (newPlayerDesign) {
+                            PlayerFrontContentV2(
+                                vm = vm,
+                                context = context,
+                                hapticsEnabled = hapticsEnabled,
+                                song = song,
+                                isPlaying = isPlaying,
+                                isLoading = isLoading,
+                                position = position,
+                                duration = duration,
+                                isDarkMode = isDarkMode,
+                                dragPosition = dragPosition,
+                                onDragPositionChange = { dragPosition = it },
+                                isImmersive = isImmersive,
+                                onToggleImmersive = { isImmersive = !isImmersive },
+                                onDismiss = onDismiss,
+                                onNavigateQueue = onNavigateQueue,
+                                onShowInfo = { scope.launch { flipTo(180f) } },
+                                onShowLyrics = { scope.launch { flipTo(-180f) } },
+                                onShowAddToSheet = { showAddToSheet = true },
+                                onShowShareChoice = { showShareChoice = true },
+                                onShowSleepDialog = { showSleepDialog = true },
+                                onShowTempoPitchDialog = { showTempoPitchDialog = true },
+                                sleepTimerMode = sleepTimerMode,
+                                sleepTimerRemaining = sleepTimerRemaining,
+                                repeatMode = repeatMode,
+                                tempoPitchSpeed = tempoPitchSpeed,
+                                tempoPitchPitch = tempoPitchPitch
+                            )
+                        } else {
+                            PlayerFrontContent(
+                                vm = vm,
+                                context = context,
+                                hapticsEnabled = hapticsEnabled,
+                                song = song,
+                                isPlaying = isPlaying,
+                                isLoading = isLoading,
+                                position = position,
+                                duration = duration,
+                                isDarkMode = isDarkMode,
+                                textColor = textColor,
+                                surfaceColor = surfaceColor,
+                                subTextColor = subTextColor,
+                                dragPosition = dragPosition,
+                                onDragPositionChange = { dragPosition = it },
+                                sleepTimerMode = sleepTimerMode,
+                                sleepTimerRemaining = sleepTimerRemaining,
+                                repeatMode = repeatMode,
+                                tempoPitchSpeed = tempoPitchSpeed,
+                                tempoPitchPitch = tempoPitchPitch,
+                                onDismiss = onDismiss,
+                                onNavigateQueue = onNavigateQueue,
+                                onShowInfo = { scope.launch { flipTo(180f) } },
+                                onShowLyrics = { scope.launch { flipTo(-180f) } },
+                                onShowAddToSheet = { showAddToSheet = true },
+                                onShowShareChoice = { showShareChoice = true },
+                                onShowSleepDialog = { showSleepDialog = true },
+                                onShowTempoPitchDialog = { showTempoPitchDialog = true }
+                            )
+                        }
                     }
                     PlayerFace.LYRICS -> Box(
                         modifier = Modifier
@@ -730,97 +775,500 @@ private fun PlayerFrontContent(
             )
 
             // 3-dot dropdown
-            val overlay = LocalMorphOverlay.current
-            val threeDotAnchor = rememberMorphAnchor()
-            IconButton(
-                onClick = {
+            PlayerOverflowMenuButton(
+                vm = vm,
+                context = context,
+                hapticsEnabled = hapticsEnabled,
+                song = song,
+                sleepTimerMode = sleepTimerMode,
+                sleepTimerRemaining = sleepTimerRemaining,
+                tempoPitchSpeed = tempoPitchSpeed,
+                tempoPitchPitch = tempoPitchPitch,
+                iconTint = textColor,
+                onDismiss = onDismiss,
+                onNavigateQueue = onNavigateQueue,
+                onShowShareChoice = onShowShareChoice,
+                onShowSleepDialog = onShowSleepDialog,
+                onShowTempoPitchDialog = onShowTempoPitchDialog
+            )
+        }
+    }
+}
+
+/**
+ * The player's overflow (⋮) menu — Share/Queue/Sleep timer/Tempo & Pitch/Repeat. Shared by
+ * both the classic and the new (V2) player face so the menu itself only exists once.
+ */
+@Composable
+private fun PlayerOverflowMenuButton(
+    vm: MusicViewModel,
+    context: android.content.Context,
+    hapticsEnabled: Boolean,
+    song: com.rkd.audiobasics.data.Song?,
+    sleepTimerMode: Int,
+    sleepTimerRemaining: Long,
+    tempoPitchSpeed: Float,
+    tempoPitchPitch: Int,
+    iconTint: Color,
+    onDismiss: () -> Unit,
+    onNavigateQueue: () -> Unit,
+    onShowShareChoice: () -> Unit,
+    onShowSleepDialog: () -> Unit,
+    onShowTempoPitchDialog: () -> Unit
+) {
+    val overlay = LocalMorphOverlay.current
+    val threeDotAnchor = rememberMorphAnchor()
+    IconButton(
+        onClick = {
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+            overlay.show(anchor = threeDotAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                // Shadows the outer repeatMode param: repeat toggling deliberately keeps
+                // this menu open for repeated taps (see below), so unlike every other
+                // item here it needs to reflect changes made after the menu was opened,
+                // not just the value that was current the moment it was opened.
+                val repeatMode by vm.repeatMode.collectAsState()
+                MorphMenuColumn {
+                    MorphMenuItem(
+                        text = "Share",
+                        leadingIcon = Icons.Default.Share,
+                        onClick = {
+                            close()
+                            song?.let { s ->
+                                if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                    onShowShareChoice()
+                                } else {
+                                    AudiobasicsLinks.shareText(
+                                        context, AudiobasicsLinks.songLink(s.id), "Share song"
+                                    )
+                                }
+                            }
+                        }
+                    )
+                    MorphMenuItem(
+                        text = "Queue",
+                        leadingIcon = Icons.Default.QueueMusic,
+                        onClick = {
+                            close()
+                            onDismiss()
+                            onNavigateQueue()
+                        }
+                    )
+                    MorphMenuItem(
+                        text = when (sleepTimerMode) {
+                            MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "End of the song"
+                            MusicViewModel.SLEEP_TIMER_CUSTOM -> formatCountdown(sleepTimerRemaining)
+                            else -> "Sleep timer"
+                        },
+                        leadingIcon = Icons.Default.Bedtime,
+                        iconTint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
+                        textColor = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
+                        onClick = {
+                            close()
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            if (song == null) {
+                                Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
+                            } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
+                                vm.cancelSleepTimer()
+                            } else {
+                                onShowSleepDialog()
+                            }
+                        }
+                    )
+                    MorphMenuItem(
+                        text = "Tempo and Pitch",
+                        leadingIcon = Icons.Default.Speed,
+                        iconTint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
+                        textColor = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
+                        onClick = {
+                            close()
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onShowTempoPitchDialog()
+                        }
+                    )
+                    MorphMenuItem(
+                        text = when (repeatMode) {
+                            1 -> "Repeat list"
+                            2 -> "Repeat one"
+                            else -> "Repeat off"
+                        },
+                        leadingIcon = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                        iconTint = if (repeatMode == 0) Color.Unspecified else Color.Red,
+                        textColor = if (repeatMode == 0) Color.Unspecified else Color.Red,
+                        onClick = {
+                            // Matches the old menu: toggling repeat does NOT close the
+                            // menu, so tapping repeatedly cycles through its modes.
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            vm.toggleRepeatMode()
+                        }
+                    )
+                }
+            }
+        },
+        modifier = Modifier.morphAnchor(threeDotAnchor)
+    ) {
+        Icon(Icons.Default.MoreVert, contentDescription = "More", tint = iconTint, modifier = Modifier.size(26.dp))
+    }
+}
+
+// ── New (V2) player face ───────────────────────────────────────────────────────
+// Art-first design: full-bleed album art is the card's background at all times: a dark
+// scrim sits over it so controls stay legible (normal state), or drops away for a fully-
+// bright, uncluttered view of the art (immersive state). Tapping the open art surface
+// (anywhere that isn't a button) toggles between the two; the only control kept on-screen
+// while immersive is a small pause button in the card's bottom-right corner, per the
+// agreed design. All colors here are fixed for legibility over art rather than following
+// isDarkMode — this face always renders as if "dark", regardless of the app theme.
+
+private const val IMMERSIVE_FADE_MS = 260
+
+@Composable
+private fun PlayerFrontContentV2(
+    vm: MusicViewModel,
+    context: android.content.Context,
+    hapticsEnabled: Boolean,
+    song: com.rkd.audiobasics.data.Song?,
+    isPlaying: Boolean,
+    isLoading: Boolean,
+    position: Long,
+    duration: Long,
+    isDarkMode: Boolean,
+    dragPosition: Long?,
+    onDragPositionChange: (Long?) -> Unit,
+    isImmersive: Boolean,
+    onToggleImmersive: () -> Unit,
+    sleepTimerMode: Int,
+    sleepTimerRemaining: Long,
+    repeatMode: Int,
+    tempoPitchSpeed: Float,
+    tempoPitchPitch: Int,
+    onDismiss: () -> Unit,
+    onNavigateQueue: () -> Unit,
+    onShowInfo: () -> Unit,
+    onShowLyrics: () -> Unit,
+    onShowAddToSheet: () -> Unit,
+    onShowShareChoice: () -> Unit,
+    onShowSleepDialog: () -> Unit,
+    onShowTempoPitchDialog: () -> Unit
+) {
+    val scrimAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isImmersive) 0f else 1f,
+        animationSpec = tween(IMMERSIVE_FADE_MS),
+        label = "playerV2ScrimAlpha"
+    )
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Art — always full brightness itself; the scrim on top is what dims it.
+        val cachedThumbPath = remember(song?.id) {
+            song?.id?.let { com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, it) }
+        }
+        AsyncImage(
+            model = cachedThumbPath ?: song?.thumbnail,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+
+        // Scrim: near-black at top/bottom for the icon row and text/controls, lighter in the
+        // middle so the art still reads through even in normal (non-immersive) state. Fades
+        // out entirely (alpha 0) in immersive state.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = scrimAlpha }
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.55f),
+                            Color.Black.copy(alpha = 0.15f),
+                            Color.Black.copy(alpha = 0.15f),
+                            Color.Black.copy(alpha = 0.65f)
+                        )
+                    )
+                )
+        )
+
+        // Tap-to-toggle-immersive on the open surface. Sits below the controls (composed
+        // first, so buttons/text drawn after it get first claim on a tap at their bounds)
+        // and above the art/scrim. A plain no-op-look clickable — same "block/allow through"
+        // pattern already used on the outer card to swallow taps without fighting the
+        // flip-card's own horizontal-drag detector on the parent Box.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    overlay.show(anchor = threeDotAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
-                        // Shadows the outer repeatMode param: repeat toggling deliberately keeps
-                        // this menu open for repeated taps (see below), so unlike every other
-                        // item here it needs to reflect changes made after the menu was opened,
-                        // not just the value that was current the moment it was opened.
-                        val repeatMode by vm.repeatMode.collectAsState()
-                        MorphMenuColumn {
-                            MorphMenuItem(
-                                text = "Share",
-                                leadingIcon = Icons.Default.Share,
-                                onClick = {
-                                    close()
-                                    song?.let { s ->
-                                        if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
-                                            onShowShareChoice()
-                                        } else {
-                                            AudiobasicsLinks.shareText(
-                                                context, AudiobasicsLinks.songLink(s.id), "Share song"
-                                            )
-                                        }
-                                    }
-                                }
-                            )
-                            MorphMenuItem(
-                                text = "Queue",
-                                leadingIcon = Icons.Default.QueueMusic,
-                                onClick = {
-                                    close()
-                                    onDismiss()
-                                    onNavigateQueue()
-                                }
-                            )
-                            MorphMenuItem(
-                                text = when (sleepTimerMode) {
-                                    MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "End of the song"
-                                    MusicViewModel.SLEEP_TIMER_CUSTOM -> formatCountdown(sleepTimerRemaining)
-                                    else -> "Sleep timer"
-                                },
-                                leadingIcon = Icons.Default.Bedtime,
-                                iconTint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
-                                textColor = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
-                                onClick = {
-                                    close()
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    if (song == null) {
-                                        Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
-                                    } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
-                                        vm.cancelSleepTimer()
-                                    } else {
-                                        onShowSleepDialog()
-                                    }
-                                }
-                            )
-                            MorphMenuItem(
-                                text = "Tempo and Pitch",
-                                leadingIcon = Icons.Default.Speed,
-                                iconTint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
-                                textColor = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
-                                onClick = {
-                                    close()
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    onShowTempoPitchDialog()
-                                }
-                            )
-                            MorphMenuItem(
-                                text = when (repeatMode) {
-                                    1 -> "Repeat list"
-                                    2 -> "Repeat one"
-                                    else -> "Repeat off"
-                                },
-                                leadingIcon = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                                iconTint = if (repeatMode == 0) Color.Unspecified else Color.Red,
-                                textColor = if (repeatMode == 0) Color.Unspecified else Color.Red,
-                                onClick = {
-                                    // Matches the old menu: toggling repeat does NOT close the
-                                    // menu, so tapping repeatedly cycles through its modes.
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    vm.toggleRepeatMode()
-                                }
-                            )
+                    onToggleImmersive()
+                }
+        )
+
+        // ── Full controls (normal state) ─────────────────────────────
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !isImmersive,
+            enter = androidx.compose.animation.fadeIn(tween(IMMERSIVE_FADE_MS)),
+            exit = androidx.compose.animation.fadeOut(tween(IMMERSIVE_FADE_MS)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // ── Top bar ─────────────────────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onShowInfo()
+                    }) {
+                        Icon(Icons.Default.Info, contentDescription = "Song info", tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onDismiss()
+                    }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                // ── Title / artist ────────────────────────
+                Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    Text(
+                        text = song?.title ?: "Song Name",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (song?.isExplicit == true) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(Color.White.copy(alpha = 0.25f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "E",
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.sp,
+                                    color = Color.White
+                                )
+                            }
+                            Spacer(Modifier.width(5.dp))
+                        }
+                        Text(
+                            text = song?.artist ?: "Artist",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 15.sp,
+                            color = Color.White.copy(alpha = 0.75f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+
+                // ── Progress bar ──────────────────────────
+                val displayPosition = dragPosition ?: position
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatTime(displayPosition),
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier.weight(1f).height(20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        DashedProgressBar(
+                            progress = if (duration > 0) position.toFloat() / duration.toFloat() else 0f,
+                            onSeek = { seekProgress ->
+                                val newPos = (seekProgress * duration).toLong()
+                                vm.seekTo(newPos)
+                                onDragPositionChange(null)
+                            },
+                            onDragging = { dragProgress ->
+                                onDragPositionChange((dragProgress * duration).toLong())
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            unfilledColorOverride = Color.White.copy(alpha = 0.35f)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = formatTime(duration),
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // ── Playback controls ─────────────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.skipToPrevious()
+                    }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.White)
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                vm.togglePlayPause()
+                            }
+                            .padding(horizontal = 32.dp, vertical = 14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.Black)
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = if (isPlaying) "Pause" else "Play",
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = Color.Black
+                                )
+                            }
                         }
                     }
-                },
-                modifier = Modifier.morphAnchor(threeDotAnchor)
+
+                    IconButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.skipToNext()
+                    }) {
+                        Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // ── Bottom bar ─────────────────────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onShowAddToSheet()
+                    }) {
+                        Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = Color.White, modifier = Modifier.size(26.dp))
+                    }
+
+                    Text(
+                        text = "LYRICS",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.White,
+                        modifier = Modifier.clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onShowLyrics()
+                        }
+                    )
+
+                    PlayerOverflowMenuButton(
+                        vm = vm,
+                        context = context,
+                        hapticsEnabled = hapticsEnabled,
+                        song = song,
+                        sleepTimerMode = sleepTimerMode,
+                        sleepTimerRemaining = sleepTimerRemaining,
+                        tempoPitchSpeed = tempoPitchSpeed,
+                        tempoPitchPitch = tempoPitchPitch,
+                        iconTint = Color.White,
+                        onDismiss = onDismiss,
+                        onNavigateQueue = onNavigateQueue,
+                        onShowShareChoice = onShowShareChoice,
+                        onShowSleepDialog = onShowSleepDialog,
+                        onShowTempoPitchDialog = onShowTempoPitchDialog
+                    )
+                }
+            }
+        }
+
+        // ── Immersive-state pause button (bottom-right corner of the card) ─────
+        androidx.compose.animation.AnimatedVisibility(
+            visible = isImmersive,
+            enter = androidx.compose.animation.fadeIn(tween(IMMERSIVE_FADE_MS)),
+            exit = androidx.compose.animation.fadeOut(tween(IMMERSIVE_FADE_MS)),
+            modifier = Modifier.align(Alignment.BottomEnd)
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(14.dp)
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.togglePlayPause()
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor, modifier = Modifier.size(26.dp))
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                } else {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
     }
@@ -834,7 +1282,10 @@ fun DashedProgressBar(
     modifier: Modifier = Modifier,
     hapticsEnabled: Boolean,
     context: android.content.Context,
-    isDarkMode: Boolean = true
+    isDarkMode: Boolean = true,
+    // Lets a face that sits on top of album art (V2's Player face) pass a legible unfilled-dash
+    // color instead of the normal dark/light-theme one, which is invisible over a photo.
+    unfilledColorOverride: Color? = null
 ) {
     val totalDashes = 30
     var barWidthPx by remember { mutableStateOf(0f) }
@@ -851,7 +1302,7 @@ fun DashedProgressBar(
         }
     }
 
-    val unfilledColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFBDBDBD)
+    val unfilledColor = unfilledColorOverride ?: if (isDarkMode) Color(0xFF333333) else Color(0xFFBDBDBD)
 
     Row(
         modifier = modifier
