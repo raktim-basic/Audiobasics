@@ -39,7 +39,15 @@ data class AlbumDetailKey(val album: Album) : NavKey
 data class ArtistDetailKey(val artistName: String, val artistBrowseId: String = "") : NavKey
 
 @Serializable
-data class SearchAlbumsKey(val query: String) : NavKey
+data class SearchAlbumsKey(
+    val query: String,
+    // When this search was triggered by tapping an album from Song Info, these carry the
+    // song's own album title/artist so SearchAlbumsScreen can auto-open a confident first-result
+    // match instead of always showing the results list. Blank for every other entry point
+    // (Search tab's Albums search, etc.), which disables the auto-match check entirely.
+    val expectedTitle: String = "",
+    val expectedArtist: String = ""
+) : NavKey
 
 @Serializable
 data class SearchArtistsKey(val query: String) : NavKey
