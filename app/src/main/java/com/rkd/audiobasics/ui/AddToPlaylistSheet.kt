@@ -141,7 +141,7 @@ fun AddToPlaylistSheet(
                     onCreateNew()
                 }) {
                     Text(
-                        "Create a new playlist",
+                        "+ New playlist",
                         fontFamily = NothingFont,
                         color = textColor,
                         fontSize = 14.sp
