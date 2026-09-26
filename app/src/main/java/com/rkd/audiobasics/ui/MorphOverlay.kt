@@ -153,6 +153,10 @@ class MorphOverlayState {
      * that already draws its own full surface — background, shape, corners — at its own size.
      * Without this, MorphSurface's container paints a second, differently-sized rectangle
      * behind that content, which is easy to mistake for "the card" not animating/rotating.
+     * It also skips the reveal clip once fully open (still applied during the brief open/close
+     * transition, for the scale-in/out look) — a 3D-rotated child's rendered pixels can bulge
+     * slightly past its own flat layout bounds on the near side, and that clip is sized to
+     * those flat bounds, so leaving it on all the time clips off that bulge as flat-cut corners.
      */
     fun show(
         anchor: Rect?,
@@ -507,11 +511,15 @@ private fun MorphSurface(
                     )
                 }
 
-                val reveal = Path().apply {
-                    addRoundRect(RoundRect(frame.rect, CornerRadius(frame.radius)))
-                }
-                clipPath(reveal) {
+                if (entry.bare && p >= 1f) {
                     this@drawWithContent.drawContent()
+                } else {
+                    val reveal = Path().apply {
+                        addRoundRect(RoundRect(frame.rect, CornerRadius(frame.radius)))
+                    }
+                    clipPath(reveal) {
+                        this@drawWithContent.drawContent()
+                    }
                 }
 
                 // Dark-mode anchored menus: draw a soft ambient light halo BEHIND the container,
@@ -640,13 +648,14 @@ fun MonochromeExcept(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    val active = overlay.entries.isNotEmpty()
     val highlights = overlay.highlightBoundsList
     // Animated 0f..1f rather than an instant on/off switch, in both directions: ramps up to
     // monochrome as soon as any popup opens, and eases back to full color once the last one
-    // has fully closed (entries stay in the list, so `highlights` stays non-empty, for the
-    // whole time a popup is playing its own closing animation).
+    // has fully closed (entries stay in the list for the whole time a popup is playing its own
+    // closing animation, so `active` stays true until that finishes).
     val amount by animateFloatAsState(
-        targetValue = if (highlights.isEmpty()) 0f else 1f,
+        targetValue = if (active) 1f else 0f,
         animationSpec = tween(durationMillis = 500),
         label = "monochromeAmount"
     )
