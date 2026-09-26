@@ -39,8 +39,6 @@ import com.rkd.audiobasics.ui.MorphOverlayHost
 import com.rkd.audiobasics.ui.MorphOverlayState
 import com.rkd.audiobasics.ui.MorphPlacement
 import com.rkd.audiobasics.ui.MorphPopup
-import com.rkd.audiobasics.ui.morphAnchor
-import com.rkd.audiobasics.ui.rememberMorphAnchor
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -341,9 +339,6 @@ fun AudiobasicsApp(
     var showPlayerDialog by remember { mutableStateOf(false) }
     var addToSheetSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
     var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
-    // The player bar is both the trigger the player card morphs open/closed from, and the
-    // region that should stay in color (via MonochromeExcept below) while the player is open.
-    val playerBarAnchor = rememberMorphAnchor()
 
     // Which special slide (if any) the transition currently in flight should use. Set
     // explicitly at each push()/navigateBack() call site, immediately before the backStack
@@ -417,7 +412,6 @@ fun AudiobasicsApp(
         MorphPopup(
             onDismissRequest = { showPlayerDialog = false },
             placement = MorphPlacement.Center,
-            highlightBounds = playerBarAnchor.bounds(),
             wide = true,
             bare = true
         ) { _ ->
@@ -698,8 +692,7 @@ fun AudiobasicsApp(
             isDarkMode = isDarkMode,
             onToggle = vm::togglePlayPause,
             onAddTo = { currentSong?.let { addToSheetSong = it } },
-            onTap = { showPlayerDialog = true },
-            modifier = Modifier.morphAnchor(playerBarAnchor)
+            onTap = { showPlayerDialog = true }
         )
     }
     }
