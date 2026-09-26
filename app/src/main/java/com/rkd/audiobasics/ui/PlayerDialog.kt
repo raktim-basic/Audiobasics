@@ -749,7 +749,7 @@ private fun PlayerFrontContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(surfaceColor)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -978,10 +978,10 @@ private fun PlayerFrontContentV2(
                 .background(
                     androidx.compose.ui.graphics.Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.55f),
-                            Color.Black.copy(alpha = 0.15f),
-                            Color.Black.copy(alpha = 0.15f),
-                            Color.Black.copy(alpha = 0.65f)
+                            Color.Black.copy(alpha = 0.80f),
+                            Color.Black.copy(alpha = 0.45f),
+                            Color.Black.copy(alpha = 0.45f),
+                            Color.Black.copy(alpha = 0.85f)
                         )
                     )
                 )
@@ -1085,7 +1085,7 @@ private fun PlayerFrontContentV2(
                     }
                 }
 
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(20.dp))
 
                 // ── Progress bar ──────────────────────────
                 val displayPosition = dragPosition ?: position
@@ -1099,7 +1099,7 @@ private fun PlayerFrontContentV2(
                         text = formatTime(displayPosition),
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                         color = Color.White
                     )
                     Spacer(Modifier.width(8.dp))
@@ -1128,12 +1128,12 @@ private fun PlayerFrontContentV2(
                         text = formatTime(duration),
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                         color = Color.White
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
 
                 // ── Playback controls ─────────────────────
                 Row(
@@ -1147,12 +1147,12 @@ private fun PlayerFrontContentV2(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.skipToPrevious()
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(32.dp))
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(36.dp))
                     }
 
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(50))
+                            .clip(RoundedCornerShape(8.dp))
                             .background(Color.White)
                             .clickable {
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -1187,17 +1187,17 @@ private fun PlayerFrontContentV2(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.skipToNext()
                     }) {
-                        Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(32.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(36.dp))
                     }
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(8.dp))
 
                 // ── Bottom bar ─────────────────────────────
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
