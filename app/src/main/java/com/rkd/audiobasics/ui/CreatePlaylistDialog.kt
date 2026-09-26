@@ -154,7 +154,7 @@ fun CreatePlaylistDialog(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Tap to choose an emoji",
+                text = if (isEmojiFieldFocused) "Use your keyboard emojis to select" else "Tap to choose an emoji",
                 fontFamily = NothingFont,
                 fontSize = 12.sp,
                 color = subColor
