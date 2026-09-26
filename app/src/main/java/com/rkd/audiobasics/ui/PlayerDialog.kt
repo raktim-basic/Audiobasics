@@ -764,7 +764,7 @@ private fun PlayerFrontContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(surfaceColor)
-                .padding(horizontal = 24.dp, vertical = 14.dp),
+                .padding(horizontal = 32.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -999,10 +999,10 @@ private fun PlayerFrontContentV2(
                 .background(
                     androidx.compose.ui.graphics.Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.92f),
-                            Color.Black.copy(alpha = 0.65f),
-                            Color.Black.copy(alpha = 0.65f),
-                            Color.Black.copy(alpha = 0.95f)
+                            Color.Black.copy(alpha = 0.75f),
+                            Color.Black.copy(alpha = 0.40f),
+                            Color.Black.copy(alpha = 0.40f),
+                            Color.Black.copy(alpha = 0.80f)
                         )
                     )
                 )
