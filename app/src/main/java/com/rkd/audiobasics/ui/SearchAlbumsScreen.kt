@@ -25,9 +25,15 @@ import com.rkd.audiobasics.utils.HapticUtils
 fun SearchAlbumsScreen(
     vm: MusicViewModel,
     query: String,
+    // Non-blank only when this search came from tapping an album in Song Info. When both are
+    // set and the first result confidently matches them (same title, at least one shared
+    // artist), we skip the results list and open it directly via onAutoMatchedAlbum instead.
+    expectedTitle: String = "",
+    expectedArtist: String = "",
     isDarkMode: Boolean,
     onBack: () -> Unit,
     onAlbumClick: (Album) -> Unit,
+    onAutoMatchedAlbum: (Album) -> Unit = {},
     onNavigateQueue: () -> Unit
 ) {
     val context = LocalContext.current
@@ -40,10 +46,15 @@ fun SearchAlbumsScreen(
     var albums by remember { mutableStateOf<List<Album>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(query) {
+    LaunchedEffect(query, expectedTitle, expectedArtist) {
         isLoading = true
         try {
-            albums = Innertube.searchAlbums(query)
+            val results = Innertube.searchAlbums(query)
+            albums = results
+            val first = results.firstOrNull()
+            if (first != null && isConfidentAlbumMatch(first, expectedTitle, expectedArtist)) {
+                onAutoMatchedAlbum(first)
+            }
         } catch (_: Exception) {
             albums = emptyList()
         } finally {
@@ -118,4 +129,14 @@ fun SearchAlbumsScreen(
             }
         }
     }
+}
+
+// Title must match exactly (trimmed, case-insensitive); artist only needs one shared name,
+// since the song's own artist list may be a subset of the album's full artist credits (or
+// vice versa) even for the correct album.
+private fun isConfidentAlbumMatch(album: Album, expectedTitle: String, expectedArtist: String): Boolean {
+    if (expectedTitle.isBlank() || expectedArtist.isBlank()) return false
+    if (!album.title.trim().equals(expectedTitle.trim(), ignoreCase = true)) return false
+    val candidates = album.artistNames.ifEmpty { Innertube.splitArtistNames(album.artist) }
+    return candidates.any { it.trim().equals(expectedArtist.trim(), ignoreCase = true) }
 }
