@@ -32,6 +32,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -453,6 +454,7 @@ private fun AppearancePage(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val themeMode by vm.themeMode.collectAsState()
     val newPlayerDesign by vm.newPlayerDesign.collectAsState()
+    val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Row(
@@ -611,6 +613,62 @@ private fun AppearancePage(
                 fontWeight = FontWeight.Normal,
                 fontSize = 12.sp,
                 color = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
+            )
+        }
+
+        Box(
+            modifier = Modifier.fillMaxWidth().height(1.dp)
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
+        )
+
+        // Auto-immerse: only meaningful for the new player design, so it's greyed out
+        // (disabled, dimmed) whenever Classic is selected above rather than hidden — keeps
+        // its position stable and hints at the dependency instead of just disappearing.
+        val autoImmerseRowAlpha = if (newPlayerDesign) 1f else 0.4f
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .alpha(autoImmerseRowAlpha)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Auto-immerse",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor
+                )
+                Text(
+                    text = "New player only — hides controls 4s after playback starts.",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 12.sp,
+                    color = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
+                )
+            }
+            Switch(
+                checked = autoImmerseEnabled,
+                enabled = newPlayerDesign,
+                onCheckedChange = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    vm.setAutoImmerseEnabled(it)
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color.Red,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color.Gray
+                )
             )
         }
 
