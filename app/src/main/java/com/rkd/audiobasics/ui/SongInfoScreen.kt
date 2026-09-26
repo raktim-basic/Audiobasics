@@ -45,7 +45,7 @@ fun SongInfoCardContent(
     livePlaybackDurationMs: Long? = null,
     onDismiss: () -> Unit,
     onArtistClick: (String, String?) -> Unit,
-    onAlbumClick: (String) -> Unit
+    onAlbumClick: (query: String, expectedTitle: String, expectedArtist: String) -> Unit
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
@@ -210,7 +210,11 @@ fun SongInfoCardContent(
                             fontSize = 16.sp,
                             modifier = Modifier.clickable {
                                 val firstArtist = song.resolvedArtistNames.firstOrNull().orEmpty()
-                                onAlbumClick(albumTitle!! + if (firstArtist.isNotBlank()) " $firstArtist" else "")
+                                onAlbumClick(
+                                    albumTitle!! + if (firstArtist.isNotBlank()) " $firstArtist" else "",
+                                    albumTitle!!,
+                                    firstArtist
+                                )
                             }
                         )
                         else -> Text(
