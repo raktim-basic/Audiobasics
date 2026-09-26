@@ -366,6 +366,16 @@ fun AudiobasicsApp(
         backStack.add(key)
     }
 
+    // Swaps the top of the stack for a new key instead of pushing on top of it — used when a
+    // screen turns out to have been just a waypoint (e.g. SearchAlbumsScreen auto-matching a
+    // single confident result), so back from the new screen skips it entirely.
+    fun replaceTop(key: NavKey) {
+        val revealed = backStack.getOrNull(backStack.size - 2)
+        pendingSlideKind = pushSlideKind(revealed, key)
+        backStack.removeLastOrNull()
+        backStack.add(key)
+    }
+
     fun navigateBack() {
         if (backStack.size > 1) {
             val leaving = backStack.last()
@@ -424,13 +434,15 @@ fun AudiobasicsApp(
                     showPlayerDialog = false
                     push(ArtistDetailKey(name, artistId ?: ""))
                 },
-                onNavigateAlbum = { albumTitle ->
+                onNavigateAlbum = { query, expectedTitle, expectedArtist ->
                     showPlayerDialog = false
                     // Search for the album by name rather than browsing this specific id —
                     // YTM itself sometimes has more than one catalog entry for what's really
                     // the same album, so search reliably lands on a real, complete result
                     // instead of risking opening a different, possibly-incomplete duplicate.
-                    push(SearchAlbumsKey(albumTitle))
+                    // expectedTitle/expectedArtist let SearchAlbumsScreen skip straight to the
+                    // album when the first result is a confident match.
+                    push(SearchAlbumsKey(query, expectedTitle, expectedArtist))
                 }
             )
         }
@@ -651,9 +663,12 @@ fun AudiobasicsApp(
                             SearchAlbumsScreen(
                                 vm = vm,
                                 query = key.query,
+                                expectedTitle = key.expectedTitle,
+                                expectedArtist = key.expectedArtist,
                                 isDarkMode = isDarkMode,
                                 onBack = { navigateBack() },
                                 onAlbumClick = { album -> push(AlbumDetailKey(album)) },
+                                onAutoMatchedAlbum = { album -> replaceTop(AlbumDetailKey(album)) },
                                 onNavigateQueue = { push(QueueKey) }
                             )
                         }
