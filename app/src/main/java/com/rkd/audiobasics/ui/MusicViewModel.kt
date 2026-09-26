@@ -261,6 +261,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _logsEnabled = MutableStateFlow(prefs.getBoolean("logs_enabled", false))
     val logsEnabled: StateFlow<Boolean> = _logsEnabled
 
+    // Player design: false = classic (existing) player face, true = the new art-first,
+    // immersive-mode player face. Settings > Appearance > Player design.
+    private val _newPlayerDesign = MutableStateFlow(prefs.getBoolean("new_player_design", false))
+    val newPlayerDesign: StateFlow<Boolean> = _newPlayerDesign
+
+    fun setNewPlayerDesign(enabled: Boolean) {
+        _newPlayerDesign.value = enabled
+        prefs.edit().putBoolean("new_player_design", enabled).apply()
+    }
+
     // ── Tempo / Pitch ────────────────────────────────────────────────────
     // Temporary dev-tools-only toggle (see MusicViewModel.toggleTempoPitchApplyToAll):
     // per-song is the default, global applies one speed/pitch to everything.
