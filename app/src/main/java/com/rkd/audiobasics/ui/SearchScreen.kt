@@ -26,18 +26,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -111,8 +107,7 @@ fun SearchScreen(
     onBack: () -> Unit,
     onNavigateQueue: () -> Unit,
     onAlbumClick: (Album) -> Unit,
-    onNavigateAlbums: (String) -> Unit = {},
-    onNavigateArtists: (String) -> Unit = {},
+    onArtistClick: (com.rkd.audiobasics.data.Artist) -> Unit = {},
     onAddTo: (Song) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -127,6 +122,21 @@ fun SearchScreen(
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showSuggestions by rememberSaveable { mutableStateOf(false) }
 
+    // The filter tabs (Songs/Albums/Artists) switch which results the same box below shows;
+    // "Links" isn't a result type, it's shorthand for opening the same play-by-link dialog
+    // the old "Try with YouTube link" text used to.
+    var selectedFilter by rememberSaveable { mutableStateOf(SearchResultFilter.SONGS) }
+    // The query that's actually been searched (i.e. submitted), separate from what's still
+    // being typed — Albums/Artists fetch off this, the same way Songs already does via
+    // vm.search(). Also doubles as which query each cache below (if any) was fetched for.
+    var committedQuery by rememberSaveable { mutableStateOf("") }
+    var albumResults by remember { mutableStateOf<List<Album>>(emptyList()) }
+    var artistResults by remember { mutableStateOf<List<com.rkd.audiobasics.data.Artist>>(emptyList()) }
+    var isLoadingAlbums by remember { mutableStateOf(false) }
+    var isLoadingArtists by remember { mutableStateOf(false) }
+    var albumsFetchedFor by remember { mutableStateOf<String?>(null) }
+    var artistsFetchedFor by remember { mutableStateOf<String?>(null) }
+
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
@@ -136,6 +146,50 @@ fun SearchScreen(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+
+    // Runs a fresh search for the query as-typed: songs go through the ViewModel as before;
+    // albums/artists are only actually fetched once their tab gets selected (see the
+    // LaunchedEffect below) so switching tabs back and forth doesn't refetch needlessly.
+    fun submitSearch(text: String) {
+        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+        suggestionJob?.cancel()
+        suggestions = emptyList()
+        showSuggestions = false
+        committedQuery = text
+        vm.search(text)
+        focusManager.clearFocus()
+    }
+
+    LaunchedEffect(committedQuery, selectedFilter) {
+        if (committedQuery.isBlank()) return@LaunchedEffect
+        when (selectedFilter) {
+            SearchResultFilter.ALBUMS -> {
+                if (albumsFetchedFor != committedQuery) {
+                    isLoadingAlbums = true
+                    albumResults = try {
+                        Innertube.searchAlbums(committedQuery)
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    isLoadingAlbums = false
+                    albumsFetchedFor = committedQuery
+                }
+            }
+            SearchResultFilter.ARTISTS -> {
+                if (artistsFetchedFor != committedQuery) {
+                    isLoadingArtists = true
+                    artistResults = try {
+                        Innertube.searchArtists(committedQuery)
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    isLoadingArtists = false
+                    artistsFetchedFor = committedQuery
+                }
+            }
+            SearchResultFilter.SONGS -> Unit
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (results.isEmpty()) focusRequester.requestFocus()
@@ -185,7 +239,7 @@ fun SearchScreen(
     ) {
         Box(modifier = Modifier.weight(1f)) {
             when {
-                isSearching -> {
+                isSearching && selectedFilter == SearchResultFilter.SONGS -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color.Red)
                     }
@@ -206,8 +260,7 @@ fun SearchScreen(
                                         vm.setSearchQuery(suggestion)
                                         suggestions = emptyList()
                                         showSuggestions = false
-                                        vm.search(suggestion)
-                                        focusManager.clearFocus()
+                                        submitSearch(suggestion)
                                     }
                                     .padding(horizontal = 20.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -222,6 +275,56 @@ fun SearchScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                            }
+                        }
+                    }
+                }
+                selectedFilter == SearchResultFilter.ALBUMS -> {
+                    when {
+                        committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
+                        isLoadingAlbums -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color.Red)
+                        }
+                        albumResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No albums found", fontFamily = NothingFont, color = Color.Gray)
+                        }
+                        else -> {
+                            LazyColumn(modifier = Modifier.fillMaxSize(), reverseLayout = true) {
+                                items(albumResults) { album ->
+                                    AlbumRowItem(
+                                        album = album,
+                                        isDarkMode = isDarkMode,
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            onAlbumClick(album)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                selectedFilter == SearchResultFilter.ARTISTS -> {
+                    when {
+                        committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
+                        isLoadingArtists -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color.Red)
+                        }
+                        artistResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No artists found", fontFamily = NothingFont, color = Color.Gray)
+                        }
+                        else -> {
+                            LazyColumn(modifier = Modifier.fillMaxSize(), reverseLayout = true) {
+                                items(artistResults) { artist ->
+                                    ArtistRowItem(
+                                        artist = artist,
+                                        isDarkMode = isDarkMode,
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            onArtistClick(artist)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -280,75 +383,52 @@ fun SearchScreen(
             }
         }
 
-        // View Albums / View Artists card
-        if (results.isNotEmpty()) {
-            val cardBg = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(cardBg)
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onNavigateAlbums(query)
-                            }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("View Albums", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = textColor)
-                        Text(">", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
-                    }
-                    HorizontalDivider(color = if (isDarkMode) Color(0xFF3A3A3A) else Color(0xFFCCCCCC))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onNavigateArtists(query)
-                            }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("View Artists", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = textColor)
-                        Text(">", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
-                    }
-                }
-            }
-        }
-
-        Text(
-            text = buildAnnotatedString {
-                withStyle(SpanStyle(
-                    fontFamily = NothingFont,
-                    color = textColor,
-                    fontSize = 13.sp,
-                    fontStyle = FontStyle.Italic
-                )) { append("Can't find the song?  ") }
-                withStyle(SpanStyle(
-                    fontFamily = NothingFont,
-                    color = Color(0xFF1565C0),
-                    fontSize = 13.sp,
-                    fontStyle = FontStyle.Italic,
-                    textDecoration = TextDecoration.Underline
-                )) { append("Try with YouTube link here.") }
-            },
+        // Filter tabs — replaces the old "View Albums" / "View Artists" cards. Songs/Albums/
+        // Artists switch which results the box above shows (fetching that type's results the
+        // first time its tab is selected for the current query, see the LaunchedEffect above);
+        // Links isn't a result type, tapping it just opens the play-by-link dialog directly.
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(bgColor)
-                .clickable {
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp)
+        ) {
+            Text(
+                text = "Links",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = textColor,
+                modifier = Modifier.clickable {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     showLinkDialog = true
                 }
-                .padding(horizontal = 20.dp, vertical = 8.dp)
-        )
+            )
+            listOf(
+                SearchResultFilter.SONGS to "Songs",
+                SearchResultFilter.ALBUMS to "Albums",
+                SearchResultFilter.ARTISTS to "Artists"
+            ).forEach { (filter, label) ->
+                Text(
+                    text = label,
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = if (selectedFilter == filter) Color.Red else textColor,
+                    modifier = Modifier.clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        selectedFilter = filter
+                        // Selecting a filter with a query already typed (but not yet
+                        // submitted, e.g. suggestions still showing) submits it — matches
+                        // hitting the keyboard's search action, just triggered from a tab tap.
+                        if (query.isNotBlank() && committedQuery != query) {
+                            submitSearch(query)
+                        }
+                    }
+                )
+            }
+        }
 
         Box(
             modifier = Modifier
@@ -397,14 +477,7 @@ fun SearchScreen(
                 shape = RoundedCornerShape(8.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
-                    if (query.isNotBlank()) {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        suggestionJob?.cancel()
-                        suggestions = emptyList()
-                        showSuggestions = false
-                        vm.search(query)
-                        focusManager.clearFocus()
-                    }
+                    if (query.isNotBlank()) submitSearch(query)
                 })
             )
 
@@ -417,6 +490,8 @@ fun SearchScreen(
         }
     }
 }
+
+private enum class SearchResultFilter { SONGS, ALBUMS, ARTISTS }
 
 @Composable
 fun PlayByLinkDialog(
