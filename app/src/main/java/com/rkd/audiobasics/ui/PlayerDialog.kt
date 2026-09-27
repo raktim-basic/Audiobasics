@@ -48,6 +48,7 @@ import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.AudiobasicsLinks
+import com.rkd.audiobasics.utils.EasterEggUtils
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
@@ -702,11 +703,12 @@ private fun PlayerFrontContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                // Fixed-width digits: NothingFont/ComicFont aren't monospace, so a
-                // proportional-width timestamp here made the scrub bar's width (and its
-                // dashes) shift slightly on every position tick. Monospace keeps it steady.
+                // Only forced monospace on April Fools': ComicFont (which NothingFont
+                // resolves to that day) isn't monospace, so proportional-width digits here
+                // shifted the scrub bar's width — and its dashes — slightly on every tick.
+                // Other days keep NothingFont as normal.
                 text = formatTime(displayPosition),
-                fontFamily = FontFamily.Monospace,
+                fontFamily = if (EasterEggUtils.isAprilFoolsDay()) FontFamily.Monospace else NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = textColor
@@ -737,7 +739,7 @@ private fun PlayerFrontContent(
             Spacer(Modifier.width(8.dp))
             Text(
                 text = formatTime(duration),
-                fontFamily = FontFamily.Monospace,
+                fontFamily = if (EasterEggUtils.isAprilFoolsDay()) FontFamily.Monospace else NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = textColor
@@ -1237,7 +1239,7 @@ private fun PlayerFrontContentV2(
                 ) {
                     Text(
                         text = formatTime(displayPosition),
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = if (EasterEggUtils.isAprilFoolsDay()) FontFamily.Monospace else NothingFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = Color.White
@@ -1266,7 +1268,7 @@ private fun PlayerFrontContentV2(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = formatTime(duration),
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = if (EasterEggUtils.isAprilFoolsDay()) FontFamily.Monospace else NothingFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = Color.White
