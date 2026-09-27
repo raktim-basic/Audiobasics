@@ -550,37 +550,73 @@ private fun PlayerFrontContent(
     onShowSleepDialog: () -> Unit,
     onShowTempoPitchDialog: () -> Unit
 ) {
+    val openOverflowMenu = rememberOverflowMenuOpener(
+        vm, context, hapticsEnabled, song,
+        onDismiss, onNavigateQueue, onShowShareChoice, onShowSleepDialog, onShowTempoPitchDialog
+    )
     Column {
         // ── Top bar ─────────────────────────────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Speaker/cast (placeholder)
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
-            }) {
-                Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
+            // Active-feature indicators — shown only while sleep timer and/or tempo & pitch
+            // are active, so there's a glanceable way to see (and get back to) either one
+            // without opening the ⋮ menu first. Tapping one opens that same menu.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
+                    val sleepAnchor = rememberMorphAnchor()
+                    IconButton(
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            openOverflowMenu(sleepAnchor.bounds())
+                        },
+                        modifier = Modifier.morphAnchor(sleepAnchor)
+                    ) {
+                        Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer active", tint = Color.Red, modifier = Modifier.size(20.dp))
+                    }
+                }
+                if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) {
+                    val tempoAnchor = rememberMorphAnchor()
+                    IconButton(
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            openOverflowMenu(tempoAnchor.bounds())
+                        },
+                        modifier = Modifier.morphAnchor(tempoAnchor)
+                    ) {
+                        Icon(Icons.Default.Speed, contentDescription = "Tempo and pitch active", tint = Color.Red, modifier = Modifier.size(20.dp))
+                    }
+                }
             }
 
-            // Song info — flips the card
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onShowInfo()
-            }) {
-                Icon(Icons.Default.Info, contentDescription = "Song info", tint = textColor, modifier = Modifier.size(20.dp))
-            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Speaker/cast (placeholder)
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                }) {
+                    Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
+                }
 
-            // Close
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onDismiss()
-            }) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor, modifier = Modifier.size(20.dp))
+                // Song info — flips the card
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onShowInfo()
+                }) {
+                    Icon(Icons.Default.Info, contentDescription = "Song info", tint = textColor, modifier = Modifier.size(20.dp))
+                }
+
+                // Close
+                IconButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onDismiss()
+                }) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor, modifier = Modifier.size(20.dp))
+                }
             }
         }
 
@@ -796,10 +832,6 @@ private fun PlayerFrontContent(
                 context = context,
                 hapticsEnabled = hapticsEnabled,
                 song = song,
-                sleepTimerMode = sleepTimerMode,
-                sleepTimerRemaining = sleepTimerRemaining,
-                tempoPitchSpeed = tempoPitchSpeed,
-                tempoPitchPitch = tempoPitchPitch,
                 iconTint = textColor,
                 onDismiss = onDismiss,
                 onNavigateQueue = onNavigateQueue,
@@ -812,8 +844,117 @@ private fun PlayerFrontContent(
 }
 
 /**
- * The player's overflow (⋮) menu — Share/Queue/Sleep timer/Tempo & Pitch/Repeat. Shared by
- * both the classic and the new (V2) player face so the menu itself only exists once.
+ * Builds the opener for the player's overflow (⋮) menu — Share/Queue/Sleep timer/Tempo &
+ * Pitch/Repeat — as a function you can call from any anchor's bounds. Shared by the 3-dot
+ * button and by the top-bar active-feature icons (sleep timer / tempo & pitch), so tapping
+ * either one opens the exact same menu.
+ */
+@Composable
+private fun rememberOverflowMenuOpener(
+    vm: MusicViewModel,
+    context: android.content.Context,
+    hapticsEnabled: Boolean,
+    song: com.rkd.audiobasics.data.Song?,
+    onDismiss: () -> Unit,
+    onNavigateQueue: () -> Unit,
+    onShowShareChoice: () -> Unit,
+    onShowSleepDialog: () -> Unit,
+    onShowTempoPitchDialog: () -> Unit
+): (androidx.compose.ui.geometry.Rect?) -> Unit {
+    val overlay = LocalMorphOverlay.current
+    return { anchorBounds ->
+        overlay.show(anchor = anchorBounds, placement = MorphPlacement.Anchored) { close ->
+            // Collected live here (not passed in as params) since this menu can stay open
+            // while these change — e.g. the sleep timer ticking down, or repeat mode being
+            // cycled by repeated taps below — so it must never freeze on whatever value was
+            // current the moment the menu was opened.
+            val repeatMode by vm.repeatMode.collectAsState()
+            val sleepTimerMode by vm.sleepTimerMode.collectAsState()
+            val sleepTimerRemaining by vm.sleepTimerRemaining.collectAsState()
+            val tempoPitchSpeed by vm.currentSpeed.collectAsState()
+            val tempoPitchPitch by vm.currentPitch.collectAsState()
+            MorphMenuColumn {
+                MorphMenuItem(
+                    text = "Share",
+                    leadingIcon = Icons.Default.Share,
+                    onClick = {
+                        close()
+                        song?.let { s ->
+                            if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                onShowShareChoice()
+                            } else {
+                                AudiobasicsLinks.shareText(
+                                    context, AudiobasicsLinks.songLink(s.id), "Share song"
+                                )
+                            }
+                        }
+                    }
+                )
+                MorphMenuItem(
+                    text = "Queue",
+                    leadingIcon = Icons.Default.QueueMusic,
+                    onClick = {
+                        close()
+                        onDismiss()
+                        onNavigateQueue()
+                    }
+                )
+                MorphMenuItem(
+                    text = when (sleepTimerMode) {
+                        MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "End of the song"
+                        MusicViewModel.SLEEP_TIMER_CUSTOM -> formatCountdown(sleepTimerRemaining)
+                        else -> "Sleep timer"
+                    },
+                    leadingIcon = Icons.Default.Bedtime,
+                    iconTint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
+                    textColor = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
+                    onClick = {
+                        close()
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        if (song == null) {
+                            Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
+                        } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
+                            vm.cancelSleepTimer()
+                        } else {
+                            onShowSleepDialog()
+                        }
+                    }
+                )
+                MorphMenuItem(
+                    text = "Tempo and Pitch",
+                    leadingIcon = Icons.Default.Speed,
+                    iconTint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
+                    textColor = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
+                    onClick = {
+                        close()
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onShowTempoPitchDialog()
+                    }
+                )
+                MorphMenuItem(
+                    text = when (repeatMode) {
+                        1 -> "Repeat list"
+                        2 -> "Repeat one"
+                        else -> "Repeat off"
+                    },
+                    leadingIcon = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                    iconTint = if (repeatMode == 0) Color.Unspecified else Color.Red,
+                    textColor = if (repeatMode == 0) Color.Unspecified else Color.Red,
+                    onClick = {
+                        // Matches the old menu: toggling repeat does NOT close the
+                        // menu, so tapping repeatedly cycles through its modes.
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.toggleRepeatMode()
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The player's overflow (⋮) button. Shared by both the classic and the new (V2) player face
+ * so the menu itself only exists once.
  */
 @Composable
 private fun PlayerOverflowMenuButton(
@@ -821,10 +962,6 @@ private fun PlayerOverflowMenuButton(
     context: android.content.Context,
     hapticsEnabled: Boolean,
     song: com.rkd.audiobasics.data.Song?,
-    sleepTimerMode: Int,
-    sleepTimerRemaining: Long,
-    tempoPitchSpeed: Float,
-    tempoPitchPitch: Int,
     iconTint: Color,
     onDismiss: () -> Unit,
     onNavigateQueue: () -> Unit,
@@ -832,93 +969,15 @@ private fun PlayerOverflowMenuButton(
     onShowSleepDialog: () -> Unit,
     onShowTempoPitchDialog: () -> Unit
 ) {
-    val overlay = LocalMorphOverlay.current
     val threeDotAnchor = rememberMorphAnchor()
+    val openMenu = rememberOverflowMenuOpener(
+        vm, context, hapticsEnabled, song,
+        onDismiss, onNavigateQueue, onShowShareChoice, onShowSleepDialog, onShowTempoPitchDialog
+    )
     IconButton(
         onClick = {
             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-            overlay.show(anchor = threeDotAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
-                // Shadows the outer repeatMode param: repeat toggling deliberately keeps
-                // this menu open for repeated taps (see below), so unlike every other
-                // item here it needs to reflect changes made after the menu was opened,
-                // not just the value that was current the moment it was opened.
-                val repeatMode by vm.repeatMode.collectAsState()
-                MorphMenuColumn {
-                    MorphMenuItem(
-                        text = "Share",
-                        leadingIcon = Icons.Default.Share,
-                        onClick = {
-                            close()
-                            song?.let { s ->
-                                if (AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
-                                    onShowShareChoice()
-                                } else {
-                                    AudiobasicsLinks.shareText(
-                                        context, AudiobasicsLinks.songLink(s.id), "Share song"
-                                    )
-                                }
-                            }
-                        }
-                    )
-                    MorphMenuItem(
-                        text = "Queue",
-                        leadingIcon = Icons.Default.QueueMusic,
-                        onClick = {
-                            close()
-                            onDismiss()
-                            onNavigateQueue()
-                        }
-                    )
-                    MorphMenuItem(
-                        text = when (sleepTimerMode) {
-                            MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "End of the song"
-                            MusicViewModel.SLEEP_TIMER_CUSTOM -> formatCountdown(sleepTimerRemaining)
-                            else -> "Sleep timer"
-                        },
-                        leadingIcon = Icons.Default.Bedtime,
-                        iconTint = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
-                        textColor = if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) Color.Red else Color.Unspecified,
-                        onClick = {
-                            close()
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            if (song == null) {
-                                Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
-                            } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
-                                vm.cancelSleepTimer()
-                            } else {
-                                onShowSleepDialog()
-                            }
-                        }
-                    )
-                    MorphMenuItem(
-                        text = "Tempo and Pitch",
-                        leadingIcon = Icons.Default.Speed,
-                        iconTint = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
-                        textColor = if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) Color.Red else Color.Unspecified,
-                        onClick = {
-                            close()
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            onShowTempoPitchDialog()
-                        }
-                    )
-                    MorphMenuItem(
-                        text = when (repeatMode) {
-                            1 -> "Repeat list"
-                            2 -> "Repeat one"
-                            else -> "Repeat off"
-                        },
-                        leadingIcon = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                        iconTint = if (repeatMode == 0) Color.Unspecified else Color.Red,
-                        textColor = if (repeatMode == 0) Color.Unspecified else Color.Red,
-                        onClick = {
-                            // Matches the old menu: toggling repeat does NOT close the
-                            // menu, so tapping repeatedly cycles through its modes.
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.toggleRepeatMode()
-                        }
-                    )
-                }
-            }
+            openMenu(threeDotAnchor.bounds())
         },
         modifier = Modifier.morphAnchor(threeDotAnchor)
     ) {
@@ -1262,10 +1321,6 @@ private fun PlayerFrontContentV2(
                         context = context,
                         hapticsEnabled = hapticsEnabled,
                         song = song,
-                        sleepTimerMode = sleepTimerMode,
-                        sleepTimerRemaining = sleepTimerRemaining,
-                        tempoPitchSpeed = tempoPitchSpeed,
-                        tempoPitchPitch = tempoPitchPitch,
                         iconTint = Color.White,
                         onDismiss = onDismiss,
                         onNavigateQueue = onNavigateQueue,
