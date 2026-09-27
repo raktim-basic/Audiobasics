@@ -498,6 +498,105 @@ object Innertube {
         songs.sortedByDescending { it.isExplicit }
     }
 
+    // ─── Raw YouTube (not Music) video search — the "YT" tab, for remixes, live sets, etc.
+    // that don't exist on YTM's own catalog. Deliberately a separate, much simpler path from
+    // the YTM search above: hits www.youtube.com's own Innertube "search" (WEB client, not
+    // WEB_REMIX) and keeps only videoRenderer entries, which — combined with the "Type: Video"
+    // search filter param below — already excludes channels, playlists, and Shorts without
+    // any extra filtering here. Results are ordinary Songs, so they play through the exact
+    // same vm.play()/queue/like/cache path as any other search result.
+    private const val YT_VIDEO_ONLY_PARAMS = "EgIQAQ=="
+    private const val YT_WEB_CLIENT_VERSION = "2.20260213.00.00"
+
+    suspend fun searchYoutubeVideos(query: String): List<Song> = withContext(Dispatchers.IO) {
+        val videos = mutableListOf<Song>()
+        try {
+            parseVideosFromYTSearch(
+                ytWebPost("search", JSONObject().put("query", query).put("params", YT_VIDEO_ONLY_PARAMS)),
+                videos
+            )
+        } catch (e: Exception) {
+            Log.e("Innertube", "YT video search error: ${e.message}")
+        }
+        videos
+    }
+
+    private fun ytWebPost(endpoint: String, body: JSONObject): JSONObject? {
+        return try {
+            body.put("context", JSONObject().put(
+                "client", JSONObject()
+                    .put("clientName", "WEB")
+                    .put("clientVersion", YT_WEB_CLIENT_VERSION)
+                    .put("hl", "en")
+                    .put("gl", "US")
+            ))
+            val request = Request.Builder()
+                .url("https://www.youtube.com/youtubei/v1/$endpoint?key=$YTM_KEY")
+                .addHeader("Content-Type", "application/json")
+                .addHeader("User-Agent", FIREFOX_UA)
+                .addHeader("Origin", "https://www.youtube.com")
+                .addHeader("Referer", "https://www.youtube.com/")
+                .addHeader("X-YouTube-Client-Name", "1")
+                .addHeader("X-YouTube-Client-Version", YT_WEB_CLIENT_VERSION)
+                .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
+                .build()
+            val response = httpClient.newCall(request).execute()
+            val text = response.body?.string() ?: return null
+            JSONObject(text)
+        } catch (e: Exception) {
+            Log.e("Innertube", "YT web post error: ${e.message}")
+            null
+        }
+    }
+
+    private fun parseVideosFromYTSearch(response: JSONObject?, out: MutableList<Song>) {
+        try {
+            val sections = response
+                ?.optJSONObject("contents")
+                ?.optJSONObject("twoColumnSearchResultsRenderer")
+                ?.optJSONObject("primaryContents")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents") ?: return
+            for (si in 0 until sections.length()) {
+                val items = sections.optJSONObject(si)
+                    ?.optJSONObject("itemSectionRenderer")
+                    ?.optJSONArray("contents") ?: continue
+                for (ii in 0 until items.length()) {
+                    try {
+                        // Only videoRenderer is handled — channelRenderer, playlistRenderer,
+                        // radioRenderer (mixes), reelShelfRenderer (Shorts row), and anything
+                        // else YouTube mixes into search results are silently skipped by
+                        // virtue of not matching this key.
+                        val item = items.getJSONObject(ii).optJSONObject("videoRenderer") ?: continue
+                        val videoId = item.optString("videoId", ""); if (videoId.isBlank()) continue
+                        val title = extractText(item, "title"); if (title.isBlank()) continue
+                        val channel = extractText(item, "ownerText")
+                            .ifBlank { extractText(item, "longBylineText") }
+                            .ifBlank { extractText(item, "shortBylineText") }
+                        val thumbnails = item.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                        val thumbnail = thumbnails?.takeIf { it.length() > 0 }
+                            ?.optJSONObject(thumbnails.length() - 1)?.optString("url")
+                            ?.takeIf { it.isNotBlank() }
+                            ?: ytThumbnail(videoId)
+                        // Live streams / premieres have no lengthText — duration just stays 0,
+                        // same as how the rest of the app already treats unknown duration.
+                        val duration = item.optJSONObject("lengthText")?.optString("simpleText")
+                            ?.let { parseDurationString(it) } ?: 0L
+                        out.add(Song(
+                            id = videoId,
+                            title = title,
+                            artist = channel,
+                            thumbnail = thumbnail,
+                            duration = duration
+                        ))
+                    } catch (_: Exception) {}
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("Innertube", "parseVideosFromYTSearch error: ${e.message}")
+        }
+    }
+
     private fun parseSongsFromYTM(response: JSONObject?, out: MutableList<Song>) {
         try {
             val sections = response
