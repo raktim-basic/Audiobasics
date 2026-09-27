@@ -549,10 +549,15 @@ private fun AppearancePage(
                 .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
         )
 
+        // Feb 22 anniversary easter egg: the picker below stays visible and Dark/Light theme
+        // is unaffected, but selecting a player design is disabled for the day (dimmed, and
+        // taps show a toast instead of changing anything) — see MusicViewModel.isAnniversaryDay.
+        val isAnniversaryDay = vm.isAnniversaryDay
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(surfaceColor)
+                .alpha(if (isAnniversaryDay) 0.4f else 1f)
                 .padding(horizontal = 20.dp, vertical = 14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -589,6 +594,10 @@ private fun AppearancePage(
                             .clip(RoundedCornerShape(10.dp))
                             .background(if (isSelected) Color.Red else Color.Transparent)
                             .clickable {
+                                if (isAnniversaryDay) {
+                                    Toast.makeText(context, "Audiobasics anniversary :D", Toast.LENGTH_SHORT).show()
+                                    return@clickable
+                                }
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 vm.setNewPlayerDesign(value)
                             }
