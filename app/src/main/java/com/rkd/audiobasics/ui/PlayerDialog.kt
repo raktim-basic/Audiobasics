@@ -94,8 +94,13 @@ fun PlayerDialog(
     val repeatMode by vm.repeatMode.collectAsState()
     val tempoPitchSpeed by vm.currentSpeed.collectAsState()
     val tempoPitchPitch by vm.currentPitch.collectAsState()
-    val newPlayerDesign by vm.newPlayerDesign.collectAsState()
+    val newPlayerDesignPref by vm.newPlayerDesign.collectAsState()
     val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
+
+    // Feb 22 anniversary easter egg: forces the classic player face for the day, regardless
+    // of the persisted Settings > Appearance > Player design choice — which is left untouched
+    // here and takes effect again the next day. See MusicViewModel.isAnniversaryDay.
+    val newPlayerDesign = newPlayerDesignPref && !vm.isAnniversaryDay
 
     // Immersive mode (new player design only): tapping the open artwork surface hides every
     // control except a small corner pause button and brings the art up to full brightness;
