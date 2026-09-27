@@ -631,9 +631,10 @@ private fun AppearancePage(
         )
 
         // Auto-immerse: only meaningful for the new player design, so it's greyed out
-        // (disabled, dimmed) whenever Classic is selected above rather than hidden — keeps
-        // its position stable and hints at the dependency instead of just disappearing.
-        val autoImmerseRowAlpha = if (newPlayerDesign) 1f else 0.4f
+        // (disabled, dimmed) whenever Classic is selected above, or on the Feb 22 anniversary
+        // (when the player is force-classic'd regardless of the stored preference) — rather
+        // than hidden, which keeps its position stable and hints at the dependency.
+        val autoImmerseRowAlpha = if (newPlayerDesign && !isAnniversaryDay) 1f else 0.4f
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -667,7 +668,7 @@ private fun AppearancePage(
             }
             Switch(
                 checked = autoImmerseEnabled,
-                enabled = newPlayerDesign,
+                enabled = newPlayerDesign && !isAnniversaryDay,
                 onCheckedChange = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     vm.setAutoImmerseEnabled(it)
