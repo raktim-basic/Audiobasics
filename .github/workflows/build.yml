@@ -8,7 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
 
@@ -37,13 +36,13 @@ jobs:
           # (not the old 48dp legacy launcher-icon sizes) — the background is the
           # separate solid #24292F color declared in res/values/colors.xml and
           # res/mipmap-anydpi-v26/ic_launcher.xml, both committed to the repo.
+
           sizes = {
               'mdpi': 108, 'hdpi': 162, 'xhdpi': 216,
               'xxhdpi': 324, 'xxxhdpi': 432
           }
 
-          icon_b64 = """${{ secrets.APP_ICON_BASE64 }}"""
-
+          icon_b64 = '${{ secrets.APP_ICON_BASE64 }}'
           for density, size in sizes.items():
               dir_path = f"app/src/main/res/mipmap-{density}"
               os.makedirs(dir_path, exist_ok=True)
@@ -53,10 +52,34 @@ jobs:
                   try:
                       icon_data = base64.b64decode(icon_b64.strip())
                       img = Image.open(io.BytesIO(icon_data)).convert("RGBA")
-                      resized = img.resize((size, size), Image.LANCZOS)
+
+                      # Keep the original artwork's aspect ratio and leave
+                      # enough breathing room for Android's adaptive-icon mask.
+                      target_width = int(size * 0.70)
+                      target_height = int(target_width * img.height / img.width)
+
+                      img = img.resize(
+                          (target_width, target_height),
+                          Image.Resampling.LANCZOS
+                      )
+
+                      # Center the proportionally-scaled artwork on the
+                      # transparent adaptive-icon foreground canvas.
+                      resized = Image.new(
+                          "RGBA",
+                          (size, size),
+                          (0, 0, 0, 0)
+                      )
+
+                      x = (size - img.width) // 2
+                      y = (size - img.height) // 2
+                      resized.alpha_composite(img, (x, y))
+
                       resized.save(out_path, "PNG")
+
                       print(f"Injected icon: {out_path}")
                       continue
+
                   except Exception as e:
                       print(f"Icon injection failed: {e}, using default")
 
@@ -64,14 +87,24 @@ jobs:
               # roughly the same safe zone as the real artwork.
               img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
               draw = ImageDraw.Draw(img)
+
               margin = size // 3
-              draw.ellipse([margin, margin, size - margin, size - margin],
-                           outline=(255, 255, 255, 255), width=max(2, size // 16))
+              draw.ellipse(
+                  [margin, margin, size - margin, size - margin],
+                  outline=(255, 255, 255, 255),
+                  width=max(2, size // 16)
+              )
+
               inner = size // 2 - size // 10
               outer = size // 2 + size // 10
-              draw.ellipse([inner, inner, outer, outer], fill=(255, 0, 0, 255))
+              draw.ellipse(
+                  [inner, inner, outer, outer],
+                  fill=(255, 0, 0, 255)
+              )
+
               img.save(out_path, "PNG")
               print(f"Default icon created: {out_path}")
+
           EOF
 
       - name: Build signed release APK
