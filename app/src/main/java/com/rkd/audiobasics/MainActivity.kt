@@ -566,8 +566,7 @@ fun AudiobasicsApp(
                                 onBack = { navigateBack() },
                                 onNavigateQueue = { push(QueueKey) },
                                 onAlbumClick = { album -> push(AlbumDetailKey(album)) },
-                                onNavigateAlbums = { q -> push(SearchAlbumsKey(q)) },
-                                onNavigateArtists = { q -> push(SearchArtistsKey(q)) },
+                                onArtistClick = { artist -> push(ArtistDetailKey(artist.name, artist.id)) },
                                 onAddTo = { song -> addToSheetSong = song }
                             )
                         }
