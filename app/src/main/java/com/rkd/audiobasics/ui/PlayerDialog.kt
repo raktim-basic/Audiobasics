@@ -1031,6 +1031,11 @@ private fun PlayerFrontContentV2(
         label = "playerV2ScrimAlpha"
     )
 
+    val openOverflowMenu = rememberOverflowMenuOpener(
+        vm, context, hapticsEnabled, song,
+        onDismiss, onNavigateQueue, onShowShareChoice, onShowSleepDialog, onShowTempoPitchDialog
+    )
+
     // Play/pause buttons (both the normal-mode pill and the immersive corner button) follow
     // the app theme rather than being hardcoded white — same colors the classic player's own
     // button uses, so switching System/Light/Dark still looks intentional here.
@@ -1107,26 +1112,57 @@ private fun PlayerFrontContentV2(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.End,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    // Active-feature indicators — see PlayerFrontContent (classic face) for
+                    // the full rationale; same behavior here.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
+                            val sleepAnchor = rememberMorphAnchor()
+                            IconButton(
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    openOverflowMenu(sleepAnchor.bounds())
+                                },
+                                modifier = Modifier.morphAnchor(sleepAnchor)
+                            ) {
+                                Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer active", tint = Color.Red, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) {
+                            val tempoAnchor = rememberMorphAnchor()
+                            IconButton(
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    openOverflowMenu(tempoAnchor.bounds())
+                                },
+                                modifier = Modifier.morphAnchor(tempoAnchor)
+                            ) {
+                                Icon(Icons.Default.Speed, contentDescription = "Tempo and pitch active", tint = Color.Red, modifier = Modifier.size(20.dp))
+                            }
+                        }
                     }
-                    IconButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onShowInfo()
-                    }) {
-                        Icon(Icons.Default.Info, contentDescription = "Song info", tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onDismiss()
-                    }) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onShowInfo()
+                        }) {
+                            Icon(Icons.Default.Info, contentDescription = "Song info", tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onDismiss()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
 
