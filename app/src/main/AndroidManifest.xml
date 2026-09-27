@@ -21,10 +21,6 @@
             android:launchMode="singleTop"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
             android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!-- Smart Inputs: makes Audiobasics appear in the Android share sheet for any
                  shared text. Android can't filter share-target intent-filters by URL content,
                  so this necessarily also matches non-YouTube text shares — those are rejected
@@ -47,6 +43,37 @@
                     android:pathPrefix="/l" />
             </intent-filter>
         </activity>
+
+        <!-- Feb 22 anniversary icon easter egg: the LAUNCHER intent-filter lives on these two
+             aliases instead of directly on MainActivity, so exactly one of them is enabled at
+             a time — AudiobasicsApp.onCreate() flips them via PackageManager based on
+             EasterEggUtils.isAnniversaryDay(). Both just point at the same real MainActivity;
+             this only changes which launcher icon shows, nothing about app behavior. -->
+        <activity-alias
+            android:name=".MainActivityDefault"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityAnniversary"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_anniversary"
+            android:roundIcon="@mipmap/ic_launcher_anniversary"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".player.MusicService"
