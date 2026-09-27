@@ -84,40 +84,11 @@ fun SearchArtistsScreen(
                 else -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(artists) { artist ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onArtistClick(artist) }
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                AsyncImage(
-                                    model = artist.thumbnail,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(60.dp)
-                                        .clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Spacer(Modifier.width(16.dp))
-                                Column {
-                                    Text(
-                                        text = artist.name,
-                                        fontFamily = NothingFont,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
-                                        color = textColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "(Artist)",
-                                        fontFamily = NothingFont,
-                                        fontSize = 13.sp,
-                                        color = subTextColor
-                                    )
-                                }
-                            }
+                            ArtistRowItem(
+                                artist = artist,
+                                isDarkMode = isDarkMode,
+                                onClick = { onArtistClick(artist) }
+                            )
                         }
                     }
                 }
@@ -144,6 +115,51 @@ fun SearchArtistsScreen(
             }) {
                 Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = textColor, modifier = Modifier.size(26.dp))
             }
+        }
+    }
+}
+
+@Composable
+fun ArtistRowItem(
+    artist: Artist,
+    isDarkMode: Boolean,
+    onClick: () -> Unit
+) {
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = artist.thumbnail,
+            contentDescription = null,
+            modifier = Modifier
+                .size(60.dp)
+                .clip(CircleShape),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(
+                text = artist.name,
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "(Artist)",
+                fontFamily = NothingFont,
+                fontSize = 13.sp,
+                color = subTextColor
+            )
         }
     }
 }
