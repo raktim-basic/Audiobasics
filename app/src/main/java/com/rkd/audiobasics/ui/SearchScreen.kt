@@ -122,20 +122,23 @@ fun SearchScreen(
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showSuggestions by rememberSaveable { mutableStateOf(false) }
 
-    // The filter tabs (Songs/Albums/Artists) switch which results the same box below shows;
-    // "Links" isn't a result type, it's shorthand for opening the same play-by-link dialog
-    // the old "Try with YouTube link" text used to.
+    // The filter tabs (Songs/Albums/Artists/YT) switch which results the same box below
+    // shows; "Links" isn't a result type, it's shorthand for opening the same play-by-link
+    // dialog the old "Try with YouTube link" text used to.
     var selectedFilter by rememberSaveable { mutableStateOf(SearchResultFilter.SONGS) }
     // The query that's actually been searched (i.e. submitted), separate from what's still
-    // being typed — Albums/Artists fetch off this, the same way Songs already does via
+    // being typed — Albums/Artists/YT fetch off this, the same way Songs already does via
     // vm.search(). Also doubles as which query each cache below (if any) was fetched for.
     var committedQuery by rememberSaveable { mutableStateOf("") }
     var albumResults by remember { mutableStateOf<List<Album>>(emptyList()) }
     var artistResults by remember { mutableStateOf<List<com.rkd.audiobasics.data.Artist>>(emptyList()) }
+    var ytResults by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoadingAlbums by remember { mutableStateOf(false) }
     var isLoadingArtists by remember { mutableStateOf(false) }
+    var isLoadingYT by remember { mutableStateOf(false) }
     var albumsFetchedFor by remember { mutableStateOf<String?>(null) }
     var artistsFetchedFor by remember { mutableStateOf<String?>(null) }
+    var ytFetchedFor by remember { mutableStateOf<String?>(null) }
 
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -148,7 +151,7 @@ fun SearchScreen(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
     // Runs a fresh search for the query as-typed: songs go through the ViewModel as before;
-    // albums/artists are only actually fetched once their tab gets selected (see the
+    // albums/artists/YT are only actually fetched once their tab gets selected (see the
     // LaunchedEffect below) so switching tabs back and forth doesn't refetch needlessly.
     fun submitSearch(text: String) {
         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -185,6 +188,18 @@ fun SearchScreen(
                     }
                     isLoadingArtists = false
                     artistsFetchedFor = committedQuery
+                }
+            }
+            SearchResultFilter.YT -> {
+                if (ytFetchedFor != committedQuery) {
+                    isLoadingYT = true
+                    ytResults = try {
+                        Innertube.searchYoutubeVideos(committedQuery)
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    isLoadingYT = false
+                    ytFetchedFor = committedQuery
                 }
             }
             SearchResultFilter.SONGS -> Unit
@@ -290,15 +305,17 @@ fun SearchScreen(
                         }
                         else -> {
                             LazyColumn(modifier = Modifier.fillMaxSize(), reverseLayout = true) {
-                                items(albumResults) { album ->
-                                    AlbumRowItem(
-                                        album = album,
-                                        isDarkMode = isDarkMode,
-                                        onClick = {
-                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                            onAlbumClick(album)
-                                        }
-                                    )
+                                itemsIndexed(albumResults, key = { _, album -> album.id }) { index, album ->
+                                    StaggeredFadeInItem(itemKey = album.id, index = index) {
+                                        AlbumRowItem(
+                                            album = album,
+                                            isDarkMode = isDarkMode,
+                                            onClick = {
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                onAlbumClick(album)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -315,70 +332,56 @@ fun SearchScreen(
                         }
                         else -> {
                             LazyColumn(modifier = Modifier.fillMaxSize(), reverseLayout = true) {
-                                items(artistResults) { artist ->
-                                    ArtistRowItem(
-                                        artist = artist,
-                                        isDarkMode = isDarkMode,
-                                        onClick = {
-                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                            onArtistClick(artist)
-                                        }
-                                    )
+                                itemsIndexed(artistResults, key = { _, artist -> artist.id }) { index, artist ->
+                                    StaggeredFadeInItem(itemKey = artist.id, index = index) {
+                                        ArtistRowItem(
+                                            artist = artist,
+                                            isDarkMode = isDarkMode,
+                                            onClick = {
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                onArtistClick(artist)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        reverseLayout = true
-                    ) {
-                        itemsIndexed(results, key = { _, song -> song.id }) { index, song ->
-                            val isLiked = likedSongs.any { it.id == song.id }
-                            val isPlaying = currentSong?.id == song.id
-
-                            // Fade-in-from-bottom stagger: with reverseLayout = true, index 0
-                            // is the item rendered closest to the search bar at the bottom of
-                            // the screen, so it gets the shortest delay and animates in first,
-                            // with each item above it following ~24ms later — communicating
-                            // that results originate from the search bar without any text.
-                            // Keyed on song.id (via `remember`) so this only plays once per
-                            // item's first appearance, not on every recomposition/scroll.
-                            val alpha = remember(song.id) { Animatable(0f) }
-                            val offsetY = remember(song.id) { Animatable(12f) }
-                            LaunchedEffect(song.id) {
-                                delay((index * 28L).coerceAtMost(600L))
-                                launch { alpha.animateTo(1f, tween(durationMillis = 220)) }
-                                launch { offsetY.animateTo(0f, tween(durationMillis = 220)) }
-                            }
-
-                            Box(
-                                modifier = Modifier.graphicsLayer {
-                                    this.alpha = alpha.value
-                                    translationY = offsetY.value
-                                }
-                            ) {
-                                SongItem(
-                                    song = song,
-                                    isDarkMode = isDarkMode,
-                                    isLiked = isLiked,
-                                    isInQueue = false,
-                                    isPlaying = isPlaying,
-                                    showMenu = true,
-                                    hapticsEnabled = hapticsEnabled,
-                                    context = context,
-                                    onClick = { vm.play(song) },
-                                    onAddToQueue = { vm.addToQueue(song) },
-                                    onPlayNext = { vm.playNext(song) },
-                                    onLike = { vm.toggleLike(song) },
-                                    onShare = {},
-                                    onRetryCache = { vm.retryCache(song) },
-                                    onAddTo = { onAddTo(song) }
-                                )
-                            }
+                selectedFilter == SearchResultFilter.YT -> {
+                    when {
+                        committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
+                        isLoadingYT -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color.Red)
+                        }
+                        ytResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No videos found", fontFamily = NothingFont, color = Color.Gray)
+                        }
+                        else -> {
+                            SongResultsList(
+                                songs = ytResults,
+                                isDarkMode = isDarkMode,
+                                likedSongs = likedSongs,
+                                currentSong = currentSong,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
+                                vm = vm,
+                                onAddTo = onAddTo
+                            )
                         }
                     }
+                }
+                else -> {
+                    SongResultsList(
+                        songs = results,
+                        isDarkMode = isDarkMode,
+                        likedSongs = likedSongs,
+                        currentSong = currentSong,
+                        hapticsEnabled = hapticsEnabled,
+                        context = context,
+                        vm = vm,
+                        onAddTo = onAddTo
+                    )
                 }
             }
         }
@@ -408,7 +411,8 @@ fun SearchScreen(
             listOf(
                 SearchResultFilter.SONGS to "Songs",
                 SearchResultFilter.ALBUMS to "Albums",
-                SearchResultFilter.ARTISTS to "Artists"
+                SearchResultFilter.ARTISTS to "Artists",
+                SearchResultFilter.YT to "YT"
             ).forEach { (filter, label) ->
                 Text(
                     text = label,
@@ -491,7 +495,82 @@ fun SearchScreen(
     }
 }
 
-private enum class SearchResultFilter { SONGS, ALBUMS, ARTISTS }
+private enum class SearchResultFilter { SONGS, ALBUMS, ARTISTS, YT }
+
+// Shared by the Songs tab (YTM catalog results) and the YT tab (raw YouTube video search) —
+// both are plain Songs and render identically, including the full context menu (queue, play
+// next, like, retry cache), since a YT result plays through the exact same vm.play() path as
+// any other song.
+@Composable
+private fun SongResultsList(
+    songs: List<Song>,
+    isDarkMode: Boolean,
+    likedSongs: List<Song>,
+    currentSong: Song?,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
+    vm: MusicViewModel,
+    onAddTo: (Song) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        reverseLayout = true
+    ) {
+        itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
+            val isLiked = likedSongs.any { it.id == song.id }
+            val isPlaying = currentSong?.id == song.id
+
+            StaggeredFadeInItem(itemKey = song.id, index = index) {
+                SongItem(
+                    song = song,
+                    isDarkMode = isDarkMode,
+                    isLiked = isLiked,
+                    isInQueue = false,
+                    isPlaying = isPlaying,
+                    showMenu = true,
+                    hapticsEnabled = hapticsEnabled,
+                    context = context,
+                    onClick = { vm.play(song) },
+                    onAddToQueue = { vm.addToQueue(song) },
+                    onPlayNext = { vm.playNext(song) },
+                    onLike = { vm.toggleLike(song) },
+                    onShare = {},
+                    onRetryCache = { vm.retryCache(song) },
+                    onAddTo = { onAddTo(song) }
+                )
+            }
+        }
+    }
+}
+
+// Fade-in-from-bottom stagger shared by the Songs/Albums/Artists result lists: with
+// reverseLayout = true, index 0 is the item closest to the search bar at the bottom of the
+// screen, so it gets the shortest delay and animates in first, with each item above it
+// following ~28ms later — communicating that results originate from the search bar without
+// any text. Keyed on itemKey (via `remember`) so this only plays once per item's first
+// appearance, not on every recomposition/scroll.
+@Composable
+private fun StaggeredFadeInItem(
+    itemKey: Any,
+    index: Int,
+    content: @Composable () -> Unit
+) {
+    val alpha = remember(itemKey) { Animatable(0f) }
+    val offsetY = remember(itemKey) { Animatable(12f) }
+    LaunchedEffect(itemKey) {
+        delay((index * 28L).coerceAtMost(600L))
+        launch { alpha.animateTo(1f, tween(durationMillis = 220)) }
+        launch { offsetY.animateTo(0f, tween(durationMillis = 220)) }
+    }
+    Box(
+        modifier = Modifier.graphicsLayer {
+            this.alpha = alpha.value
+            translationY = offsetY.value
+        }
+    ) {
+        content()
+    }
+}
 
 @Composable
 fun PlayByLinkDialog(
