@@ -34,6 +34,7 @@ import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.data.db.PlaylistSongEntity
 import com.rkd.audiobasics.player.MusicService
 import com.rkd.audiobasics.utils.AudiobasicsLinks
+import com.rkd.audiobasics.utils.EasterEggUtils
 import com.rkd.audiobasics.utils.MigrationMessageProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -260,6 +261,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _logsEnabled = MutableStateFlow(prefs.getBoolean("logs_enabled", false))
     val logsEnabled: StateFlow<Boolean> = _logsEnabled
+
+    // Feb 22 anniversary easter egg (v1.0's launch date) — checked once per process, same
+    // as the app's other date-based easter egg (see EasterEggUtils / Type.kt's April Fools
+    // font swap). Consumers force the classic player face for the day on top of this, without
+    // touching the persisted newPlayerDesign preference below.
+    val isAnniversaryDay: Boolean = EasterEggUtils.isAnniversaryDay()
 
     // Player design: false = classic (existing) player face, true = the new art-first,
     // immersive-mode player face. Settings > Appearance > Player design.
