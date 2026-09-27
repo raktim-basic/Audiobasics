@@ -50,10 +50,14 @@ fun SearchAlbumsScreen(
         isLoading = true
         try {
             val results = Innertube.searchAlbums(query)
-            albums = results
             val first = results.firstOrNull()
             if (first != null && isConfidentAlbumMatch(first, expectedTitle, expectedArtist)) {
+                // Never touch `albums` in this branch — writing it (even briefly, before
+                // navigating away) is what let the results list flash on screen for a frame
+                // before the auto-open took over.
                 onAutoMatchedAlbum(first)
+            } else {
+                albums = results
             }
         } catch (_: Exception) {
             albums = emptyList()
