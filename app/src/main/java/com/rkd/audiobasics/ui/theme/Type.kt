@@ -7,12 +7,25 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.R
+import com.rkd.audiobasics.utils.EasterEggUtils
 
-val NothingFont = FontFamily(
+private val NothingFontRegular = FontFamily(
     Font(R.font.nothing_font, FontWeight.Normal),
     Font(R.font.nothing_font, FontWeight.Bold),
     Font(R.font.nothing_font, FontWeight.Medium),
 )
+
+// April Fools' Day easter egg: Comic Neue (an open-source, Comic-Sans-style font) stands in
+// for NothingFont for one day only. Every screen references NothingFont directly by name
+// (not just via MaterialTheme.typography), so swapping this one value flips the whole app.
+private val ComicFont = FontFamily(
+    Font(R.font.comic_neue_regular, FontWeight.Normal),
+    Font(R.font.comic_neue_bold, FontWeight.Bold),
+    Font(R.font.comic_neue_bold, FontWeight.Medium),
+)
+
+val NothingFont: FontFamily =
+    if (EasterEggUtils.isAprilFoolsDay()) ComicFont else NothingFontRegular
 
 val AppTypography = Typography(
     displayLarge = TextStyle(
