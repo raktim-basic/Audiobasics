@@ -39,6 +39,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -701,8 +702,11 @@ private fun PlayerFrontContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
+                // Fixed-width digits: NothingFont/ComicFont aren't monospace, so a
+                // proportional-width timestamp here made the scrub bar's width (and its
+                // dashes) shift slightly on every position tick. Monospace keeps it steady.
                 text = formatTime(displayPosition),
-                fontFamily = NothingFont,
+                fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = textColor
@@ -733,7 +737,7 @@ private fun PlayerFrontContent(
             Spacer(Modifier.width(8.dp))
             Text(
                 text = formatTime(duration),
-                fontFamily = NothingFont,
+                fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = textColor
@@ -1233,7 +1237,7 @@ private fun PlayerFrontContentV2(
                 ) {
                     Text(
                         text = formatTime(displayPosition),
-                        fontFamily = NothingFont,
+                        fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = Color.White
@@ -1262,7 +1266,7 @@ private fun PlayerFrontContentV2(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = formatTime(duration),
-                        fontFamily = NothingFont,
+                        fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = Color.White
