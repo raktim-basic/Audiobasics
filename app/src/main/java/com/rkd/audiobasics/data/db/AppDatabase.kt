@@ -9,7 +9,7 @@ import androidx.room.migration.Migration
 
 @Database(
     entities = [PlaylistEntity::class, PlaylistSongEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -38,13 +38,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Adds artistNamesJson/artistIdsJson so custom-playlist songs can carry each artist's
+        // real YTM channel id, matching what liked songs/saved-album songs already carry —
+        // fixes artist-tap opening the wrong same-named artist or "Artist not found" for
+        // playlist songs. Defaulted to an empty JSON array so existing rows stay valid; the
+        // one-time library backfill (MusicViewModel.refreshLibraryArtistIdsIfNeeded) fills
+        // real values back in afterward.
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playlist_songs ADD COLUMN artistNamesJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE playlist_songs ADD COLUMN artistIdsJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "audiobasics.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
             }
         }
     }
