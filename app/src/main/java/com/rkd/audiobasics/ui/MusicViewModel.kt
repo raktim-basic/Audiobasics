@@ -177,6 +177,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _openPlaylistId = MutableStateFlow<String?>(null)
     val openPlaylistId: StateFlow<String?> = _openPlaylistId
 
+    // Id of the song currently being re-fetched by refreshSongArtists(), or null when idle —
+    // lets Song Info show a spinner on the refresh icon only for the song it was tapped on.
+    private val _refreshingArtistsForSongId = MutableStateFlow<String?>(null)
+    val refreshingArtistsForSongId: StateFlow<String?> = _refreshingArtistsForSongId
+
     // ── Cache / Storage ───────────────────────────────────────────────────────
     private val _cacheSize = MutableStateFlow("")
     val cacheSize: StateFlow<String> = _cacheSize
@@ -1306,7 +1311,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                 artist = fresh.artist,
                                 thumbnail = fresh.thumbnail,
                                 isExplicit = fresh.isExplicit,
-                                albumId = fresh.albumId
+                                albumId = fresh.albumId,
+                                artistNamesJson = Song.encodeArtistNames(fresh.artistNames),
+                                artistIdsJson = Song.encodeArtistIds(fresh.artistIds)
                             )
                         )
                     }
@@ -1565,7 +1572,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             thumbnail = song.thumbnail,
                             isExplicit = song.isExplicit,
                             albumId = song.albumId,
-                            duration = song.duration
+                            duration = song.duration,
+                            artistNamesJson = Song.encodeArtistNames(song.artistNames),
+                            artistIdsJson = Song.encodeArtistIds(song.artistIds)
                         )
                     )
                     // Fire caching independently on viewModelScope — do not await it here,
@@ -1630,7 +1639,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         id = songId, title = title, artist = artist,
         thumbnail = thumbnail, isExplicit = isExplicit, albumId = albumId,
         duration = duration,
-        isCached = CacheManager.isCached(getApplication(), songId)
+        isCached = CacheManager.isCached(getApplication(), songId),
+        artistNames = Song.decodeArtistNames(artistNamesJson),
+        artistIds = Song.decodeArtistIds(artistIdsJson)
     )
 
     /** Retry downloading a single song that belongs to a custom playlist (not liked). */
@@ -1643,6 +1654,72 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.IO) {
                     _openPlaylistSongs.value = playlistDao.getPlaylistSongs(pid)
                 }
+            }
+        }
+    }
+
+    /**
+     * Re-fetches one song's artist info (name(s) + each artist's YTM channel id) from
+     * Innertube and writes it back wherever the song is persisted — liked songs, the
+     * saved-album-song cache, every custom playlist containing it, and the currently-playing
+     * song if it's this one. Triggered manually from the refresh icon in Song Info, for a song
+     * whose artist tap fails or opens the wrong artist (e.g. because it was liked/added before
+     * artistIds persistence existed, or its own YTM catalog entry changed since).
+     */
+    fun refreshSongArtists(song: Song) {
+        if (_refreshingArtistsForSongId.value != null) return
+        viewModelScope.launch {
+            _refreshingArtistsForSongId.value = song.id
+            try {
+                val fresh = withContext(Dispatchers.IO) { Innertube.refreshSongMetadata(song) }
+
+                if (_currentSong.value?.id == song.id) {
+                    _currentSong.value = fresh
+                }
+
+                if (_likedSongs.value.any { it.id == song.id }) {
+                    _likedSongs.value = _likedSongs.value.map { if (it.id == song.id) fresh else it }
+                    saveLikedSongs()
+                }
+
+                if (song.albumId.isNotBlank()) {
+                    val albumSongs = _savedAlbumSongs.value[song.albumId]
+                    if (albumSongs != null && albumSongs.any { it.id == song.id }) {
+                        _savedAlbumSongs.value = _savedAlbumSongs.value + (
+                            song.albumId to albumSongs.map { if (it.id == song.id) fresh else it }
+                        )
+                        saveSavedAlbumSongs()
+                    }
+                }
+
+                withContext(Dispatchers.IO) {
+                    val entries = playlistDao.getEntriesForSong(song.id)
+                    entries.forEach { entity ->
+                        playlistDao.insertSong(
+                            entity.copy(
+                                title = fresh.title,
+                                artist = fresh.artist,
+                                thumbnail = fresh.thumbnail,
+                                isExplicit = fresh.isExplicit,
+                                albumId = fresh.albumId,
+                                artistNamesJson = Song.encodeArtistNames(fresh.artistNames),
+                                artistIdsJson = Song.encodeArtistIds(fresh.artistIds)
+                            )
+                        )
+                    }
+                    val openId = _openPlaylistId.value
+                    if (openId != null && entries.any { it.playlistId == openId }) {
+                        _openPlaylistSongs.value = playlistDao.getPlaylistSongs(openId)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Artist info updated", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(getApplication(), "Refresh failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            } finally {
+                _refreshingArtistsForSongId.value = null
             }
         }
     }
@@ -1951,6 +2028,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 put("albumTitle", song.albumTitle)
                 put("year", song.year)
                 put("artistNames", JSONArray(song.artistNames))
+                put("artistIds", Song.encodeArtistIds(song.artistIds))
             })
         }
         prefs.edit().putString("liked_songs", arr.toString()).apply()
@@ -1967,6 +2045,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val artistNames = if (artistNamesArr != null) {
                     (0 until artistNamesArr.length()).map { artistNamesArr.optString(it, "") }.filter { it.isNotBlank() }
                 } else emptyList()
+                // "[]" default (rather than skipping the key) covers rows written before this
+                // field existed — decodeArtistIds("[]") is just an empty list, same as unset.
+                val artistIds = Song.decodeArtistIds(obj.optString("artistIds", "[]"))
                 Song(
                     id = id, title = obj.getString("title"),
                     artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
@@ -1976,7 +2057,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     albumId = obj.optString("albumId", ""),
                     albumTitle = obj.optString("albumTitle", ""),
                     year = obj.optString("year", ""),
-                    artistNames = artistNames
+                    artistNames = artistNames,
+                    artistIds = artistIds
                 )
             }
         } catch (_: Exception) { emptyList() }
@@ -2061,6 +2143,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     put("isExplicit", song.isExplicit)
                     put("year", song.year)
                     put("artistNames", JSONArray(song.artistNames))
+                    put("artistIds", Song.encodeArtistIds(song.artistIds))
                 })
             }
             root.put(albumId, arr)
@@ -2080,6 +2163,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     val artistNames = if (artistNamesArr != null) {
                         (0 until artistNamesArr.length()).map { artistNamesArr.optString(it, "") }.filter { it.isNotBlank() }
                     } else emptyList()
+                    val artistIds = Song.decodeArtistIds(obj.optString("artistIds", "[]"))
                     Song(
                         id = obj.getString("id"), title = obj.getString("title"),
                         artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
@@ -2088,7 +2172,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         albumTitle = obj.optString("albumTitle", ""),
                         isExplicit = obj.optBoolean("isExplicit", false),
                         year = obj.optString("year", ""),
-                        artistNames = artistNames
+                        artistNames = artistNames,
+                        artistIds = artistIds
                     )
                 }
                 map[albumId] = songs
@@ -2106,6 +2191,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     songsArr.put(JSONObject().apply {
                         put("id", song.id); put("title", song.title)
                         put("artist", song.artist); put("thumbnail", song.thumbnail)
+                        put("artistNames", JSONArray(song.artistNames))
+                        put("artistIds", Song.encodeArtistIds(song.artistIds))
                     })
                 }
                 val albumsArr = JSONArray()
@@ -2128,6 +2215,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                 put("artist", song.artist); put("thumbnail", song.thumbnail)
                                 put("isExplicit", song.isExplicit); put("albumId", song.albumId)
                                 put("duration", song.duration)
+                                put("artistNames", song.artistNamesJson)
+                                put("artistIds", song.artistIdsJson)
                             })
                         }
                         playlistsArr.put(JSONObject().apply {
@@ -2157,10 +2246,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val root = JSONObject(text)
                 val songs = (0 until root.getJSONArray("liked_songs").length()).map { i ->
                     val obj = root.getJSONArray("liked_songs").getJSONObject(i)
+                    val artistNamesArr = obj.optJSONArray("artistNames")
+                    val artistNames = if (artistNamesArr != null) {
+                        (0 until artistNamesArr.length()).map { artistNamesArr.optString(it, "") }.filter { it.isNotBlank() }
+                    } else emptyList()
                     Song(
                         id = obj.getString("id"), title = obj.getString("title"),
                         artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
-                        isCached = false, cacheFailed = true
+                        isCached = false, cacheFailed = true,
+                        artistNames = artistNames,
+                        artistIds = Song.decodeArtistIds(obj.optString("artistIds", "[]"))
                     )
                 }
                 val albums = (0 until root.getJSONArray("saved_albums").length()).map { i ->
@@ -2208,7 +2303,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                         thumbnail = sObj.getString("thumbnail"),
                                         isExplicit = sObj.optBoolean("isExplicit", false),
                                         albumId = sObj.optString("albumId", ""),
-                                        duration = sObj.optLong("duration", 0L)
+                                        duration = sObj.optLong("duration", 0L),
+                                        // Older exports won't have these keys — "[]" default
+                                        // matches the entity's own column default.
+                                        artistNamesJson = sObj.optString("artistNames", "[]"),
+                                        artistIdsJson = sObj.optString("artistIds", "[]")
                                     )
                                 )
                                 importedPlaylistSongCount++
