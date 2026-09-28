@@ -66,4 +66,9 @@ interface PlaylistDao {
 
     @Query("SELECT * FROM playlist_songs GROUP BY songId")
     suspend fun getAllPlaylistSongs(): List<PlaylistSongEntity>
+
+    // Every playlist row for one song (a song can be in several playlists at once), used by
+    // the single-song artist-info refresh (Song Info's refresh button) to update all of them.
+    @Query("SELECT * FROM playlist_songs WHERE songId = :songId")
+    suspend fun getEntriesForSong(songId: String): List<PlaylistSongEntity>
 }
