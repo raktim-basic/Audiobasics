@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -118,6 +120,7 @@ fun SearchScreen(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     val query by vm.searchQuery.collectAsState()
+    val searchHistory by vm.searchHistory.collectAsState()
     var showLinkDialog by rememberSaveable { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showSuggestions by rememberSaveable { mutableStateOf(false) }
@@ -368,6 +371,58 @@ fun SearchScreen(
                                 vm = vm,
                                 onAddTo = onAddTo
                             )
+                        }
+                    }
+                }
+                selectedFilter == SearchResultFilter.SONGS && query.isBlank() && results.isEmpty() && searchHistory.isNotEmpty() -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        reverseLayout = true,
+                        contentPadding = PaddingValues(vertical = 4.dp)
+                    ) {
+                        items(searchHistory, key = { it }) { pastQuery ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        vm.setSearchQuery(pastQuery)
+                                        submitSearch(pastQuery)
+                                    }
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = textColor.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = pastQuery,
+                                    fontFamily = NothingFont,
+                                    fontSize = 14.sp,
+                                    color = textColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        vm.removeFromSearchHistory(pastQuery)
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove from search history",
+                                        tint = textColor.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
