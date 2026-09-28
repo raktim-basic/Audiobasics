@@ -108,12 +108,22 @@ jobs:
           EOF
 
       - name: Build signed release APK
-        run: gradle clean assembleRelease --no-build-cache --no-configuration-cache --rerun-tasks
+        run: gradle clean assembleRelease --no-build-cache --no-configuration-cache --rerun-tasks --stacktrace
         env:
           KEYSTORE_PATH: audiobasics.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload build reports (always, even on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            build/reports/
+            app/build/reports/
+          if-no-files-found: ignore
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
