@@ -132,6 +132,35 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _searchQuery.value = query
     }
 
+    // Recent searches: most-recent-first, capped at 5, persisted as a single delimited
+    // string (record-separator char, extremely unlikely to appear in a real search query)
+    // rather than pulling in a JSON dependency for such a small list.
+    private val _searchHistory = MutableStateFlow(loadSearchHistory())
+    val searchHistory: StateFlow<List<String>> = _searchHistory
+
+    private fun loadSearchHistory(): List<String> {
+        val raw = prefs.getString("search_history", "") ?: ""
+        if (raw.isEmpty()) return emptyList()
+        return raw.split(SEARCH_HISTORY_DELIMITER).filter { it.isNotBlank() }
+    }
+
+    private fun saveSearchHistory() {
+        prefs.edit().putString("search_history", _searchHistory.value.joinToString(SEARCH_HISTORY_DELIMITER)).apply()
+    }
+
+    private fun addToSearchHistory(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return
+        val updated = listOf(trimmed) + _searchHistory.value.filterNot { it.equals(trimmed, ignoreCase = true) }
+        _searchHistory.value = updated.take(5)
+        saveSearchHistory()
+    }
+
+    fun removeFromSearchHistory(query: String) {
+        _searchHistory.value = _searchHistory.value.filterNot { it == query }
+        saveSearchHistory()
+    }
+
     // ── Liked songs (SharedPrefs) ─────────────────────────────────────────────
     private val _likedSongs = MutableStateFlow<List<Song>>(loadLikedSongs())
     val likedSongs: StateFlow<List<Song>> = _likedSongs
@@ -676,6 +705,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun search(query: String) {
         if (query.isBlank()) return
+        addToSearchHistory(query)
         viewModelScope.launch {
             _isSearching.value = true
             try {
@@ -2247,5 +2277,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         const val TEMPO_STEP = 0.05f
         const val PITCH_MIN = -12
         const val PITCH_MAX = 12
+        private const val SEARCH_HISTORY_DELIMITER = "\u001E"
     }
 }
