@@ -233,7 +233,7 @@ private fun SettingsMainPage(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Appearance",
-                    subtitle = "Theme and more soon",
+                    subtitle = "Theme and more",
                     icon = {
                         Icon(
                             Icons.Default.Palette,
@@ -277,7 +277,7 @@ private fun SettingsMainPage(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Library management",
-                    subtitle = "Downloads and export/import",
+                    subtitle = "Downloads and backups",
                     icon = {
                         Icon(
                             Icons.Default.LibraryMusic,
@@ -464,7 +464,7 @@ private fun AppearancePage(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Appearance and feel",
+                text = "Appearance",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 24.sp,
@@ -615,14 +615,6 @@ private fun AppearancePage(
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "New: full-art player with an immersive tap-to-hide-controls mode.",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Normal,
-                fontSize = 12.sp,
-                color = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
-            )
         }
 
         Box(
@@ -659,7 +651,7 @@ private fun AppearancePage(
                     color = textColor
                 )
                 Text(
-                    text = "New player only — hides controls 3s after playback starts.",
+                    text = "Hide controls automatically",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Normal,
                     fontSize = 12.sp,
@@ -787,6 +779,13 @@ private fun GeneralPage(
                 .padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(
+                Icons.Default.Speed,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Tempo/Pitch applies to all songs",
@@ -823,6 +822,13 @@ private fun GeneralPage(
                 .padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(
+                Icons.Default.Share,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Show YouTube Link option on share",
@@ -1079,7 +1085,7 @@ private fun LibraryPage(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Export Library",
-                    subtitle = "Save liked songs and albums to file",
+                    subtitle = "Create a backup file of your library",
                     icon = {
                         Icon(
                             Icons.Default.Upload,
@@ -1101,7 +1107,7 @@ private fun LibraryPage(
                 SettingsRow(
                     isDarkMode = isDarkMode,
                     title = "Import Library",
-                    subtitle = "Restore liked songs and albums from file",
+                    subtitle = "Import a backup file of your library",
                     icon = {
                         Icon(
                             Icons.Default.Download,
