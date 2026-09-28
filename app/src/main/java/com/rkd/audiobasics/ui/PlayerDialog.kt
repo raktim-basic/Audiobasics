@@ -422,6 +422,7 @@ fun PlayerDialog(
                             .graphicsLayer { rotationY = 180f }
                     ) {
                         if (song != null) {
+                            val refreshingArtistsForSongId by vm.refreshingArtistsForSongId.collectAsState()
                             SongInfoCardContent(
                                 song = song!!,
                                 isDarkMode = isDarkMode,
@@ -430,6 +431,8 @@ fun PlayerDialog(
                                 resolvedAlbumCache = resolvedAlbumCache,
                                 onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
                                 livePlaybackDurationMs = duration,
+                                isRefreshingArtists = refreshingArtistsForSongId == song!!.id,
+                                onRefreshArtists = { vm.refreshSongArtists(song!!) },
                                 onDismiss = { scope.launch { flipTo(0f) } },
                                 onArtistClick = { artistName, artistId ->
                                     onDismiss()
