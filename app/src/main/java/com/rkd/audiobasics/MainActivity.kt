@@ -415,7 +415,15 @@ fun AudiobasicsApp(
     SideEffect {
         val window = (view.context as android.app.Activity).window
         val controller = WindowCompat.getInsetsController(window, view)
-        controller.isAppearanceLightStatusBars = !isDarkMode && !hasDimmedFloatingWindow
+        // Android 15+ uses edge-to-edge, so when a Center popup dims the app in
+        // light mode, switch to light status-bar icons so they remain visible.
+        // On Android 14 and below, keep the normal dark icons in light mode;
+        // changing them while a popup is open also changes the legacy bar appearance.
+        controller.isAppearanceLightStatusBars = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            !isDarkMode && !hasDimmedFloatingWindow
+        } else {
+            !isDarkMode
+        }
     }
 
     CompositionLocalProvider(LocalMorphOverlay provides morphOverlay) {
