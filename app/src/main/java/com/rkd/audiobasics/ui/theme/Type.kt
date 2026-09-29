@@ -15,17 +15,17 @@ private val NothingFontRegular = FontFamily(
     Font(R.font.nothing_font, FontWeight.Medium),
 )
 
-// April Fools' Day easter egg: Comic Neue (an open-source, Comic-Sans-style font) stands in
-// for NothingFont for one day only. Every screen references NothingFont directly by name
-// (not just via MaterialTheme.typography), so swapping this one value flips the whole app.
-private val ComicFont = FontFamily(
-    Font(R.font.comic_neue_regular, FontWeight.Normal),
-    Font(R.font.comic_neue_bold, FontWeight.Bold),
-    Font(R.font.comic_neue_bold, FontWeight.Medium),
+// April Fools' Day easter egg: Swanky and Moo Moo stands in for NothingFont for one day only.
+// Every screen references NothingFont directly by name (not just via MaterialTheme.typography),
+// so swapping this one value flips the whole app.
+private val SwankyMooMooFont = FontFamily(
+    Font(R.font.temu_papyrus, FontWeight.Normal),
+    Font(R.font.temu_papyrus, FontWeight.Bold),
+    Font(R.font.temu_papyrus, FontWeight.Medium),
 )
 
 val NothingFont: FontFamily =
-    if (EasterEggUtils.isAprilFoolsDay()) ComicFont else NothingFontRegular
+    if (EasterEggUtils.isAprilFoolsDay()) SwankyMooMooFont else NothingFontRegular
 
 val AppTypography = Typography(
     displayLarge = TextStyle(
