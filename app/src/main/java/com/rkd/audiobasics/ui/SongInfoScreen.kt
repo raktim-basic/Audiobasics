@@ -6,7 +6,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,8 +43,6 @@ fun SongInfoCardContent(
     resolvedAlbumCache: Map<String, Album> = emptyMap(),
     onCacheResolvedAlbum: (Album) -> Unit = {},
     livePlaybackDurationMs: Long? = null,
-    isRefreshingArtists: Boolean = false,
-    onRefreshArtists: () -> Unit = {},
     onDismiss: () -> Unit,
     onArtistClick: (String, String?) -> Unit,
     onAlbumClick: (query: String, expectedTitle: String, expectedArtist: String) -> Unit
@@ -120,13 +117,11 @@ fun SongInfoCardContent(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Title, with a refresh icon (re-fetches artist names/links for this song — useful
-        // when an artist tap below opens the wrong artist or "Artist not found", which can
-        // happen for songs liked/added before artist ids were persisted).
+        // Title
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -136,21 +131,6 @@ fun SongInfoCardContent(
                 fontSize = 18.sp,
                 color = Color.Red
             )
-            IconButton(
-                onClick = onRefreshArtists,
-                enabled = !isRefreshingArtists,
-                modifier = Modifier.align(Alignment.CenterEnd)
-            ) {
-                if (isRefreshingArtists) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.Red
-                    )
-                } else {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh artist info", tint = textColor)
-                }
-            }
         }
 
         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = subColor.copy(0.3f))
