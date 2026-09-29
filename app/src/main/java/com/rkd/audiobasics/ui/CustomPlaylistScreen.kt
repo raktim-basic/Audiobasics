@@ -230,9 +230,7 @@ fun CustomPlaylistScreen(
                     isExplicit = entity.isExplicit,
                     albumId = entity.albumId,
                     isCached = songIsCached,
-                    cacheFailed = !songIsCached,
-                    artistNames = Song.decodeArtistNames(entity.artistNamesJson),
-                    artistIds = Song.decodeArtistIds(entity.artistIdsJson)
+                    cacheFailed = !songIsCached
                 )
                 SongItem(
                     song = song,
@@ -245,12 +243,7 @@ fun CustomPlaylistScreen(
                     removeLabel = "Remove from playlist",
                     onClick = {
                         val queue = filteredSongs.map {
-                            Song(
-                                id = it.songId, title = it.title, artist = it.artist,
-                                thumbnail = it.thumbnail, albumId = it.albumId,
-                                artistNames = Song.decodeArtistNames(it.artistNamesJson),
-                                artistIds = Song.decodeArtistIds(it.artistIdsJson)
-                            )
+                            Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId)
                         }
                         vm.playWithQueue(song, queue)
                     },
