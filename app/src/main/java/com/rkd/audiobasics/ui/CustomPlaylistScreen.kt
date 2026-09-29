@@ -91,7 +91,8 @@ fun CustomPlaylistScreen(
         if (toLocal !in livePlaylistSongs.indices) return@rememberReorderableLazyListState
         val current = pendingReorder
         pendingReorder = if (current == null) fromLocal to toLocal else current.first to toLocal
-        livePlaylistSongs.move(fromLocal, toLocal)
+        val movedSong = livePlaylistSongs.removeAt(fromLocal)
+        livePlaylistSongs.add(toLocal, movedSong)
         draggingIndex = toLocal
     }
 
