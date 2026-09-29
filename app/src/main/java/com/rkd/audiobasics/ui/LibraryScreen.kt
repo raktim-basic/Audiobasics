@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -147,7 +148,15 @@ fun LibraryScreen(
         // ── List ───────────────────────────────────────────────────────────
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState) {
             stickyHeader {
-                Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { }
+                        .background(bgColor)
+                ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -402,7 +411,7 @@ fun LibraryScreen(
                     Icon(Icons.Default.Search, contentDescription = "Search",
                         tint = textColor, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("(Library)", fontFamily = NothingFont,
+                    Text("(LIBRARY)", fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
                 }
                 IconButton(onClick = {
