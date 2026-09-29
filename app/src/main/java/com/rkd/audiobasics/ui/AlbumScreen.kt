@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -316,6 +317,10 @@ fun AlbumScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { }
                             .background(bgColor)
                     ) {
                         var titleOverflowed by remember { mutableStateOf(false) }
