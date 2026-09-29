@@ -52,6 +52,16 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_songs WHERE playlistId = :playlistId")
     suspend fun clearPlaylist(playlistId: String)
 
+    @Query("UPDATE playlist_songs SET addedAt = :order WHERE playlistId = :playlistId AND songId = :songId")
+    suspend fun updateSongOrder(playlistId: String, songId: String, order: Long)
+
+    @Transaction
+    suspend fun reorderPlaylistSongs(playlistId: String, orderedSongIds: List<String>) {
+        orderedSongIds.forEachIndexed { index, songId ->
+            updateSongOrder(playlistId, songId, index.toLong())
+        }
+    }
+
     @Query("SELECT EXISTS(SELECT 1 FROM playlist_songs WHERE playlistId = :playlistId AND songId = :songId)")
     suspend fun isSongInPlaylist(playlistId: String, songId: String): Boolean
 
