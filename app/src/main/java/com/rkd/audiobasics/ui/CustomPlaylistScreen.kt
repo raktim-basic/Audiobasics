@@ -5,7 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -17,12 +17,14 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -35,6 +37,8 @@ import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val savedPlaylistScroll = mutableMapOf<String, Pair<Int, Int>>()
 
@@ -75,6 +79,39 @@ fun CustomPlaylistScreen(
         initialFirstVisibleItemIndex = savedIndex,
         initialFirstVisibleItemScrollOffset = savedOffset
     )
+    val reorderEnabled = searchQuery.isBlank()
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    val livePlaylistSongs = remember { mutableStateListOf<com.rkd.audiobasics.data.db.PlaylistSongEntity>().apply { addAll(playlistSongs) } }
+    var pendingReorder by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        val songOffset = 2
+        val fromLocal = from.index - songOffset
+        if (!reorderEnabled || livePlaylistSongs.isEmpty() || fromLocal !in livePlaylistSongs.indices) return@rememberReorderableLazyListState
+        val toLocal = (to.index - songOffset).coerceIn(0, livePlaylistSongs.size - 1)
+        if (toLocal !in livePlaylistSongs.indices) return@rememberReorderableLazyListState
+        val current = pendingReorder
+        pendingReorder = if (current == null) fromLocal to toLocal else current.first to toLocal
+        livePlaylistSongs.move(fromLocal, toLocal)
+        draggingIndex = toLocal
+    }
+
+    LaunchedEffect(playlistSongs) {
+        if (!reorderableState.isAnyItemDragging) {
+            livePlaylistSongs.clear()
+            livePlaylistSongs.addAll(playlistSongs)
+        }
+    }
+
+    LaunchedEffect(reorderableState.isAnyItemDragging) {
+        if (!reorderableState.isAnyItemDragging) {
+            pendingReorder?.let { (from, to) ->
+                if (from != to) vm.reorderPlaylistSongs(playlist.id, from, to)
+            }
+            pendingReorder = null
+            draggingIndex = null
+        }
+    }
+
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
 
@@ -137,7 +174,13 @@ fun CustomPlaylistScreen(
             // ── Sticky header: name + count + shuffle ──────────────────────
             stickyHeader {
                 Column(
-                    modifier = Modifier.fillMaxWidth().background(bgColor)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { }
+                        .background(bgColor)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth()
@@ -218,7 +261,10 @@ fun CustomPlaylistScreen(
             }
 
             // ── Songs ──────────────────────────────────────────────────────
-            items(filteredSongs, key = { it.songId }) { entity ->
+            itemsIndexed(
+                items = if (reorderEnabled) livePlaylistSongs else filteredSongs,
+                key = { _, entity -> entity.songId }
+            ) { index, entity ->
                 val songIsCached = remember(entity.songId, uncachedCount) {
                     com.rkd.audiobasics.cache.CacheManager.isCached(context, entity.songId)
                 }
@@ -232,30 +278,72 @@ fun CustomPlaylistScreen(
                     isCached = songIsCached,
                     cacheFailed = !songIsCached
                 )
-                SongItem(
-                    song = song,
-                    isDarkMode = isDarkMode,
-                    isLiked = likedSongs.any { it.id == song.id },
-                    isPlaying = currentSong?.id == song.id,
-                    hapticsEnabled = hapticsEnabled,
-                    context = context,
-                    showCacheIndicator = true,
-                    removeLabel = "Remove from playlist",
-                    onClick = {
-                        val queue = filteredSongs.map {
-                            Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId)
-                        }
-                        vm.playWithQueue(song, queue)
-                    },
-                    onLike = { vm.toggleLike(song) },
-                    onShare = {},
-                    onAddToQueue = { vm.addToQueue(song) },
-                    onPlayNext = { vm.playNext(song) },
-                    onAddTo = { onAddTo(song) },
-                    onRetryCache = { vm.retryCacheInPlaylist(song) },
-                    onRemoveLike = { removeConfirm = song },
-                    isCaching = song.id in cachingSongIds
-                )
+                val armed = reorderEnabled && draggingIndex == index
+
+                ReorderableItem(
+                    state = reorderableState,
+                    key = entity.songId
+                ) { isActivelyDragging ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem()
+                            .graphicsLayer {
+                                val scale = if (isActivelyDragging) 1.02f else 1f
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = if (isActivelyDragging) 0.9f else 1f
+                            }
+                            .then(
+                                if (armed) {
+                                    Modifier.longPressDraggableHandle(
+                                        onDragStarted = { HapticUtils.performStrongHaptic(context) }
+                                    )
+                                } else Modifier
+                            )
+                            .background(
+                                when {
+                                    isActivelyDragging -> if (isDarkMode) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.06f)
+                                    armed -> if (isDarkMode) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.05f)
+                                    else -> Color.Transparent
+                                }
+                            )
+                    ) {
+                        SongItem(
+                            song = song,
+                            isDarkMode = isDarkMode,
+                            isLiked = likedSongs.any { it.id == song.id },
+                            isPlaying = currentSong?.id == song.id,
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            showCacheIndicator = true,
+                            removeLabel = "Remove from playlist",
+                            onClick = {
+                                if (draggingIndex == null) {
+                                    val queue = (if (reorderEnabled) livePlaylistSongs else filteredSongs).map {
+                                        Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId)
+                                    }
+                                    vm.playWithQueue(song, queue)
+                                }
+                            },
+                            onLike = { vm.toggleLike(song) },
+                            onShare = {},
+                            onAddToQueue = { vm.addToQueue(song) },
+                            onPlayNext = { vm.playNext(song) },
+                            onReorder = if (reorderEnabled) {
+                                {
+                                    draggingIndex = if (armed) null else index
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                }
+                            } else null,
+                            onAddTo = { onAddTo(song) },
+                            onRetryCache = { vm.retryCacheInPlaylist(song) },
+                            onRemoveLike = { removeConfirm = song },
+                            isDragging = armed,
+                            isCaching = song.id in cachingSongIds
+                        )
+                    }
+                }
             }
         }
 
@@ -322,7 +410,7 @@ fun CustomPlaylistScreen(
                     Icon(Icons.Default.Search, contentDescription = "Search",
                         tint = textColor, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("(${playlist.name})", fontFamily = NothingFont,
+                    Text("(PLAYLIST)", fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
                 }
                 IconButton(onClick = {
