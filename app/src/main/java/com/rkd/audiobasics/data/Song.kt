@@ -1,7 +1,5 @@
 package com.rkd.audiobasics.data
 
-import org.json.JSONArray
-
 data class Song(
     val id: String,
     val title: String,
@@ -38,29 +36,5 @@ data class Song(
     fun artistIdFor(name: String): String? {
         val idx = artistNames.indexOfFirst { it.equals(name, ignoreCase = true) }
         return if (idx in artistIds.indices) artistIds[idx] else null
-    }
-
-    companion object {
-        // Shared JSON encode/decode for artistNames/artistIds, used by every place a Song gets
-        // round-tripped through a String-only store (SharedPreferences JSON, Room columns).
-        // Centralized here after the same "artistIds silently dropped on the way back out"
-        // bug turned up in three separate persistence spots (liked songs, saved-album-song
-        // cache, custom playlist songs) — see MusicViewModel's save/load functions and
-        // PlaylistSongEntity. artistIds' nulls (an artist run with no clickable channel link)
-        // aren't representable in a plain JSON string array, so "" is used as the null sentinel
-        // on the way out and mapped back to null on the way in.
-        fun encodeArtistNames(names: List<String>): String = JSONArray(names).toString()
-
-        fun decodeArtistNames(json: String): List<String> = try {
-            val arr = JSONArray(json)
-            (0 until arr.length()).map { arr.optString(it, "") }.filter { it.isNotBlank() }
-        } catch (_: Exception) { emptyList() }
-
-        fun encodeArtistIds(ids: List<String?>): String = JSONArray(ids.map { it ?: "" }).toString()
-
-        fun decodeArtistIds(json: String): List<String?> = try {
-            val arr = JSONArray(json)
-            (0 until arr.length()).map { i -> arr.optString(i, "").ifBlank { null } }
-        } catch (_: Exception) { emptyList() }
     }
 }
