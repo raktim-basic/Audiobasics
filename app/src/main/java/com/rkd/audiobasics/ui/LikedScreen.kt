@@ -5,7 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -17,12 +17,14 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -34,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private var savedLikedIndex = 0
 private var savedLikedOffset = 0
@@ -70,6 +74,40 @@ fun LikedScreen(
         initialFirstVisibleItemIndex = savedLikedIndex,
         initialFirstVisibleItemScrollOffset = savedLikedOffset
     )
+    val reorderEnabled = searchQuery.isBlank()
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+
+    val liveLikedSongs = remember { mutableStateListOf<Song>().apply { addAll(likedSongs) } }
+    var pendingReorder by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        val songOffset = 2
+        val fromLocal = from.index - songOffset
+        if (!reorderEnabled || liveLikedSongs.isEmpty() || fromLocal !in liveLikedSongs.indices) return@rememberReorderableLazyListState
+        val toLocal = (to.index - songOffset).coerceIn(0, liveLikedSongs.size - 1)
+        if (toLocal !in liveLikedSongs.indices) return@rememberReorderableLazyListState
+        val current = pendingReorder
+        pendingReorder = if (current == null) fromLocal to toLocal else current.first to toLocal
+        liveLikedSongs.move(fromLocal, toLocal)
+        draggingIndex = toLocal
+    }
+
+    LaunchedEffect(likedSongs) {
+        if (!reorderableState.isAnyItemDragging) {
+            liveLikedSongs.clear()
+            liveLikedSongs.addAll(likedSongs)
+        }
+    }
+
+    LaunchedEffect(reorderableState.isAnyItemDragging) {
+        if (!reorderableState.isAnyItemDragging) {
+            pendingReorder?.let { (from, to) ->
+                if (from != to) vm.reorderLikedSongs(from, to)
+            }
+            pendingReorder = null
+            draggingIndex = null
+        }
+    }
+
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
@@ -150,6 +188,10 @@ fun LikedScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) { }
                         .background(bgColor)
                 ) {
                     Row(
@@ -218,30 +260,69 @@ fun LikedScreen(
                 }
             }
 
-            items(
-                items = filteredSongs,
-                key = { it.id }
-            ) { song ->
+            itemsIndexed(
+                items = if (reorderEnabled) liveLikedSongs else filteredSongs,
+                key = { _, song -> song.id }
+            ) { index, song ->
                 val isPlaying = currentSong?.id == song.id
-                SongItem(
-                    song = song,
-                    isDarkMode = isDarkMode,
-                    isLiked = true,
-                    isInQueue = false,
-                    isPlaying = isPlaying,
-                    showExplicit = true,
-                    hapticsEnabled = hapticsEnabled,
-                    context = context,
-                    onClick = { vm.playWithQueue(song, filteredSongs) },
-                    onAddToQueue = { vm.addToQueue(song) },
-                    onPlayNext = { vm.playNext(song) },
-                    onLike = { vm.toggleLike(song) },
-                    onShare = {},
-                    onRetryCache = { vm.retryCache(song) },
-                    onRemoveLike = { removeConfirm = song },
-                    onAddTo = { onAddTo(song) },
-                    isCaching = song.id in cachingSongIds
-                )
+                val armed = reorderEnabled && draggingIndex == index
+
+                ReorderableItem(
+                    state = reorderableState,
+                    key = song.id
+                ) { isActivelyDragging ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem()
+                            .graphicsLayer {
+                                val scale = if (isActivelyDragging) 1.02f else 1f
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = if (isActivelyDragging) 0.9f else 1f
+                            }
+                            .then(
+                                if (armed) {
+                                    Modifier.longPressDraggableHandle(
+                                        onDragStarted = { HapticUtils.performStrongHaptic(context) }
+                                    )
+                                } else Modifier
+                            )
+                            .background(
+                                when {
+                                    isActivelyDragging -> if (isDarkMode) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.06f)
+                                    armed -> if (isDarkMode) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.05f)
+                                    else -> Color.Transparent
+                                }
+                            )
+                    ) {
+                        SongItem(
+                            song = song,
+                            isDarkMode = isDarkMode,
+                            isLiked = true,
+                            isInQueue = false,
+                            isPlaying = isPlaying,
+                            showExplicit = true,
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            onClick = {
+                                if (draggingIndex == null) vm.playWithQueue(song, filteredSongs)
+                            },
+                            onAddToQueue = { vm.addToQueue(song) },
+                            onPlayNext = { vm.playNext(song) },
+                            onLike = { vm.toggleLike(song) },
+                            onShare = {},
+                            onReorder = if (reorderEnabled) {
+                                { draggingIndex = if (armed) null else index }
+                            } else null,
+                            onRetryCache = { vm.retryCache(song) },
+                            onRemoveLike = { removeConfirm = song },
+                            onAddTo = { onAddTo(song) },
+                            isDragging = armed,
+                            isCaching = song.id in cachingSongIds
+                        )
+                    }
+                }
             }
         }
 
