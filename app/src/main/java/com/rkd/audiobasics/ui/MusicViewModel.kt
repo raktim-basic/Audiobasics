@@ -1311,9 +1311,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                 artist = fresh.artist,
                                 thumbnail = fresh.thumbnail,
                                 isExplicit = fresh.isExplicit,
-                                albumId = fresh.albumId,
-                                artistNamesJson = Song.encodeArtistNames(fresh.artistNames),
-                                artistIdsJson = Song.encodeArtistIds(fresh.artistIds)
+                                albumId = fresh.albumId
                             )
                         )
                     }
@@ -1572,9 +1570,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             thumbnail = song.thumbnail,
                             isExplicit = song.isExplicit,
                             albumId = song.albumId,
-                            duration = song.duration,
-                            artistNamesJson = Song.encodeArtistNames(song.artistNames),
-                            artistIdsJson = Song.encodeArtistIds(song.artistIds)
+                            duration = song.duration
                         )
                     )
                     // Fire caching independently on viewModelScope — do not await it here,
@@ -1639,9 +1635,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         id = songId, title = title, artist = artist,
         thumbnail = thumbnail, isExplicit = isExplicit, albumId = albumId,
         duration = duration,
-        isCached = CacheManager.isCached(getApplication(), songId),
-        artistNames = Song.decodeArtistNames(artistNamesJson),
-        artistIds = Song.decodeArtistIds(artistIdsJson)
+        isCached = CacheManager.isCached(getApplication(), songId)
     )
 
     /** Retry downloading a single song that belongs to a custom playlist (not liked). */
@@ -1689,27 +1683,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             song.albumId to albumSongs.map { if (it.id == song.id) fresh else it }
                         )
                         saveSavedAlbumSongs()
-                    }
-                }
-
-                withContext(Dispatchers.IO) {
-                    val entries = playlistDao.getEntriesForSong(song.id)
-                    entries.forEach { entity ->
-                        playlistDao.insertSong(
-                            entity.copy(
-                                title = fresh.title,
-                                artist = fresh.artist,
-                                thumbnail = fresh.thumbnail,
-                                isExplicit = fresh.isExplicit,
-                                albumId = fresh.albumId,
-                                artistNamesJson = Song.encodeArtistNames(fresh.artistNames),
-                                artistIdsJson = Song.encodeArtistIds(fresh.artistIds)
-                            )
-                        )
-                    }
-                    val openId = _openPlaylistId.value
-                    if (openId != null && entries.any { it.playlistId == openId }) {
-                        _openPlaylistSongs.value = playlistDao.getPlaylistSongs(openId)
                     }
                 }
 
@@ -2215,8 +2188,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                 put("artist", song.artist); put("thumbnail", song.thumbnail)
                                 put("isExplicit", song.isExplicit); put("albumId", song.albumId)
                                 put("duration", song.duration)
-                                put("artistNames", song.artistNamesJson)
-                                put("artistIds", song.artistIdsJson)
                             })
                         }
                         playlistsArr.put(JSONObject().apply {
@@ -2303,11 +2274,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                         thumbnail = sObj.getString("thumbnail"),
                                         isExplicit = sObj.optBoolean("isExplicit", false),
                                         albumId = sObj.optString("albumId", ""),
-                                        duration = sObj.optLong("duration", 0L),
-                                        // Older exports won't have these keys — "[]" default
-                                        // matches the entity's own column default.
-                                        artistNamesJson = sObj.optString("artistNames", "[]"),
-                                        artistIdsJson = sObj.optString("artistIds", "[]")
+                                        duration = sObj.optLong("duration", 0L)
                                     )
                                 )
                                 importedPlaylistSongCount++
