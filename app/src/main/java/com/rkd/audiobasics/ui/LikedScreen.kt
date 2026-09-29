@@ -87,7 +87,8 @@ fun LikedScreen(
         if (toLocal !in liveLikedSongs.indices) return@rememberReorderableLazyListState
         val current = pendingReorder
         pendingReorder = if (current == null) fromLocal to toLocal else current.first to toLocal
-        liveLikedSongs.move(fromLocal, toLocal)
+        val movedSong = liveLikedSongs.removeAt(fromLocal)
+        liveLikedSongs.add(toLocal, movedSong)
         draggingIndex = toLocal
     }
 
