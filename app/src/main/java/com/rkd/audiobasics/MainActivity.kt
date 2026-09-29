@@ -42,6 +42,8 @@ import com.rkd.audiobasics.ui.MorphPopup
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -399,10 +401,23 @@ fun AudiobasicsApp(
     }
 
     // Single overlay host for morph (container-transform) popups — see MorphOverlay.kt.
-    // Opened here, around the whole rest of the function body, so every dialog/menu below
-    // (including ones declared before the Column, like PlayerDialog and AddToPlaylistSheet)
-    // can reach LocalMorphOverlay — not just ones inside the nav stack.
+    // Keep the state here so the system-bar appearance can follow any dimmed Center popup too.
     val morphOverlay = remember { MorphOverlayState() }
+
+    // In light mode the normal status bar uses dark icons. Center morph popups dim the app
+    // underneath them, though, so the status bar needs light icons for the same duration as the
+    // dimmed overlay. Keep this tied to the actual overlay stack rather than individual dialog
+    // booleans so newly-added floating dialogs get the same behavior automatically.
+    val hasDimmedFloatingWindow = showStorageLow || morphOverlay.entries.any {
+        it.placement == MorphPlacement.Center
+    }
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as android.app.Activity).window
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = !isDarkMode && !hasDimmedFloatingWindow
+    }
+
     CompositionLocalProvider(LocalMorphOverlay provides morphOverlay) {
 
     if (showStorageLow) {
