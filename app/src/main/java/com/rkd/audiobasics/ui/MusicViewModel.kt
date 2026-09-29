@@ -1951,7 +1951,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 put("albumTitle", song.albumTitle)
                 put("year", song.year)
                 put("artistNames", JSONArray(song.artistNames))
-                put("artistIds", Song.encodeArtistIds(song.artistIds))
             })
         }
         prefs.edit().putString("liked_songs", arr.toString()).apply()
@@ -1968,9 +1967,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val artistNames = if (artistNamesArr != null) {
                     (0 until artistNamesArr.length()).map { artistNamesArr.optString(it, "") }.filter { it.isNotBlank() }
                 } else emptyList()
-                // "[]" default (rather than skipping the key) covers rows written before this
-                // field existed — decodeArtistIds("[]") is just an empty list, same as unset.
-                val artistIds = Song.decodeArtistIds(obj.optString("artistIds", "[]"))
                 Song(
                     id = id, title = obj.getString("title"),
                     artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
@@ -1980,8 +1976,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     albumId = obj.optString("albumId", ""),
                     albumTitle = obj.optString("albumTitle", ""),
                     year = obj.optString("year", ""),
-                    artistNames = artistNames,
-                    artistIds = artistIds
+                    artistNames = artistNames
                 )
             }
         } catch (_: Exception) { emptyList() }
@@ -2066,7 +2061,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     put("isExplicit", song.isExplicit)
                     put("year", song.year)
                     put("artistNames", JSONArray(song.artistNames))
-                    put("artistIds", Song.encodeArtistIds(song.artistIds))
                 })
             }
             root.put(albumId, arr)
@@ -2086,7 +2080,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     val artistNames = if (artistNamesArr != null) {
                         (0 until artistNamesArr.length()).map { artistNamesArr.optString(it, "") }.filter { it.isNotBlank() }
                     } else emptyList()
-                    val artistIds = Song.decodeArtistIds(obj.optString("artistIds", "[]"))
                     Song(
                         id = obj.getString("id"), title = obj.getString("title"),
                         artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
@@ -2095,8 +2088,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         albumTitle = obj.optString("albumTitle", ""),
                         isExplicit = obj.optBoolean("isExplicit", false),
                         year = obj.optString("year", ""),
-                        artistNames = artistNames,
-                        artistIds = artistIds
+                        artistNames = artistNames
                     )
                 }
                 map[albumId] = songs
@@ -2114,8 +2106,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     songsArr.put(JSONObject().apply {
                         put("id", song.id); put("title", song.title)
                         put("artist", song.artist); put("thumbnail", song.thumbnail)
-                        put("artistNames", JSONArray(song.artistNames))
-                        put("artistIds", Song.encodeArtistIds(song.artistIds))
                     })
                 }
                 val albumsArr = JSONArray()
@@ -2167,16 +2157,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 val root = JSONObject(text)
                 val songs = (0 until root.getJSONArray("liked_songs").length()).map { i ->
                     val obj = root.getJSONArray("liked_songs").getJSONObject(i)
-                    val artistNamesArr = obj.optJSONArray("artistNames")
-                    val artistNames = if (artistNamesArr != null) {
-                        (0 until artistNamesArr.length()).map { artistNamesArr.optString(it, "") }.filter { it.isNotBlank() }
-                    } else emptyList()
                     Song(
                         id = obj.getString("id"), title = obj.getString("title"),
                         artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
-                        isCached = false, cacheFailed = true,
-                        artistNames = artistNames,
-                        artistIds = Song.decodeArtistIds(obj.optString("artistIds", "[]"))
+                        isCached = false, cacheFailed = true
                     )
                 }
                 val albums = (0 until root.getJSONArray("saved_albums").length()).map { i ->
