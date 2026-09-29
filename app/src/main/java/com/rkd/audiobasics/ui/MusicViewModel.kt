@@ -177,11 +177,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _openPlaylistId = MutableStateFlow<String?>(null)
     val openPlaylistId: StateFlow<String?> = _openPlaylistId
 
-    // Id of the song currently being re-fetched by refreshSongArtists(), or null when idle —
-    // lets Song Info show a spinner on the refresh icon only for the song it was tapped on.
-    private val _refreshingArtistsForSongId = MutableStateFlow<String?>(null)
-    val refreshingArtistsForSongId: StateFlow<String?> = _refreshingArtistsForSongId
-
     // ── Cache / Storage ───────────────────────────────────────────────────────
     private val _cacheSize = MutableStateFlow("")
     val cacheSize: StateFlow<String> = _cacheSize
@@ -1648,51 +1643,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.IO) {
                     _openPlaylistSongs.value = playlistDao.getPlaylistSongs(pid)
                 }
-            }
-        }
-    }
-
-    /**
-     * Re-fetches one song's artist info (name(s) + each artist's YTM channel id) from
-     * Innertube and writes it back wherever the song is persisted — liked songs, the
-     * saved-album-song cache, every custom playlist containing it, and the currently-playing
-     * song if it's this one. Triggered manually from the refresh icon in Song Info, for a song
-     * whose artist tap fails or opens the wrong artist (e.g. because it was liked/added before
-     * artistIds persistence existed, or its own YTM catalog entry changed since).
-     */
-    fun refreshSongArtists(song: Song) {
-        if (_refreshingArtistsForSongId.value != null) return
-        viewModelScope.launch {
-            _refreshingArtistsForSongId.value = song.id
-            try {
-                val fresh = withContext(Dispatchers.IO) { Innertube.refreshSongMetadata(song) }
-
-                if (_currentSong.value?.id == song.id) {
-                    _currentSong.value = fresh
-                }
-
-                if (_likedSongs.value.any { it.id == song.id }) {
-                    _likedSongs.value = _likedSongs.value.map { if (it.id == song.id) fresh else it }
-                    saveLikedSongs()
-                }
-
-                if (song.albumId.isNotBlank()) {
-                    val albumSongs = _savedAlbumSongs.value[song.albumId]
-                    if (albumSongs != null && albumSongs.any { it.id == song.id }) {
-                        _savedAlbumSongs.value = _savedAlbumSongs.value + (
-                            song.albumId to albumSongs.map { if (it.id == song.id) fresh else it }
-                        )
-                        saveSavedAlbumSongs()
-                    }
-                }
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Artist info updated", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(getApplication(), "Refresh failed: ${e.message}", Toast.LENGTH_SHORT).show()
-            } finally {
-                _refreshingArtistsForSongId.value = null
             }
         }
     }
