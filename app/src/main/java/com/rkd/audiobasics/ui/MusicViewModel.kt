@@ -1391,6 +1391,16 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         playWithQueue(shuffled.first(), shuffled)
     }
 
+    fun reorderLikedSongs(fromIndex: Int, toIndex: Int) {
+        val current = _likedSongs.value.toMutableList()
+        if (fromIndex < 0 || toIndex < 0 ||
+            fromIndex >= current.size || toIndex >= current.size) return
+        val song = current.removeAt(fromIndex)
+        current.add(toIndex, song)
+        _likedSongs.value = current
+        saveLikedSongs()
+    }
+
     private fun updateLikedSongCacheStatus(id: String, isCached: Boolean, cacheFailed: Boolean) {
         _likedSongs.value = _likedSongs.value.map { s ->
             if (s.id == id) s.copy(isCached = isCached, cacheFailed = cacheFailed) else s
@@ -1589,6 +1599,20 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun isSongInPlaylistAsync(songId: String, playlistId: String): Boolean {
         if (playlistId == LIKED_PLAYLIST_ID) return isLiked(songId)
         return playlistDao.isSongInPlaylist(playlistId, songId)
+    }
+
+    fun reorderPlaylistSongs(playlistId: String, fromIndex: Int, toIndex: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = playlistDao.getPlaylistSongs(playlistId).toMutableList()
+            if (fromIndex < 0 || toIndex < 0 ||
+                fromIndex >= current.size || toIndex >= current.size) return@launch
+            val song = current.removeAt(fromIndex)
+            current.add(toIndex, song)
+            playlistDao.reorderPlaylistSongs(playlistId, current.map { it.songId })
+            if (_openPlaylistId.value == playlistId) {
+                _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+            }
+        }
     }
 
     fun removeSongFromCustomPlaylist(playlistId: String, song: Song) {
