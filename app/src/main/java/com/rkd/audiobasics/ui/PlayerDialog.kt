@@ -117,6 +117,7 @@ fun PlayerDialog(
     var showTempoPitchDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableStateOf<Long?>(null) }
+    var isScrubbing by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -153,12 +154,14 @@ fun PlayerDialog(
     // everything that should restart or cancel the wait — pausing, leaving Player, or the
     // setting being off all cancel it via a key change (LaunchedEffect cancels+restarts its
     // block whenever any key differs), so there's no separate cancel logic needed here.
-    LaunchedEffect(newPlayerDesign, autoImmerseEnabled, isPlaying, currentFace, isImmersive) {
+    LaunchedEffect(newPlayerDesign, autoImmerseEnabled, isPlaying, currentFace, isImmersive, isScrubbing) {
         if (newPlayerDesign && autoImmerseEnabled && isPlaying &&
-            currentFace == PlayerFace.PLAYER && !isImmersive
+            currentFace == PlayerFace.PLAYER && !isImmersive && !isScrubbing
         ) {
             kotlinx.coroutines.delay(3000)
-            isImmersive = true
+            // Scrubbing cancels this effect, so controls cannot disappear while the finger is
+            // on the progress bar. Ending the scrub starts a fresh 3-second countdown.
+            if (!isScrubbing) isImmersive = true
         }
     }
 
@@ -357,6 +360,8 @@ fun PlayerDialog(
                                 isDarkMode = isDarkMode,
                                 dragPosition = dragPosition,
                                 onDragPositionChange = { dragPosition = it },
+                                onScrubStart = { isScrubbing = true },
+                                onScrubEnd = { isScrubbing = false },
                                 isImmersive = isImmersive,
                                 onToggleImmersive = { isImmersive = !isImmersive },
                                 onDismiss = onDismiss,
@@ -1020,6 +1025,8 @@ private fun PlayerFrontContentV2(
     isDarkMode: Boolean,
     dragPosition: Long?,
     onDragPositionChange: (Long?) -> Unit,
+    onScrubStart: () -> Unit,
+    onScrubEnd: () -> Unit,
     isImmersive: Boolean,
     onToggleImmersive: () -> Unit,
     sleepTimerMode: Int,
@@ -1259,6 +1266,8 @@ private fun PlayerFrontContentV2(
                             onDragging = { dragProgress ->
                                 onDragPositionChange((dragProgress * duration).toLong())
                             },
+                            onScrubStart = onScrubStart,
+                            onScrubEnd = onScrubEnd,
                             modifier = Modifier.fillMaxWidth(),
                             hapticsEnabled = hapticsEnabled,
                             context = context,
@@ -1423,6 +1432,8 @@ fun DashedProgressBar(
     progress: Float,
     onSeek: (Float) -> Unit,
     onDragging: (Float) -> Unit,
+    onScrubStart: () -> Unit = {},
+    onScrubEnd: () -> Unit = {},
     modifier: Modifier = Modifier,
     hapticsEnabled: Boolean,
     context: android.content.Context,
@@ -1434,6 +1445,15 @@ fun DashedProgressBar(
     val totalDashes = 30
     var barWidthPx by remember { mutableStateOf(0f) }
     var dragProgress by remember { mutableStateOf<Float?>(null) }
+
+    // Keep the pointer-input coroutine stable, but always give it the latest callbacks. Without
+    // this, opening the player on one song and then changing songs while it stays open leaves the
+    // gesture handler holding the previous song's duration.
+    val latestOnSeek by rememberUpdatedState(onSeek)
+    val latestOnDragging by rememberUpdatedState(onDragging)
+    val latestProgress by rememberUpdatedState(progress)
+    val latestOnScrubStart by rememberUpdatedState(onScrubStart)
+    val latestOnScrubEnd by rememberUpdatedState(onScrubEnd)
 
     val displayProgress = dragProgress ?: progress
     val displayFilled = (displayProgress * totalDashes).toInt()
@@ -1457,21 +1477,26 @@ fun DashedProgressBar(
                     onDragStart = { offset ->
                         if (barWidthPx > 0) {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            latestOnScrubStart()
                             dragProgress = (offset.x / barWidthPx).coerceIn(0f, 1f)
                             lastFilled = (dragProgress!! * totalDashes).toInt()
-                            onDragging(dragProgress!!)
+                            latestOnDragging(dragProgress!!)
                         }
                     },
                     onDragEnd = {
-                        dragProgress?.let { onSeek(it) }
+                        dragProgress?.let { latestOnSeek(it) }
                         dragProgress = null
+                        latestOnScrubEnd()
                     },
-                    onDragCancel = { dragProgress = null },
+                    onDragCancel = {
+                        dragProgress = null
+                        latestOnScrubEnd()
+                    },
                     onHorizontalDrag = { _, dragAmount ->
                         if (barWidthPx > 0) {
-                            val current = dragProgress ?: progress
+                            val current = dragProgress ?: latestProgress
                             dragProgress = (current + dragAmount / barWidthPx).coerceIn(0f, 1f)
-                            onDragging(dragProgress!!)
+                            latestOnDragging(dragProgress!!)
                         }
                     }
                 )
@@ -1493,7 +1518,7 @@ fun DashedProgressBar(
                         interactionSource = remember { MutableInteractionSource() }
                     ) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onSeek((index + 1).toFloat() / totalDashes.toFloat())
+                        latestOnSeek((index + 1).toFloat() / totalDashes.toFloat())
                     }
             )
         }
