@@ -335,6 +335,17 @@ fun SongItem(
                                     }
                                 )
                             }
+                            onReorder?.let { action ->
+                                MorphMenuItem(
+                                    text = if (isDragging) "Cancel reorder" else "Reorder",
+                                    leadingIcon = Icons.Default.SwapVert,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close()
+                                        action()
+                                    }
+                                )
+                            }
                             onRemoveLike?.let { action ->
                                 MorphMenuItem(
                                     text = removeLabel,
