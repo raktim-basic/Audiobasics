@@ -1816,6 +1816,7 @@ object Innertube {
             try {
                 val json = ytmPost("browse", JSONObject().put("browseId", browseId))
                     ?: return@withContext null
+                val wikiUrl = findWikipediaLink(json)
                 val header = json.optJSONObject("header")
                 val immersive = header?.optJSONObject("musicImmersiveHeaderRenderer")
                 val artistName = immersive?.optJSONObject("title")
@@ -1831,7 +1832,7 @@ object Innertube {
                     ?.optJSONArray("tabs")?.optJSONObject(0)
                     ?.optJSONObject("tabRenderer")?.optJSONObject("content")
                     ?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
-                    ?: return@withContext com.rkd.audiobasics.data.ArtistPage(artist, emptyList(), emptyList(), emptyList())
+                    ?: return@withContext com.rkd.audiobasics.data.ArtistPage(artist, emptyList(), emptyList(), emptyList(), wikiUrl)
                 val popularSongs = mutableListOf<Song>()
                 val albums = mutableListOf<com.rkd.audiobasics.data.Album>()
                 val singles = mutableListOf<com.rkd.audiobasics.data.Album>()
@@ -1998,9 +1999,82 @@ object Innertube {
                         }
                     }
                 }
-                com.rkd.audiobasics.data.ArtistPage(artist = artist, popularSongs = popularSongs, albums = albums, singles = singles)
+                com.rkd.audiobasics.data.ArtistPage(artist = artist, popularSongs = popularSongs, albums = albums, singles = singles, wikiUrl = wikiUrl)
             } catch (e: Exception) { Log.e("Innertube", "getArtistPage error: ${e.message}"); null }
         }
+
+
+    // ── Wikipedia lookup for the artist screen ───────────────────────────────
+    private val wikiUrlRegex = Regex("""https?://[a-z0-9-]+\.wikipedia\.org/wiki/[^\s"'<>]+""", RegexOption.IGNORE_CASE)
+
+    /** Recursively scans a YTM response for a Wikipedia article link (the artist description's
+     *  "From Wikipedia" attribution, when present). Deliberately shape-agnostic so it doesn't
+     *  break if YTM moves the description block around. Returns null if none is found. */
+    private fun findWikipediaLink(node: Any?, depth: Int = 0): String? {
+        if (depth > 60) return null
+        when (node) {
+            is String -> {
+                if (!node.contains("wikipedia", ignoreCase = true)) return null
+                val candidates = listOfNotNull(
+                    node,
+                    try { java.net.URLDecoder.decode(node, "UTF-8") } catch (_: Exception) { null }
+                )
+                for (c in candidates) {
+                    wikiUrlRegex.find(c)?.value?.let {
+                        return it.substringBefore("&sa=").substringBefore("&ved=").substringBefore("&usg=")
+                    }
+                }
+            }
+            is JSONObject -> {
+                val keys = node.keys()
+                while (keys.hasNext()) findWikipediaLink(node.opt(keys.next()), depth + 1)?.let { return it }
+            }
+            is JSONArray -> {
+                for (i in 0 until node.length()) findWikipediaLink(node.opt(i), depth + 1)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun normalizeForWikiMatch(s: String): String =
+        s.substringBefore(" (").lowercase().filter { it.isLetterOrDigit() }
+
+    /** Fallback when YTM's response had no Wikipedia link: searches English Wikipedia by the
+     *  artist's name. Only accepts a result whose title (minus any "(musician)"-style
+     *  disambiguator) exactly matches the name, and prefers explicitly musical titles/snippets,
+     *  so an ambiguous name can't land on an unrelated page — returns null (button hidden)
+     *  rather than guess. */
+    suspend fun searchWikipediaUrl(name: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val clean = name.trim()
+            if (clean.isBlank()) return@withContext null
+            val query = "\"$clean\" (musician OR band OR singer OR rapper OR group OR duo)"
+            val url = "https://en.wikipedia.org/w/api.php?action=query&list=search&format=json" +
+                "&srlimit=5&srsearch=" + java.net.URLEncoder.encode(query, "UTF-8")
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Audiobasics/2.4 (Android; artist page wiki lookup)")
+                .build()
+            val body = httpClient.newCall(request).execute().use { it.body?.string() } ?: return@withContext null
+            val results = JSONObject(body).optJSONObject("query")?.optJSONArray("search") ?: return@withContext null
+            val musicWords = listOf("musician", "singer", "rapper", "band", "songwriter", "record producer", "duo", "album", "discography")
+            val wanted = normalizeForWikiMatch(clean)
+            val candidates = (0 until results.length()).mapNotNull { results.optJSONObject(it) }
+                .filter { normalizeForWikiMatch(it.optString("title")) == wanted }
+            val best = candidates.firstOrNull { c ->
+                val t = c.optString("title").lowercase()
+                listOf("musician", "band", "singer", "rapper", "group", "duo", "producer").any { t.contains("($it") || t.contains(" $it)") }
+            } ?: candidates.firstOrNull { c ->
+                val snip = c.optString("snippet").lowercase()
+                musicWords.any { snip.contains(it) }
+            } ?: return@withContext null
+            val title = best.optString("title").replace(' ', '_')
+            "https://en.wikipedia.org/wiki/" + java.net.URLEncoder.encode(title, "UTF-8").replace("+", "%20")
+        } catch (e: Exception) {
+            Log.e("Innertube", "searchWikipediaUrl error: ${e.message}")
+            null
+        }
+    }
 
     // ── Search artist by name ─────────────────────────────────────────────────
     // "Kanye West" and "Madvillain" appearing to merge with "¥$"/"Madlib" turned out to be a
