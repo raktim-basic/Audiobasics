@@ -2007,34 +2007,86 @@ object Innertube {
     // ── Wikipedia lookup for the artist screen ───────────────────────────────
     private val wikiUrlRegex = Regex("""https?://[a-z0-9-]+\.wikipedia\.org/wiki/[^\s"'<>]+""", RegexOption.IGNORE_CASE)
 
-    /** Recursively scans a YTM response for a Wikipedia article link (the artist description's
-     *  "From Wikipedia" attribution, when present). Deliberately shape-agnostic so it doesn't
-     *  break if YTM moves the description block around. Returns null if none is found. */
-    private fun findWikipediaLink(node: Any?, depth: Int = 0): String? {
-        if (depth > 60) return null
-        when (node) {
-            is String -> {
-                if (!node.contains("wikipedia", ignoreCase = true)) return null
-                val candidates = listOfNotNull(
-                    node,
-                    try { java.net.URLDecoder.decode(node, "UTF-8") } catch (_: Exception) { null }
-                )
-                for (c in candidates) {
-                    wikiUrlRegex.find(c)?.value?.let {
-                        return it.substringBefore("&sa=").substringBefore("&ved=").substringBefore("&usg=")
-                    }
-                }
-            }
-            is JSONObject -> {
-                val keys = node.keys()
-                while (keys.hasNext()) findWikipediaLink(node.opt(keys.next()), depth + 1)?.let { return it }
-            }
-            is JSONArray -> {
-                for (i in 0 until node.length()) findWikipediaLink(node.opt(i), depth + 1)?.let { return it }
-            }
+    /** Pulls a clean Wikipedia article URL out of a string, or null. Rejects truncated display
+     *  text like "en.wikipedia.org/wiki/Tyler,_..." (YTM shows shortened link text in places —
+     *  taking that at face value is what sent Tyler, The Creator to a nonexistent page). */
+    private fun extractWikiUrl(raw: String): String? {
+        if (!raw.contains("wikipedia", ignoreCase = true)) return null
+        val candidates = listOfNotNull(
+            raw,
+            try { java.net.URLDecoder.decode(raw, "UTF-8") } catch (_: Exception) { null }
+        )
+        for (c in candidates) {
+            val url = wikiUrlRegex.find(c)?.value
+                ?.substringBefore("&sa=")?.substringBefore("&ved=")?.substringBefore("&usg=")
+                ?: continue
+            if (url.contains("...") || url.contains("\u2026") || url.endsWith("_")) continue
+            return url
         }
         return null
     }
+
+    private fun collectWikipediaLinks(
+        node: Any?, structured: MutableList<String>, loose: MutableList<String>, depth: Int = 0
+    ) {
+        if (depth > 60) return
+        when (node) {
+            is String -> if (node.contains("wikipedia", ignoreCase = true)) loose.add(node)
+            is JSONObject -> {
+                // A real link target, as opposed to link display text
+                node.optJSONObject("urlEndpoint")?.optString("url")
+                    ?.takeIf { it.contains("wikipedia", ignoreCase = true) }?.let { structured.add(it) }
+                val keys = node.keys()
+                while (keys.hasNext()) collectWikipediaLinks(node.opt(keys.next()), structured, loose, depth + 1)
+            }
+            is JSONArray -> for (i in 0 until node.length()) collectWikipediaLinks(node.opt(i), structured, loose, depth + 1)
+        }
+    }
+
+    /** Scans a YTM response for a Wikipedia article link (the artist description's "From
+     *  Wikipedia" attribution, when present). Shape-agnostic, preferring real link targets
+     *  (urlEndpoint) over loose text. The result is only a candidate — it still gets checked
+     *  against Wikipedia itself by resolveWikipediaUrl() before the app shows it. */
+    private fun findWikipediaLink(json: JSONObject): String? {
+        val structured = mutableListOf<String>()
+        val loose = mutableListOf<String>()
+        collectWikipediaLinks(json, structured, loose)
+        return (structured + loose).firstNotNullOfOrNull { extractWikiUrl(it) }
+    }
+
+    /** Confirms [url] is a real, standard (non-disambiguation) Wikipedia article and returns
+     *  its canonical URL, following redirects. Null if the page doesn't exist or the lookup
+     *  fails. */
+    private fun verifyWikipediaUrl(url: String): String? {
+        return try {
+            val host = url.substringAfter("://").substringBefore("/")
+            if (!host.endsWith(".wikipedia.org")) return null
+            val rawTitle = url.substringAfter("/wiki/").substringBefore('#').substringBefore('?')
+            val title = java.net.URLDecoder.decode(rawTitle.replace("+", "%2B"), "UTF-8").replace(' ', '_')
+            val encoded = java.net.URLEncoder.encode(title, "UTF-8").replace("+", "%20")
+            val request = Request.Builder()
+                .url("https://$host/api/rest_v1/page/summary/$encoded")
+                .addHeader("User-Agent", "Audiobasics/2.4 (Android; artist page wiki lookup)")
+                .build()
+            httpClient.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val json = JSONObject(resp.body?.string() ?: return null)
+                if (json.optString("type") != "standard") return null
+                json.optJSONObject("content_urls")?.optJSONObject("desktop")?.optString("page")
+                    ?.takeIf { it.isNotBlank() }
+            }
+        } catch (e: Exception) {
+            Log.e("Innertube", "verifyWikipediaUrl error: ${e.message}")
+            null
+        }
+    }
+
+    /** The artist screen's Wiki button: use YTM's own link if it checks out as a real article,
+     *  otherwise fall back to a name search. Null means "no trustworthy page" (button hidden). */
+    suspend fun resolveWikipediaUrl(candidate: String?, artistName: String): String? =
+        withContext(Dispatchers.IO) {
+            candidate?.let { verifyWikipediaUrl(it) } ?: searchWikipediaUrl(artistName)
+        }
 
     private fun normalizeForWikiMatch(s: String): String =
         s.substringBefore(" (").lowercase().filter { it.isLetterOrDigit() }
@@ -2069,7 +2121,7 @@ object Innertube {
                 musicWords.any { snip.contains(it) }
             } ?: return@withContext null
             val title = best.optString("title").replace(' ', '_')
-            "https://en.wikipedia.org/wiki/" + java.net.URLEncoder.encode(title, "UTF-8").replace("+", "%20")
+            verifyWikipediaUrl("https://en.wikipedia.org/wiki/" + java.net.URLEncoder.encode(title, "UTF-8").replace("+", "%20"))
         } catch (e: Exception) {
             Log.e("Innertube", "searchWikipediaUrl error: ${e.message}")
             null
