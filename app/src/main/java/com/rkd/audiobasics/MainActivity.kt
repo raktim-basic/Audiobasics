@@ -675,7 +675,8 @@ fun AudiobasicsApp(
                                     push(ArtistDetailKey(name, artistId ?: ""))
                                 },
                                 onAddTo = { song -> addToSheetSong = song },
-                                onNavigateCacheSettings = { push(SettingsKey(openCache = true)) }
+                                onNavigateCacheSettings = { push(SettingsKey(openCache = true)) },
+                                onNavigateAlbum = { other -> push(AlbumDetailKey(other)) }
                             )
                         }
                         is ArtistDetailKey -> NavEntry(key) {
