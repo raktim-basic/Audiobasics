@@ -364,6 +364,18 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _pendingAlbumLinkNavigation.value = null
     }
 
+    // Same idea for incoming artist links: (name, browseId), consumed by MainActivity.
+    private val _pendingArtistLinkNavigation = MutableStateFlow<Pair<String, String>?>(null)
+    val pendingArtistLinkNavigation: StateFlow<Pair<String, String>?> = _pendingArtistLinkNavigation
+
+    fun handleAudiobasicsArtistLink(artistId: String, name: String) {
+        _pendingArtistLinkNavigation.value = name to artistId
+    }
+
+    fun onAudiobasicsArtistLinkNavigated() {
+        _pendingArtistLinkNavigation.value = null
+    }
+
     // Enabling Audiobasics Link handling is mandatory — re-checked live (not gated behind a
     // one-time "dismissed" flag) so that if the user backs out of the Enable flow, or later
     // revokes it from system Settings, this comes back instead of staying silently disabled.
