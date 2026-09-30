@@ -45,16 +45,54 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONObject
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+// One shared client for every keystroke. Building a fresh OkHttpClient per request (as this
+// used to) meant a brand-new connection pool and a full TLS handshake each time — most of the
+// "slow suggestions" delay. Reused, the connection stays open between keystrokes.
+private val suggestionClient = OkHttpClient.Builder()
+    .connectTimeout(4, TimeUnit.SECONDS)
+    .readTimeout(4, TimeUnit.SECONDS)
+    .build()
+
+// Small LRU of recent queries, so backspacing / retyping shows suggestions instantly.
+private val suggestionCache = object : LinkedHashMap<String, List<String>>(64, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?) = size > 60
+}
+
+private fun cachedSuggestions(query: String): List<String>? =
+    synchronized(suggestionCache) { suggestionCache[query.trim().lowercase()] }
+
+// Cancellable network call: when the next keystroke cancels the coroutine, the in-flight
+// request is actually aborted instead of running to completion in the background.
+private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { cont ->
+    cont.invokeOnCancellation { cancel() }
+    enqueue(object : Callback {
+        override fun onResponse(call: Call, response: Response) {
+            if (cont.isCancelled) { response.close(); return }
+            cont.resume(response)
+        }
+        override fun onFailure(call: Call, e: IOException) {
+            if (!cont.isCancelled) cont.resumeWithException(e)
+        }
+    })
+}
 
 private suspend fun fetchSuggestions(query: String): List<String> = withContext(Dispatchers.IO) {
     if (query.isBlank()) return@withContext emptyList()
     try {
-        val client = OkHttpClient()
         val body = JSONObject().apply {
             put("context", JSONObject().apply {
                 put("client", JSONObject().apply {
@@ -76,8 +114,8 @@ private suspend fun fetchSuggestions(query: String): List<String> = withContext(
             .addHeader("Origin", "https://music.youtube.com")
             .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
-        val resp = client.newCall(req).execute()
-        val text = resp.body?.string() ?: return@withContext emptyList()
+        val text = suggestionClient.newCall(req).awaitResponse().use { it.body?.string() }
+            ?: return@withContext emptyList()
         val json = JSONObject(text)
         val suggestions = mutableListOf<String>()
         val contents = json.optJSONArray("contents") ?: return@withContext emptyList()
@@ -98,7 +136,10 @@ private suspend fun fetchSuggestions(query: String): List<String> = withContext(
                 if (suggestion.isNotBlank()) suggestions.add(suggestion)
             }
         }
+        synchronized(suggestionCache) { suggestionCache[query.trim().lowercase()] = suggestions }
         suggestions
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e // a newer keystroke superseded this request — must not look like "no results"
     } catch (_: Exception) { emptyList() }
 }
 
@@ -226,7 +267,16 @@ fun SearchScreen(
             return@LaunchedEffect
         }
         suggestionJob = scope.launch {
-            delay(300)
+            // Seen this query recently? Show it immediately, no network.
+            cachedSuggestions(query)?.let { hit ->
+                suggestions = hit
+                showSuggestions = hit.isNotEmpty()
+                return@launch
+            }
+            // Was 300ms, which meant nothing appeared until typing paused. A tiny delay is
+            // enough to skip the very first keystroke of a fast burst; any newer keystroke
+            // cancels this job (and its in-flight request) anyway.
+            delay(40)
             if (query.isNotBlank() && results.isEmpty()) {
                 val fetched = fetchSuggestions(query)
                 if (query.isNotBlank() && results.isEmpty()) {
