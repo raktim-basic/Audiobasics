@@ -2004,6 +2004,83 @@ object Innertube {
         }
 
 
+    // ── Album helpers: shared-link resolution + "Other versions" ─────────────
+
+    /** Turns whatever an album share link carried into the id the rest of the app uses. A YT /
+     *  YT Music album share is a playlist-style id (OLAK5uy_...); the app's canonical album id
+     *  is the MPREb_... browse id, which shows up inside that playlist's browse response. If
+     *  it can't be found, the original id is returned unchanged — getAlbumSongs() already
+     *  handles playlist-style ids on its own, so the album still opens. */
+    suspend fun resolveAlbumBrowseId(id: String): String = withContext(Dispatchers.IO) {
+        if (id.startsWith("MPREb_")) return@withContext id
+        try {
+            val effective = if (id.startsWith("VL")) id else "VL$id"
+            val json = ytmPost("browse", JSONObject().put("browseId", effective)) ?: return@withContext id
+            Regex("MPREb_[A-Za-z0-9_-]+").find(json.toString())?.value ?: id
+        } catch (e: Exception) {
+            Log.e("Innertube", "resolveAlbumBrowseId error: ${e.message}")
+            id
+        }
+    }
+
+    private fun findOtherVersionsShelf(node: Any?, depth: Int = 0): JSONObject? {
+        if (depth > 40) return null
+        when (node) {
+            is JSONObject -> {
+                node.optJSONObject("musicCarouselShelfRenderer")?.let { shelf ->
+                    val title = shelf.optJSONObject("header")
+                        ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                        ?.optJSONObject("title")?.optJSONArray("runs")
+                        ?.optJSONObject(0)?.optString("text").orEmpty()
+                    if (title.contains("other versions", ignoreCase = true)) return shelf
+                }
+                val keys = node.keys()
+                while (keys.hasNext()) findOtherVersionsShelf(node.opt(keys.next()), depth + 1)?.let { return it }
+            }
+            is JSONArray -> for (i in 0 until node.length()) findOtherVersionsShelf(node.opt(i), depth + 1)?.let { return it }
+        }
+        return null
+    }
+
+    /** The album page's "Other versions" shelf (e.g. the deluxe edition), or empty if there
+     *  isn't one or the request fails. Never cached by design — always a live lookup. */
+    suspend fun getOtherAlbumVersions(browseId: String): List<Album> = withContext(Dispatchers.IO) {
+        try {
+            val effective = if (!browseId.startsWith("MPREb_") && !browseId.startsWith("VL")) "VL$browseId" else browseId
+            val json = ytmPost("browse", JSONObject().put("browseId", effective)) ?: return@withContext emptyList()
+            val items = findOtherVersionsShelf(json)?.optJSONArray("contents") ?: return@withContext emptyList()
+            val out = mutableListOf<Album>()
+            for (i in 0 until items.length()) {
+                try {
+                    val r = items.optJSONObject(i)?.optJSONObject("musicTwoRowItemRenderer") ?: continue
+                    val id = r.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                        ?.optString("browseId").orEmpty()
+                    if (id.isBlank() || id == browseId || out.any { it.id == id }) continue
+                    val title = r.optJSONObject("title")?.optJSONArray("runs")
+                        ?.optJSONObject(0)?.optString("text").orEmpty()
+                    if (title.isBlank()) continue
+                    val runs = r.optJSONObject("subtitle")?.optJSONArray("runs")
+                    val texts = (0 until (runs?.length() ?: 0)).map { runs!!.optJSONObject(it)?.optString("text").orEmpty() }
+                    val year = texts.firstOrNull { it.length == 4 && it.all { c -> c.isDigit() } }.orEmpty()
+                    val typeWords = setOf("album", "single", "ep")
+                    val artist = texts
+                        .filter { t -> t.isNotBlank() && t.trim() != "•" && t != year && t.trim().lowercase() !in typeWords }
+                        .joinToString("").trim()
+                    val thumbs = r.optJSONObject("thumbnailRenderer")?.optJSONObject("musicThumbnailRenderer")
+                        ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                    val thumb = thumbs?.takeIf { it.length() > 0 }
+                        ?.optJSONObject(thumbs.length() - 1)?.optString("url")
+                        ?.takeIf { it.isNotBlank() }?.let { upscaleThumbnail(it) }.orEmpty()
+                    out.add(Album(id = id, title = title, artist = artist, thumbnail = thumb, year = year))
+                } catch (_: Exception) {}
+            }
+            out
+        } catch (e: Exception) {
+            Log.e("Innertube", "getOtherAlbumVersions error: ${e.message}")
+            emptyList()
+        }
+    }
+
     // ── Wikipedia lookup for the artist screen ───────────────────────────────
     private val wikiUrlRegex = Regex("""https?://[a-z0-9-]+\.wikipedia\.org/wiki/[^\s"'<>]+""", RegexOption.IGNORE_CASE)
 
