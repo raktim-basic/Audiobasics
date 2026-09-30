@@ -40,6 +40,13 @@ object AudiobasicsLinks {
         return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
     }
 
+    /** [name] rides along as a query param so the receiving artist screen has a header to show
+     *  immediately while the page itself loads from just the browse id. */
+    fun artistLink(artistId: String, name: String): String {
+        val base = "https://$HOST$PATH_PREFIX/artist/$artistId"
+        return if (name.isBlank()) base else "$base?n=${Uri.encode(name)}"
+    }
+
     /** Parsed result of an incoming Audiobasics Link, or null if the Uri doesn't match one. */
     sealed class ParsedLink {
         data class SongLink(val videoId: String) : ParsedLink()
@@ -49,6 +56,7 @@ object AudiobasicsLinks {
             val thumbnail: String,
             val year: String
         ) : ParsedLink()
+        data class ArtistLink(val artistId: String, val name: String) : ParsedLink()
     }
 
     fun parse(uri: Uri?): ParsedLink? {
@@ -64,6 +72,10 @@ object AudiobasicsLinks {
                 title = uri.getQueryParameter("t").orEmpty(),
                 thumbnail = uri.getQueryParameter("th").orEmpty(),
                 year = uri.getQueryParameter("y").orEmpty()
+            )
+            "artist" -> ParsedLink.ArtistLink(
+                artistId = id,
+                name = uri.getQueryParameter("n").orEmpty()
             )
             else -> null
         }
