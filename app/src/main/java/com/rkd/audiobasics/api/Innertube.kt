@@ -2048,7 +2048,21 @@ object Innertube {
         try {
             val effective = if (!browseId.startsWith("MPREb_") && !browseId.startsWith("VL")) "VL$browseId" else browseId
             val json = ytmPost("browse", JSONObject().put("browseId", effective)) ?: return@withContext emptyList()
-            val items = findOtherVersionsShelf(json)?.optJSONArray("contents") ?: return@withContext emptyList()
+            var shelf = findOtherVersionsShelf(json)
+            if (shelf == null) {
+                // Albums opened by their MPREb_ id (search, artist pages, saved albums) don't
+                // always carry this shelf, while the same album's playlist-style page (the
+                // OLAK5uy_ id an album share uses) does. So look that page up too.
+                val playlistId = Regex("OLAK5uy_[A-Za-z0-9_-]+").find(json.toString())?.value
+                if (playlistId != null) {
+                    val alt = ytmPost("browse", JSONObject().put("browseId", "VL$playlistId"))
+                    shelf = alt?.let { findOtherVersionsShelf(it) }
+                    Log.d("Innertube", "otherVersions: primary page had none; playlist page ${if (shelf != null) "had" else "also lacked"} it")
+                } else {
+                    Log.d("Innertube", "otherVersions: no shelf and no playlist id found for $browseId")
+                }
+            }
+            val items = shelf?.optJSONArray("contents") ?: return@withContext emptyList()
             val out = mutableListOf<Album>()
             for (i in 0 until items.length()) {
                 try {
