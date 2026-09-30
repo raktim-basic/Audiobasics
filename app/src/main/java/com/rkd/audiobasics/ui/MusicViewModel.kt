@@ -63,6 +63,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var progressJob: Job? = null
     private var syncJob: Job? = null
     private var cacheAllJob: Job? = null
+    private var artistBackfillJob: Job? = null
 
     private val cacheSemaphore = Semaphore(3)
     private val _cachingSongIds = MutableStateFlow<Set<String>>(emptySet())
@@ -577,6 +578,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         checkForUpdate()
         MigrationMessageProvider.loadCache(app)
         fetchHomeHeader()
+        runArtistIdBackfillIfNeeded()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1306,7 +1308,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                 artist = fresh.artist,
                                 thumbnail = fresh.thumbnail,
                                 isExplicit = fresh.isExplicit,
-                                albumId = fresh.albumId
+                                albumId = fresh.albumId,
+                                artistNames = Song.encodeArtistNames(fresh.artistNames),
+                                artistIds = Song.encodeArtistIds(fresh.artistIds)
                             )
                         )
                     }
@@ -1575,7 +1579,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             thumbnail = song.thumbnail,
                             isExplicit = song.isExplicit,
                             albumId = song.albumId,
-                            duration = song.duration
+                            duration = song.duration,
+                            artistNames = Song.encodeArtistNames(song.artistNames),
+                            artistIds = Song.encodeArtistIds(song.artistIds)
                         )
                     )
                     // Fire caching independently on viewModelScope — do not await it here,
@@ -1654,7 +1660,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         id = songId, title = title, artist = artist,
         thumbnail = thumbnail, isExplicit = isExplicit, albumId = albumId,
         duration = duration,
-        isCached = CacheManager.isCached(getApplication(), songId)
+        isCached = CacheManager.isCached(getApplication(), songId),
+        artistNames = Song.decodeArtistNames(artistNames),
+        artistIds = Song.decodeArtistIds(artistIds)
     )
 
     /** Retry downloading a single song that belongs to a custom playlist (not liked). */
@@ -1965,6 +1973,143 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Artist ID backfill / manual refresh
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private fun Song.hasArtistIds(): Boolean = artistIds.any { !it.isNullOrBlank() }
+
+    private fun JSONObject.readArtistNames(): List<String> =
+        optJSONArray("artistNames")?.let { arr ->
+            (0 until arr.length()).map { arr.optString(it, "") }.filter { it.isNotBlank() }
+        } ?: emptyList()
+
+    private fun JSONObject.readArtistIds(): List<String?> =
+        optJSONArray("artistIds")?.let { arr ->
+            (0 until arr.length()).map { arr.optString(it, "").ifBlank { null } }
+        } ?: emptyList()
+
+    /**
+     * Writes corrected artist names/IDs onto every copy of each song in [updates] (song id ->
+     * names to ids): liked songs, saved-album songs, every custom-playlist row, and the
+     * currently playing song. Only touches artistNames/artistIds — nothing else about a song
+     * is changed.
+     */
+    private suspend fun applyArtistInfo(updates: Map<String, Pair<List<String>, List<String?>>>) {
+        if (updates.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            updates.forEach { (id, info) ->
+                playlistDao.updateSongArtists(
+                    id, Song.encodeArtistNames(info.first), Song.encodeArtistIds(info.second)
+                )
+            }
+        }
+        fun Song.withInfo(): Song = updates[id]?.let { copy(artistNames = it.first, artistIds = it.second) } ?: this
+
+        _likedSongs.value = _likedSongs.value.map { it.withInfo() }
+        saveLikedSongs()
+        _savedAlbumSongs.value = _savedAlbumSongs.value.mapValues { (_, songs) -> songs.map { it.withInfo() } }
+        saveSavedAlbumSongs()
+        _currentSong.value = _currentSong.value?.withInfo()
+        _openPlaylistId.value?.let { pid ->
+            _openPlaylistSongs.value = withContext(Dispatchers.IO) { playlistDao.getPlaylistSongs(pid) }
+        }
+    }
+
+    /**
+     * One-time pass (flag: needs_artist_id_backfill) that fills in real YTM artist channel IDs
+     * for songs saved before IDs were persisted. Songs that already have IDs are skipped, and
+     * if nothing is missing the flag is cleared silently with no toasts. If nothing at all
+     * could be resolved (most likely offline) the flag stays set and it retries next launch.
+     */
+    fun runArtistIdBackfillIfNeeded() {
+        if (!prefs.getBoolean("needs_artist_id_backfill", true)) return
+        if (artistBackfillJob?.isActive == true) return
+        artistBackfillJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(4000) // let startup settle before doing network work
+
+            val playlistSongs = playlistDao.getPlaylists().flatMap { p ->
+                playlistDao.getPlaylistSongs(p.id).map { it.toSong() }
+            }
+            val needingSearch = LinkedHashMap<String, Song>()
+            (_likedSongs.value + playlistSongs).forEach {
+                if (!it.hasArtistIds()) needingSearch.putIfAbsent(it.id, it)
+            }
+            val albumsNeeding = _savedAlbumSongs.value
+                .filter { (_, songs) -> songs.any { !it.hasArtistIds() } }
+                .keys.toList()
+
+            if (needingSearch.isEmpty() && albumsNeeding.isEmpty()) {
+                prefs.edit().putBoolean("needs_artist_id_backfill", false).apply()
+                return@launch
+            }
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Optimising metadata, please wait a while", Toast.LENGTH_LONG).show()
+            }
+
+            val sem = Semaphore(4)
+            val searchResults = coroutineScope {
+                needingSearch.values.map { song ->
+                    async { sem.withPermit { song.id to Innertube.refreshSongMetadata(song) } }
+                }.map { it.await() }
+            }
+            val albumResults = coroutineScope {
+                albumsNeeding.map { albumId ->
+                    async {
+                        sem.withPermit {
+                            val fallbackArtist = _savedAlbums.value.firstOrNull { it.id == albumId }?.artist ?: ""
+                            try {
+                                Innertube.getAlbumSongs(albumId, fallbackArtist, caller = "artistIdBackfill").second
+                            } catch (e: Exception) {
+                                Log.e("YTLite", "artist ID backfill: album $albumId failed: ${e.message}")
+                                emptyList()
+                            }
+                        }
+                    }
+                }.map { it.await() }
+            }
+
+            val updates = HashMap<String, Pair<List<String>, List<String?>>>()
+            searchResults.forEach { (id, fresh) ->
+                if (fresh.hasArtistIds()) updates[id] = fresh.artistNames to fresh.artistIds
+            }
+            // Album tracklists are the more authoritative source, so they win on overlap.
+            albumResults.flatten().forEach { s ->
+                if (s.hasArtistIds()) updates[s.id] = s.artistNames to s.artistIds
+            }
+
+            if (updates.isEmpty()) {
+                Log.w("YTLite", "artist ID backfill: nothing resolved, will retry next launch")
+                return@launch
+            }
+            applyArtistInfo(updates)
+            prefs.edit().putBoolean("needs_artist_id_backfill", false).apply()
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Optimisation complete, enjoy :)", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** Manual "refresh artist info" for the currently playing song (Song Info back face). */
+    fun refreshArtistInfo(songId: String) {
+        val song = _currentSong.value?.takeIf { it.id == songId } ?: return
+        viewModelScope.launch {
+            val fresh = withContext(Dispatchers.IO) { Innertube.refreshSongMetadata(song) }
+            if (!fresh.hasArtistIds()) {
+                Toast.makeText(getApplication(), "Couldn't find artist info for this song", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val changed = fresh.artistNames != song.artistNames || fresh.artistIds != song.artistIds
+            applyArtistInfo(mapOf(songId to (fresh.artistNames to fresh.artistIds)))
+            Toast.makeText(
+                getApplication(),
+                if (changed) "Artist info updated" else "Artist info is already up to date",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Persistence helpers
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1983,6 +2128,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 put("albumTitle", song.albumTitle)
                 put("year", song.year)
                 put("artistNames", JSONArray(song.artistNames))
+                put("artistIds", JSONArray(song.artistIds.map { it ?: "" }))
             })
         }
         prefs.edit().putString("liked_songs", arr.toString()).apply()
@@ -2008,7 +2154,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     albumId = obj.optString("albumId", ""),
                     albumTitle = obj.optString("albumTitle", ""),
                     year = obj.optString("year", ""),
-                    artistNames = artistNames
+                    artistNames = artistNames,
+                    artistIds = obj.readArtistIds()
                 )
             }
         } catch (_: Exception) { emptyList() }
@@ -2093,6 +2240,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     put("isExplicit", song.isExplicit)
                     put("year", song.year)
                     put("artistNames", JSONArray(song.artistNames))
+                    put("artistIds", JSONArray(song.artistIds.map { it ?: "" }))
                 })
             }
             root.put(albumId, arr)
@@ -2120,7 +2268,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         albumTitle = obj.optString("albumTitle", ""),
                         isExplicit = obj.optBoolean("isExplicit", false),
                         year = obj.optString("year", ""),
-                        artistNames = artistNames
+                        artistNames = artistNames,
+                        artistIds = obj.readArtistIds()
                     )
                 }
                 map[albumId] = songs
@@ -2138,6 +2287,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     songsArr.put(JSONObject().apply {
                         put("id", song.id); put("title", song.title)
                         put("artist", song.artist); put("thumbnail", song.thumbnail)
+                        put("artistNames", JSONArray(song.artistNames))
+                        put("artistIds", JSONArray(song.artistIds.map { it ?: "" }))
                     })
                 }
                 val albumsArr = JSONArray()
@@ -2160,6 +2311,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                 put("artist", song.artist); put("thumbnail", song.thumbnail)
                                 put("isExplicit", song.isExplicit); put("albumId", song.albumId)
                                 put("duration", song.duration)
+                                put("artistNames", JSONArray(Song.decodeArtistNames(song.artistNames)))
+                                put("artistIds", JSONArray(Song.decodeArtistIds(song.artistIds).map { it ?: "" }))
                             })
                         }
                         playlistsArr.put(JSONObject().apply {
@@ -2192,7 +2345,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     Song(
                         id = obj.getString("id"), title = obj.getString("title"),
                         artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
-                        isCached = false, cacheFailed = true
+                        isCached = false, cacheFailed = true,
+                        artistNames = obj.readArtistNames(), artistIds = obj.readArtistIds()
                     )
                 }
                 val albums = (0 until root.getJSONArray("saved_albums").length()).map { i ->
@@ -2240,7 +2394,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                         thumbnail = sObj.getString("thumbnail"),
                                         isExplicit = sObj.optBoolean("isExplicit", false),
                                         albumId = sObj.optString("albumId", ""),
-                                        duration = sObj.optLong("duration", 0L)
+                                        duration = sObj.optLong("duration", 0L),
+                                        artistNames = Song.encodeArtistNames(sObj.readArtistNames()),
+                                        artistIds = Song.encodeArtistIds(sObj.readArtistIds())
                                     )
                                 )
                                 importedPlaylistSongCount++
@@ -2263,6 +2419,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     if (hasCustomPlaylists) append(", $importedPlaylistCount playlists ($importedPlaylistSongCount songs)")
                 }
                 Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
+
+                // Older backups carry no artist IDs; re-run the one-time backfill so the
+                // imported library gets them (silently does nothing if they're all present).
+                prefs.edit().putBoolean("needs_artist_id_backfill", true).apply()
+                runArtistIdBackfillIfNeeded()
             } catch (e: Exception) {
                 Toast.makeText(context, "Import failed :( ${e.message}", Toast.LENGTH_LONG).show()
             }
