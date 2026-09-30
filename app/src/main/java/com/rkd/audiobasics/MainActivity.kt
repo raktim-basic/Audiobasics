@@ -280,6 +280,7 @@ class MainActivity : ComponentActivity() {
         when (val parsed = AudiobasicsLinks.parse(uri)) {
             is AudiobasicsLinks.ParsedLink.SongLink -> vm.handleAudiobasicsSongLink(parsed.videoId)
             is AudiobasicsLinks.ParsedLink.AlbumLink -> vm.handleAudiobasicsAlbumLink(parsed.albumId, parsed.title, parsed.thumbnail, parsed.year)
+            is AudiobasicsLinks.ParsedLink.ArtistLink -> vm.handleAudiobasicsArtistLink(parsed.artistId, parsed.name)
             null -> {}
         }
     }
@@ -335,6 +336,7 @@ fun AudiobasicsApp(
     val smartInputsLinkSong by vm.smartInputsLinkSong.collectAsState()
     val smartInputsMatches by vm.smartInputsMatches.collectAsState()
     val pendingAlbumLinkNavigation by vm.pendingAlbumLinkNavigation.collectAsState()
+    val pendingArtistLinkNavigation by vm.pendingArtistLinkNavigation.collectAsState()
     val showAppLinksNudge by vm.showAppLinksNudge.collectAsState()
 
     val backStack = rememberNavBackStack(HomeKey)
@@ -397,6 +399,13 @@ fun AudiobasicsApp(
         pendingAlbumLinkNavigation?.let { album ->
             push(AlbumDetailKey(album))
             vm.onAudiobasicsAlbumLinkNavigated()
+        }
+    }
+
+    LaunchedEffect(pendingArtistLinkNavigation) {
+        pendingArtistLinkNavigation?.let { (name, artistId) ->
+            push(ArtistDetailKey(name, artistId))
+            vm.onAudiobasicsArtistLinkNavigated()
         }
     }
 
