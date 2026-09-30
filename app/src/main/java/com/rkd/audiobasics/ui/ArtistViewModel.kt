@@ -47,10 +47,13 @@ class ArtistViewModel : ViewModel() {
                 }
                 artistPage = page
                 hasError = page == null
-                wikiUrl = page?.wikiUrl
-                if (page != null && page.wikiUrl == null) {
-                    // YTM didn't link one — look it up without holding up the page itself.
-                    viewModelScope.launch { wikiUrl = Innertube.searchWikipediaUrl(page.artist.name) }
+                wikiUrl = null
+                if (page != null) {
+                    // Checked against Wikipedia itself before the button appears, without
+                    // holding up the page: YTM's link if it's a real article, else a name search.
+                    viewModelScope.launch {
+                        wikiUrl = Innertube.resolveWikipediaUrl(page.wikiUrl, page.artist.name)
+                    }
                 }
             } catch (_: Exception) {
                 hasError = true
