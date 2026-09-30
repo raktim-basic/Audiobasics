@@ -74,6 +74,11 @@ interface PlaylistDao {
     @Query("SELECT DISTINCT songId FROM playlist_songs")
     suspend fun getAllPlaylistSongIds(): List<String>
 
+    // Writes corrected artist info onto every playlist row for this song (a song can sit in
+    // several playlists, each with its own row).
+    @Query("UPDATE playlist_songs SET artistNames = :artistNames, artistIds = :artistIds WHERE songId = :songId")
+    suspend fun updateSongArtists(songId: String, artistNames: String, artistIds: String)
+
     @Query("SELECT * FROM playlist_songs GROUP BY songId")
     suspend fun getAllPlaylistSongs(): List<PlaylistSongEntity>
 }
