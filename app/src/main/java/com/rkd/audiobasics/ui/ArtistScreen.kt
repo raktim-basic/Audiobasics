@@ -142,229 +142,230 @@ fun ArtistScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
 
-        LazyColumn(modifier = Modifier.weight(1f), state = listState) {
+        if (artistVm.isLoading) {
+            // Loading: just a centered spinner — no skeleton hero/controls/tabs
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.Red)
+            }
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f), state = listState) {
 
-            // ── Hero image ─────────────────────────────────────────────────
-            item {
-                val clear = artistVm.clearView
-                val dim by animateFloatAsState(if (clear) 0f else 0.45f, tween(300), label = "heroDim")
-                val nameAlpha by animateFloatAsState(if (clear) 0f else 1f, tween(300), label = "heroName")
+                // ── Hero image ─────────────────────────────────────────────────
+                item {
+                    val clear = artistVm.clearView
+                    val dim by animateFloatAsState(if (clear) 0f else 0.45f, tween(300), label = "heroDim")
+                    val nameAlpha by animateFloatAsState(if (clear) 0f else 1f, tween(300), label = "heroName")
 
-                Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
-                    AsyncImage(
-                        model = artistVm.artistPage?.artist?.thumbnail,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                    // Dimming scrim — fades out entirely in clear view
-                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim)))
-                    Text(
-                        text = displayName,
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 32.sp,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(horizontal = 24.dp)
-                            .graphicsLayer { alpha = nameAlpha }
-                    )
-                }
+                    Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
+                        AsyncImage(
+                            model = artistVm.artistPage?.artist?.thumbnail,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        // Dimming scrim — fades out entirely in clear view
+                        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim)))
+                        Text(
+                            text = displayName,
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 32.sp,
+                            color = Color.White,
+                            textAlign = TextAlign.Center,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = 24.dp)
+                                .graphicsLayer { alpha = nameAlpha }
+                        )
+                    }
 
-                // Same fixed height in both states so the tabs below never jump on toggle
-                Crossfade(targetState = clear, animationSpec = tween(250), label = "heroControls") { isClear ->
-                    if (isClear) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(72.dp).padding(start = 20.dp, end = 12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = displayName,
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 24.sp,
-                                color = textColor,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                artistVm.clearView = false
-                            }) {
-                                ClearViewIcon(outward = false, color = Color.Red)
-                            }
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                artistVm.clearView = true
-                            }) {
-                                ClearViewIcon(outward = true, color = Color.Red)
-                            }
-                            val wiki = artistVm.wikiUrl
-                            if (wiki != null) {
-                                Spacer(Modifier.width(12.dp))
+                    // Same fixed height in both states so the tabs below never jump on toggle
+                    Crossfade(targetState = clear, animationSpec = tween(250), label = "heroControls") { isClear ->
+                        if (isClear) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(72.dp).padding(start = 20.dp, end = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
-                                    text = "Wiki",
+                                    text = displayName,
                                     fontFamily = NothingFont,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    color = Color(0xFF4A90E2),
-                                    textDecoration = TextDecoration.Underline,
+                                    fontSize = 24.sp,
+                                    color = textColor,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    artistVm.clearView = false
+                                }) {
+                                    ClearViewIcon(outward = false, color = Color.Red)
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    artistVm.clearView = true
+                                }) {
+                                    ClearViewIcon(outward = true, color = Color.Red)
+                                }
+                                val wiki = artistVm.wikiUrl
+                                if (wiki != null) {
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = "Wiki",
+                                        fontFamily = NothingFont,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = Color(0xFF4A90E2),
+                                        textDecoration = TextDecoration.Underline,
+                                        modifier = Modifier
+                                            .clickable {
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                try {
+                                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(wiki)))
+                                                } catch (_: Exception) {
+                                                    Toast.makeText(context, "Couldn't open Wikipedia", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 12.dp)
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
+                                IconButton(onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    when {
+                                        shareArtistId.isBlank() ->
+                                            Toast.makeText(context, "Artist isn't loaded yet", Toast.LENGTH_SHORT).show()
+                                        com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context) ->
+                                            showShareChoice = true
+                                        else -> com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                            context,
+                                            com.rkd.audiobasics.utils.AudiobasicsLinks.artistLink(shareArtistId, displayName),
+                                            "Share artist"
+                                        )
+                                    }
+                                }) {
+                                    Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor,
+                                        modifier = Modifier.size(24.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Tabs (sticky) ──────────────────────────────────────────────
+                stickyHeader {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { }
+                            .background(bgColor)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            tabs.forEachIndexed { i, label ->
+                                Text(
+                                    text = label,
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = if (artistVm.selectedTab == i) Color.Red else subTextColor,
                                     modifier = Modifier
                                         .clickable {
                                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                            try {
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(wiki)))
-                                            } catch (_: Exception) {
-                                                Toast.makeText(context, "Couldn't open Wikipedia", Toast.LENGTH_SHORT).show()
-                                            }
+                                            artistVm.selectedTab = i
                                         }
-                                        .padding(horizontal = 8.dp, vertical = 12.dp)
+                                        .padding(vertical = 8.dp)
                                 )
                             }
-                            Spacer(Modifier.weight(1f))
-                            IconButton(onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                when {
-                                    shareArtistId.isBlank() ->
-                                        Toast.makeText(context, "Artist isn't loaded yet", Toast.LENGTH_SHORT).show()
-                                    com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context) ->
-                                        showShareChoice = true
-                                    else -> com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
-                                        context,
-                                        com.rkd.audiobasics.utils.AudiobasicsLinks.artistLink(shareArtistId, displayName),
-                                        "Share artist"
+                        }
+                        DashedDivider(
+                            modifier = Modifier.fillMaxWidth(),
+                            isDarkMode = isDarkMode,
+                            scrollProgress = scrollProgress.value
+                        )
+                    }
+                }
+
+                // ── Error / Empty ─────────────────────────────────────────────
+                if (artistVm.hasError || artistVm.artistPage == null) {
+                    item {
+                        Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            Text("Artist not found", fontFamily = NothingFont, color = Color.Gray)
+                        }
+                    }
+                } else {
+                    // ── Tab content ────────────────────────────────────────────
+                    when (artistVm.selectedTab) {
+                        0 -> {
+                            if (filteredSongs.isEmpty()) {
+                                item {
+                                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                                        Text(if (searchQuery.isBlank()) "No songs found" else "No results",
+                                            fontFamily = NothingFont, color = Color.Gray)
+                                    }
+                                }
+                            } else {
+                                items(filteredSongs) { song ->
+                                    SongItem(
+                                        song = song,
+                                        isDarkMode = isDarkMode,
+                                        isLiked = likedSongs.any { it.id == song.id },
+                                        isPlaying = currentSong?.id == song.id,
+                                        hapticsEnabled = hapticsEnabled,
+                                        context = context,
+                                        onClick = { vm.play(song) },
+                                        onLike = { vm.toggleLike(song) },
+                                        onShare = {},
+                                        onAddToQueue = { vm.addToQueue(song) },
+                                        onPlayNext = { vm.playNext(song) },
+                                        onAddTo = { onAddTo(song) }
                                     )
                                 }
-                            }) {
-                                Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor,
-                                    modifier = Modifier.size(24.dp))
                             }
                         }
-                    }
-                }
-            }
-
-            // ── Tabs (sticky) ──────────────────────────────────────────────
-            stickyHeader {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) { }
-                        .background(bgColor)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(20.dp)
-                    ) {
-                        tabs.forEachIndexed { i, label ->
-                            Text(
-                                text = label,
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = if (artistVm.selectedTab == i) Color.Red else subTextColor,
-                                modifier = Modifier
-                                    .clickable {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        artistVm.selectedTab = i
+                        1 -> {
+                            if (filteredAlbums.isEmpty()) {
+                                item {
+                                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                                        Text(if (searchQuery.isBlank()) "No albums found" else "No results",
+                                            fontFamily = NothingFont, color = Color.Gray)
                                     }
-                                    .padding(vertical = 8.dp)
-                            )
-                        }
-                    }
-                    DashedDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        isDarkMode = isDarkMode,
-                        scrollProgress = scrollProgress.value
-                    )
-                }
-            }
-
-            // ── Loading / Error / Empty ────────────────────────────────────
-            if (artistVm.isLoading) {
-                item {
-                    Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color.Red)
-                    }
-                }
-            } else if (artistVm.hasError || artistVm.artistPage == null) {
-                item {
-                    Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        Text("Artist not found", fontFamily = NothingFont, color = Color.Gray)
-                    }
-                }
-            } else {
-                // ── Tab content ────────────────────────────────────────────
-                when (artistVm.selectedTab) {
-                    0 -> {
-                        if (filteredSongs.isEmpty()) {
-                            item {
-                                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                                    Text(if (searchQuery.isBlank()) "No songs found" else "No results",
-                                        fontFamily = NothingFont, color = Color.Gray)
+                                }
+                            } else {
+                                items(filteredAlbums) { album ->
+                                    AlbumRowItem(album = album, isDarkMode = isDarkMode, showYear = true,
+                                        onClick = { onAlbumClick(album) })
                                 }
                             }
-                        } else {
-                            items(filteredSongs) { song ->
-                                SongItem(
-                                    song = song,
-                                    isDarkMode = isDarkMode,
-                                    isLiked = likedSongs.any { it.id == song.id },
-                                    isPlaying = currentSong?.id == song.id,
-                                    hapticsEnabled = hapticsEnabled,
-                                    context = context,
-                                    onClick = { vm.play(song) },
-                                    onLike = { vm.toggleLike(song) },
-                                    onShare = {},
-                                    onAddToQueue = { vm.addToQueue(song) },
-                                    onPlayNext = { vm.playNext(song) },
-                                    onAddTo = { onAddTo(song) }
-                                )
-                            }
                         }
-                    }
-                    1 -> {
-                        if (filteredAlbums.isEmpty()) {
-                            item {
-                                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                                    Text(if (searchQuery.isBlank()) "No albums found" else "No results",
-                                        fontFamily = NothingFont, color = Color.Gray)
+                        2 -> {
+                            if (filteredSingles.isEmpty()) {
+                                item {
+                                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                                        Text(if (searchQuery.isBlank()) "No singles/EPs found" else "No results",
+                                            fontFamily = NothingFont, color = Color.Gray)
+                                    }
                                 }
-                            }
-                        } else {
-                            items(filteredAlbums) { album ->
-                                AlbumRowItem(album = album, isDarkMode = isDarkMode, showYear = true,
-                                    onClick = { onAlbumClick(album) })
-                            }
-                        }
-                    }
-                    2 -> {
-                        if (filteredSingles.isEmpty()) {
-                            item {
-                                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                                    Text(if (searchQuery.isBlank()) "No singles/EPs found" else "No results",
-                                        fontFamily = NothingFont, color = Color.Gray)
+                            } else {
+                                items(filteredSingles) { single ->
+                                    AlbumRowItem(album = single, isDarkMode = isDarkMode, showYear = true,
+                                        onClick = { onAlbumClick(single) })
                                 }
-                            }
-                        } else {
-                            items(filteredSingles) { single ->
-                                AlbumRowItem(album = single, isDarkMode = isDarkMode, showYear = true,
-                                    onClick = { onAlbumClick(single) })
                             }
                         }
                     }
