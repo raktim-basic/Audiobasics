@@ -277,7 +277,9 @@ fun CustomPlaylistScreen(
                     isExplicit = entity.isExplicit,
                     albumId = entity.albumId,
                     isCached = songIsCached,
-                    cacheFailed = !songIsCached
+                    cacheFailed = !songIsCached,
+                    artistNames = Song.decodeArtistNames(entity.artistNames),
+                    artistIds = Song.decodeArtistIds(entity.artistIds)
                 )
                 val armed = reorderEnabled && draggingIndex == index
 
@@ -322,7 +324,7 @@ fun CustomPlaylistScreen(
                             onClick = {
                                 if (draggingIndex == null) {
                                     val queue = (if (reorderEnabled) livePlaylistSongs else filteredSongs).map {
-                                        Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId)
+                                        Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId, artistNames = Song.decodeArtistNames(it.artistNames), artistIds = Song.decodeArtistIds(it.artistIds))
                                     }
                                     vm.playWithQueue(song, queue)
                                 }
