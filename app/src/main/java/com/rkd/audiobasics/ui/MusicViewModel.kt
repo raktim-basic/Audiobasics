@@ -765,6 +765,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun handleSharedYoutubeLink(sharedText: String) {
         val videoId = extractVideoId(sharedText)
         if (videoId == null) {
+            // An album share (YouTube / YouTube Music → Share → Audiobasics) carries no video id
+            // at all — just an album playlist id — so it opens the album directly instead.
+            extractSharedAlbumRef(sharedText)?.let { openSharedAlbumLink(it); return }
             Toast.makeText(getApplication(), "Not a YouTube link", Toast.LENGTH_SHORT).show()
             return
         }
@@ -932,6 +935,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 isResolvingPlayByUrl = false
             }
+        }
+    }
+
+    private fun extractSharedAlbumRef(text: String): String? {
+        Regex("list=(OLAK5uy_[A-Za-z0-9_-]+)").find(text)?.let { return it.groupValues[1] }
+        Regex("browse/(MPREb_[A-Za-z0-9_-]+)").find(text)?.let { return it.groupValues[1] }
+        return null
+    }
+
+    private fun openSharedAlbumLink(ref: String) {
+        Toast.makeText(getApplication(), "Opening album…", Toast.LENGTH_SHORT).show()
+        viewModelScope.launch {
+            val id = Innertube.resolveAlbumBrowseId(ref)
+            // Same hand-off as an Audiobasics album link: AlbumScreen fills in the blank
+            // title / artist / cover itself once its own load finishes.
+            _pendingAlbumLinkNavigation.value = Album(id = id, title = "", artist = "", thumbnail = "")
         }
     }
 
