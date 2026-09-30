@@ -1717,6 +1717,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         saveSavedAlbums()
     }
 
+    fun reorderSavedAlbums(fromIndex: Int, toIndex: Int) {
+        val current = _savedAlbums.value.toMutableList()
+        if (fromIndex !in current.indices || toIndex !in current.indices || fromIndex == toIndex) return
+        current.add(toIndex, current.removeAt(fromIndex))
+        _savedAlbums.value = current
+        saveSavedAlbums()
+    }
+
     fun unsaveAlbum(album: Album) {
         // Remove by id OR by matching title, so unsaving works even if this screen was
         // opened via a different browse id than the one the album was originally saved under.
@@ -1800,7 +1808,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         val mgr = getApplication<Application>()
             .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val n = NotificationCompat.Builder(getApplication(), "cache_channel")
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("Downloading songs")
             .setContentText("$done / $total ($percent%)")
             .setProgress(total, done, false)
