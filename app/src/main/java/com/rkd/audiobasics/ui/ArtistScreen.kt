@@ -1,5 +1,12 @@
 package com.rkd.audiobasics.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -22,14 +30,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,6 +85,10 @@ fun ArtistScreen(
 
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var showShareChoice by remember { mutableStateOf(false) }
+
+    val displayName = artistVm.artistPage?.artist?.name?.takeIf { it.isNotBlank() } ?: artistName
+    val shareArtistId = artistVm.artistPage?.artist?.id?.takeIf { it.isNotBlank() } ?: artistBrowseId
 
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -128,25 +146,114 @@ fun ArtistScreen(
 
             // ── Hero image ─────────────────────────────────────────────────
             item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(260.dp)
-                ) {
+                val clear = artistVm.clearView
+                val dim by animateFloatAsState(if (clear) 0f else 0.45f, tween(300), label = "heroDim")
+                val nameAlpha by animateFloatAsState(if (clear) 0f else 1f, tween(300), label = "heroName")
+
+                Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
                     AsyncImage(
                         model = artistVm.artistPage?.artist?.thumbnail,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
+                    // Dimming scrim — fades out entirely in clear view
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim)))
+                    Text(
+                        text = displayName,
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 32.sp,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(horizontal = 24.dp)
+                            .graphicsLayer { alpha = nameAlpha }
+                    )
                 }
-                // Artist name below image
-                Text(
-                    text = artistVm.artistPage?.artist?.name ?: artistName,
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 24.sp,
-                    color = textColor,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
-                )
+
+                // Same fixed height in both states so the tabs below never jump on toggle
+                Crossfade(targetState = clear, animationSpec = tween(250), label = "heroControls") { isClear ->
+                    if (isClear) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(72.dp).padding(start = 20.dp, end = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = displayName,
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 24.sp,
+                                color = textColor,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                artistVm.clearView = false
+                            }) {
+                                ClearViewIcon(outward = false, color = Color.Red)
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                artistVm.clearView = true
+                            }) {
+                                ClearViewIcon(outward = true, color = Color.Red)
+                            }
+                            val wiki = artistVm.wikiUrl
+                            if (wiki != null) {
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = "Wiki",
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = Color(0xFF4A90E2),
+                                    textDecoration = TextDecoration.Underline,
+                                    modifier = Modifier
+                                        .clickable {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            try {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(wiki)))
+                                            } catch (_: Exception) {
+                                                Toast.makeText(context, "Couldn't open Wikipedia", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 12.dp)
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                when {
+                                    shareArtistId.isBlank() ->
+                                        Toast.makeText(context, "Artist isn't loaded yet", Toast.LENGTH_SHORT).show()
+                                    com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context) ->
+                                        showShareChoice = true
+                                    else -> com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                        context,
+                                        com.rkd.audiobasics.utils.AudiobasicsLinks.artistLink(shareArtistId, displayName),
+                                        "Share artist"
+                                    )
+                                }
+                            }) {
+                                Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor,
+                                    modifier = Modifier.size(24.dp))
+                            }
+                        }
+                    }
+                }
             }
 
             // ── Tabs (sticky) ──────────────────────────────────────────────
@@ -345,6 +452,55 @@ fun ArtistScreen(
             }
         }
     }
+
+    if (showShareChoice) {
+        ShareChoiceDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onAudiobasicsLink = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                    context,
+                    com.rkd.audiobasics.utils.AudiobasicsLinks.artistLink(shareArtistId, displayName),
+                    "Share artist"
+                )
+            },
+            onYoutubeLink = {
+                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                    context, "https://music.youtube.com/channel/$shareArtistId", "Share artist"
+                )
+            },
+            onDismiss = { showShareChoice = false }
+        )
+    }
+}
+
+/** The "clear view" toggle glyph: two horizontal arrows pointing outward (enter clear view)
+ *  or inward (exit it). */
+@Composable
+private fun ClearViewIcon(outward: Boolean, color: Color) {
+    Canvas(Modifier.size(width = 28.dp, height = 16.dp)) {
+        val w = size.width
+        val cy = size.height / 2f
+        val stroke = 2.5.dp.toPx()
+        val head = 5.dp.toPx()
+        val mid = w / 2f
+        val gap = 2.dp.toPx()
+        if (outward) {
+            drawArrow(mid - gap, 0f, cy, color, stroke, head)
+            drawArrow(mid + gap, w, cy, color, stroke, head)
+        } else {
+            drawArrow(0f, mid - gap, cy, color, stroke, head)
+            drawArrow(w, mid + gap, cy, color, stroke, head)
+        }
+    }
+}
+
+private fun DrawScope.drawArrow(fromX: Float, toX: Float, cy: Float, color: Color, stroke: Float, head: Float) {
+    drawLine(color, Offset(fromX, cy), Offset(toX, cy), strokeWidth = stroke, cap = StrokeCap.Round)
+    val back = if (toX > fromX) -head else head
+    drawLine(color, Offset(toX, cy), Offset(toX + back, cy - head), strokeWidth = stroke, cap = StrokeCap.Round)
+    drawLine(color, Offset(toX, cy), Offset(toX + back, cy + head), strokeWidth = stroke, cap = StrokeCap.Round)
 }
 
 @Composable
