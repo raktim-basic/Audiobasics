@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,7 +72,8 @@ fun AlbumScreen(
     onNavigateQueue: () -> Unit,
     onNavigateArtist: (String, String?) -> Unit = { _, _ -> },
     onAddTo: (Song) -> Unit = {},
-    onNavigateCacheSettings: () -> Unit = {}
+    onNavigateCacheSettings: () -> Unit = {},
+    onNavigateAlbum: (Album) -> Unit = {}
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -111,6 +114,18 @@ fun AlbumScreen(
 
     val savedAlbumSongsMap by vm.savedAlbumSongs.collectAsState()
     val persistedForThisAlbum = savedAlbumId?.let { savedAlbumSongsMap[it] }
+
+    // Other editions of this album (deluxe etc.). Always a live lookup, never cached or
+    // persisted — so it simply doesn't appear when offline, even on a saved album.
+    var otherVersions by remember { mutableStateOf<List<Album>>(emptyList()) }
+    LaunchedEffect(album.id) {
+        otherVersions = try {
+            com.rkd.audiobasics.api.Innertube.getOtherAlbumVersions(album.id)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            emptyList()
+        }
+    }
 
     LaunchedEffect(album.id, savedAlbumId, persistedForThisAlbum != null) {
         // If this album has a persisted offline tracklist — looked up via the resolved saved
@@ -513,6 +528,38 @@ fun AlbumScreen(
                         )
                     }
                 }
+
+                if (otherVersions.isNotEmpty() && searchQuery.isBlank()) {
+                    item {
+                        Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 20.dp)) {
+                            Text(
+                                text = "Other versions",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.Red,
+                                modifier = Modifier.padding(horizontal = 20.dp)
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(otherVersions, key = { it.id }) { version ->
+                                    OtherVersionCard(
+                                        album = version,
+                                        textColor = textColor,
+                                        subTextColor = subTextColor,
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            onNavigateAlbum(version)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -835,5 +882,49 @@ fun AlbumSongRow(
             },
             onDismiss = { showShareChoice = false }
         )
+    }
+}
+
+/** One edition in the "Other versions" row. Just a cover, title and artist — no play button;
+ *  you open the album first, then play from there. */
+@Composable
+private fun OtherVersionCard(
+    album: Album,
+    textColor: Color,
+    subTextColor: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(140.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = album.thumbnail,
+            contentDescription = null,
+            modifier = Modifier.size(140.dp).clip(RoundedCornerShape(8.dp)),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = album.title,
+            fontFamily = NothingFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = textColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (album.artist.isNotBlank()) {
+            Text(
+                text = album.artist,
+                fontFamily = NothingFont,
+                fontSize = 11.sp,
+                color = subTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
