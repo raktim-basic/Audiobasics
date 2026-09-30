@@ -308,7 +308,7 @@ class MainActivity : ComponentActivity() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             val notif = NotificationCompat.Builder(this@MainActivity, NOTIF_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setSmallIcon(R.drawable.ic_notification_cassette)
                 .setContentTitle("Audiobasics update available")
                 .setContentText("Version $latest is now available. Tap to update.")
                 .setAutoCancel(true)
