@@ -696,6 +696,12 @@ private fun MonochromeLayer(
         label = "monochromeAmount"
     )
     val paint = remember { Paint() }
+    // The highlight rects vanish the moment the last popup entry is removed, but the fade back
+    // to color takes 500ms more. Without this, the highlighted item (e.g. the song whose menu
+    // was open) briefly went monochrome with everything else, then faded back in — a visible
+    // flash. Keep drawing the last known highlights until the fade has fully finished.
+    val lastHighlights = remember { arrayOf<List<Rect>>(emptyList()) }
+    SideEffect { if (highlights.isNotEmpty()) lastHighlights[0] = highlights }
     Box(
         modifier = modifier.drawWithContent {
             if (amount <= 0f) {
@@ -709,7 +715,7 @@ private fun MonochromeLayer(
                 this@drawWithContent.drawContent()
                 canvas.restore()
 
-                for (rect in highlights) {
+                for (rect in highlights.ifEmpty { lastHighlights[0] }) {
                     val left = rect.left.coerceIn(bounds.left, bounds.right)
                     val top = rect.top.coerceIn(bounds.top, bounds.bottom)
                     val right = rect.right.coerceIn(bounds.left, bounds.right)
