@@ -443,7 +443,8 @@ fun PlayerDialog(
                                 onAlbumClick = { query, expectedTitle, expectedArtist ->
                                     onDismiss()
                                     onNavigateAlbum(query, expectedTitle, expectedArtist)
-                                }
+                                },
+                                onRefreshArtistInfo = { vm.refreshArtistInfo(song!!.id) }
                             )
                         }
                     }
