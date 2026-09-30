@@ -5,7 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.*
@@ -25,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -39,6 +42,12 @@ import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
+
+private fun <T> MutableList<T>.move(fromIndex: Int, toIndex: Int) {
+    add(toIndex, removeAt(fromIndex))
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -59,6 +68,39 @@ fun SavedAlbumsScreen(
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
+
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+
+    // Reordering is only available on the full saved-album list, not while searching.
+    val reorderEnabled = searchQuery.isBlank()
+    val liveAlbums = remember { mutableStateListOf<Album>().apply { addAll(savedAlbums) } }
+    LaunchedEffect(savedAlbums) {
+        liveAlbums.clear()
+        liveAlbums.addAll(savedAlbums)
+    }
+
+    var pendingReorder by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+        // LazyColumn indices: 0 = hero, 1 = sticky header, 2+ = albums.
+        if (liveAlbums.isEmpty()) return@rememberReorderableLazyListState
+        val fromLocal = from.index - 2
+        if (fromLocal !in liveAlbums.indices) return@rememberReorderableLazyListState
+        val toLocal = (to.index - 2).coerceIn(0, liveAlbums.lastIndex)
+        val current = pendingReorder
+        pendingReorder = if (current == null) fromLocal to toLocal else current.first to toLocal
+        liveAlbums.move(fromLocal, toLocal)
+        draggingIndex = toLocal
+    }
+
+    LaunchedEffect(reorderableState.isAnyItemDragging) {
+        if (!reorderableState.isAnyItemDragging) {
+            pendingReorder?.let { (from, to) ->
+                if (from != to) vm.reorderSavedAlbums(from, to)
+            }
+            pendingReorder = null
+            draggingIndex = null
+        }
+    }
 
     // Auto‑focus when entering search mode
     LaunchedEffect(isSearching) {
@@ -171,14 +213,75 @@ fun SavedAlbumsScreen(
                     }
                 }
             } else {
-                items(filteredAlbums) { album ->
-                    AlbumItem(
-                        album = album,
-                        isDarkMode = isDarkMode,
-                        hapticsEnabled = hapticsEnabled,
-                        context = context,
-                        onClick = { onAlbumClick(album) }
-                    )
+                val displayedAlbums = if (reorderEnabled) liveAlbums else filteredAlbums
+                itemsIndexed(
+                    items = displayedAlbums,
+                    key = { _, album -> album.id }
+                ) { index, album ->
+                    val armed = reorderEnabled && draggingIndex == index
+                    if (reorderEnabled) {
+                        ReorderableItem(
+                            state = reorderableState,
+                            key = album.id
+                        ) { isActivelyDragging ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateItem()
+                                    .graphicsLayer {
+                                        val scale = if (isActivelyDragging) 1.02f else 1f
+                                        scaleX = scale
+                                        scaleY = scale
+                                        alpha = if (isActivelyDragging) 0.9f else 1f
+                                    }
+                                    .then(
+                                        if (armed) {
+                                            Modifier.longPressDraggableHandle(
+                                                onDragStarted = {
+                                                    HapticUtils.performStrongHaptic(context)
+                                                }
+                                            )
+                                        } else Modifier
+                                    )
+                                    .background(
+                                        when {
+                                            isActivelyDragging -> if (isDarkMode)
+                                                Color.White.copy(alpha = 0.1f)
+                                            else Color.Black.copy(alpha = 0.06f)
+                                            armed -> if (isDarkMode)
+                                                Color.White.copy(alpha = 0.06f)
+                                            else Color.Black.copy(alpha = 0.05f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                            ) {
+                                AlbumItem(
+                                    album = album,
+                                    isDarkMode = isDarkMode,
+                                    hapticsEnabled = hapticsEnabled,
+                                    context = context,
+                                    onClick = {
+                                        if (draggingIndex == null) onAlbumClick(album)
+                                    },
+                                    isDragging = armed,
+                                    onReorder = {
+                                        draggingIndex = if (armed) null else index
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    },
+                                    onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
+                                )
+                            }
+                        }
+                    } else {
+                        AlbumItem(
+                            album = album,
+                            isDarkMode = isDarkMode,
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            onClick = { onAlbumClick(album) },
+                            onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
+                        )
+                    }
                 }
             }
         }
@@ -309,15 +412,21 @@ fun AlbumItem(
     isDarkMode: Boolean,
     hapticsEnabled: Boolean,
     context: android.content.Context,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isDragging: Boolean = false,
+    onReorder: (() -> Unit)? = null,
+    onRemoveFromSave: (() -> Unit)? = null
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val rowAnchor = rememberMorphAnchor()
+    val menuAnchor = rememberMorphAnchor()
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .morphAnchor(rowAnchor)
             .background(bgColor)
             .clickable {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -326,14 +435,31 @@ fun AlbumItem(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AsyncImage(
-            model = album.thumbnail,
-            contentDescription = null,
-            modifier = Modifier
-                .size(56.dp)
-                .clip(RoundedCornerShape(6.dp)),
-            contentScale = ContentScale.Crop
-        )
+        if (isDragging) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SwapVert,
+                    contentDescription = "Reordering",
+                    tint = textColor,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+        } else {
+            AsyncImage(
+                model = album.thumbnail,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+                contentScale = ContentScale.Crop
+            )
+        }
 
         Spacer(Modifier.width(12.dp))
 
@@ -364,6 +490,47 @@ fun AlbumItem(
                     maxLines = 1
                 )
             }
+        }
+
+        val overlay = LocalMorphOverlay.current
+        IconButton(
+            onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                overlay.show(
+                    anchor = menuAnchor.bounds(),
+                    placement = MorphPlacement.Anchored,
+                    highlightBounds = rowAnchor.bounds()
+                ) { close ->
+                    MorphMenuColumn {
+                        if (onReorder != null) {
+                            MorphMenuItem(
+                                text = if (isDragging) "Cancel reorder" else "Reorder",
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close()
+                                    onReorder.invoke()
+                                }
+                            )
+                        }
+                        MorphMenuItem(
+                            text = "Remove from save",
+                            textColor = Color.Red,
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                onRemoveFromSave?.invoke()
+                            }
+                        )
+                    }
+                }
+            },
+            modifier = Modifier.morphAnchor(menuAnchor)
+        ) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "Menu",
+                tint = subTextColor
+            )
         }
     }
 }
