@@ -44,6 +44,7 @@ import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 const val APP_CURRENT_VERSION = "2.5"
+const val APP_UPDATE_APK_NAME = "Audiobasics.apk"
 const val APP_GITHUB_RELEASES_API =
     "https://api.github.com/repos/raktim-basic/Audiobasics/releases?per_page=5"
 const val APP_GITHUB_RELEASES_URL =
@@ -76,9 +77,11 @@ suspend fun fetchLatestRelease(): AppRelease? = withContext(Dispatchers.IO) {
         var apkSize = -1L
         val assets = release.optJSONArray("assets")
         if (assets != null) {
+            // The release carries more than one APK (Audiobasics.apk and Audiobasics_store.apk),
+            // so pick the in-app update APK by exact name rather than "the first .apk".
             for (i in 0 until assets.length()) {
                 val asset = assets.getJSONObject(i)
-                if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
+                if (asset.optString("name").equals(APP_UPDATE_APK_NAME, ignoreCase = true)) {
                     apkUrl = asset.optString("browser_download_url").takeIf { it.isNotBlank() }
                     apkSize = asset.optLong("size", -1L)
                     break
