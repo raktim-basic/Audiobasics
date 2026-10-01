@@ -215,6 +215,7 @@ object Innertube {
     // Changes when YouTube updates their player JS (every few days/weeks).
     @Volatile private var signatureTimestamp: Int? = null
     @Volatile private var signatureTimestampFetchedAt: Long = 0
+    @Volatile private var signatureTimestampHash: String? = null   // which player.js it came from
     private const val SIG_TIMESTAMP_TTL = 6 * 60 * 60 * 1000L // 6 hours
 
     private val poTokenGenerator = PoTokenGenerator()
@@ -272,11 +273,12 @@ object Innertube {
 
             val result = PlayerJsFetcher.getPlayerJs()
             if (result != null) {
-                val (playerJs, _) = result
+                val (playerJs, hash) = result
                 val sts = FunctionNameExtractor.extractSignatureTimestamp(playerJs)
                 if (sts != null) {
                     signatureTimestamp = sts
                     signatureTimestampFetchedAt = now
+                    signatureTimestampHash = hash
                     Timber.d("signatureTimestamp=$sts ✅")
                 } else {
                     Timber.w("extractSignatureTimestamp returned null")
@@ -286,6 +288,34 @@ object Innertube {
             }
         } catch (e: Exception) {
             Timber.w("fetchSignatureTimestamp failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Keeps the signatureTimestamp we send to YouTube in step with the player.js the cipher code
+     * actually uses to decode the answer. The two used to be cached separately: if the cipher
+     * cache got wiped (its warm-up timing out, or the manual "refresh playback engine") and
+     * re-downloaded a DIFFERENT player version, requests still went out with the old version's
+     * timestamp while signatures were decoded with the new version's algorithm — every stream
+     * URL then came back HTTP 403 until a manual refresh happened to land on a matching pair.
+     * PlayerJsFetcher serves the cached copy (and downloads once if it was wiped), so this
+     * is cheap and always agrees with what the deobfuscator will use next.
+     */
+    private suspend fun syncSignatureTimestamp() {
+        try {
+            val (playerJs, hash) = PlayerJsFetcher.getPlayerJs() ?: run {
+                if (signatureTimestamp == null) fetchSignatureTimestamp()
+                return
+            }
+            if (hash == signatureTimestampHash && signatureTimestamp != null) return
+            val sts = FunctionNameExtractor.extractSignatureTimestamp(playerJs) ?: return
+            Timber.d("signatureTimestamp ${signatureTimestamp ?: "none"} -> $sts (player $hash) ✅")
+            signatureTimestamp = sts
+            signatureTimestampFetchedAt = System.currentTimeMillis()
+            signatureTimestampHash = hash
+        } catch (e: Exception) {
+            Timber.w("syncSignatureTimestamp failed: ${e.message}")
+            if (signatureTimestamp == null) fetchSignatureTimestamp()
         }
     }
 
@@ -1589,6 +1619,27 @@ object Innertube {
     private fun clearSignInBlock() {
         signInBlockStreak = 0
         signInBlockedUntil = 0L
+        synchronized(signInFailures) { signInFailures.clear() }
+    }
+
+    // YouTube's "Please sign in" reason is the same text whether ONE song needs a signed-in
+    // account (age-restricted and similar) or the whole connection is being gated. Telling
+    // them apart: a connection-level gate rejects every song, so only treat it as a block when
+    // several DIFFERENT songs have been rejected in a row with no success in between. One
+    // restricted song, retried over and over, must never pause playback of everything else.
+    private val signInFailures = LinkedHashMap<String, Long>()
+    private const val SIGN_IN_BLOCK_SONGS = 3
+    private const val SIGN_IN_BLOCK_WINDOW_MS = 120_000L
+
+    private fun noteSignInFailure(context: Context, videoId: String) {
+        val songs = synchronized(signInFailures) {
+            val now = System.currentTimeMillis()
+            signInFailures.entries.removeIf { now - it.value > SIGN_IN_BLOCK_WINDOW_MS }
+            signInFailures[videoId] = now
+            signInFailures.size
+        }
+        if (songs >= SIGN_IN_BLOCK_SONGS) registerSignInBlock(context)
+        else Timber.w("Sign-in required for $videoId — $songs of $SIGN_IN_BLOCK_SONGS different songs so far, so treating it as this song only")
     }
 
     private val streamScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -1639,7 +1690,7 @@ object Innertube {
 
         // Ensure visitorData + signatureTimestamp are ready
         if (visitorData == null) fetchVisitorData()
-        if (signatureTimestamp == null) fetchSignatureTimestamp()
+        syncSignatureTimestamp()
 
         val sigTimestamp = signatureTimestamp
 
@@ -1724,9 +1775,9 @@ object Innertube {
         if (fallbackResult != null) {
             clearSignInBlock()
         } else if (sawSignIn) {
-            // Every native client was told to sign in and NewPipe didn't get through either:
-            // this connection is being gated, so stop retrying for a short while.
-            registerSignInBlock(context)
+            // Every native client was told to sign in and NewPipe didn't get through either.
+            // That's either this one song or the whole connection — see noteSignInFailure().
+            noteSignInFailure(context, videoId)
         }
         fallbackResult
     }
