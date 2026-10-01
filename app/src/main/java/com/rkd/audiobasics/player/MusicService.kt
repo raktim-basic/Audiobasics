@@ -39,6 +39,11 @@ class MusicService : MediaSessionService() {
     // Cache: videoId -> Pair(streamUrl, expiryTimeMs)
     private val songUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
 
+    // Resolved stream URLs are keyed by video AND the audio quality in effect, so changing the
+    // quality setting (or Auto flipping between Wi-Fi and mobile data) re-resolves instead of
+    // reusing a URL picked under the old quality.
+    private fun urlKey(videoId: String) = "$videoId|${Innertube.effectiveAudioQuality(this)}"
+
     companion object {
         // 512KB chunks — same as Metrolist. Keeps each Range request small so we
         // don't exhaust the CDN's per-URL request limit.
@@ -86,10 +91,10 @@ class MusicService : MediaSessionService() {
                     } else {
                         if (forceFallback) {
                             Timber.w("Resolver: forceFallback=true, clearing cache for $videoId")
-                            songUrlCache.remove(videoId)
+                            songUrlCache.remove(urlKey(videoId))
                         }
 
-                        val cached = songUrlCache[videoId]
+                        val cached = songUrlCache[urlKey(videoId)]
                         if (cached != null && cached.second > System.currentTimeMillis()) {
                             Timber.d("Resolver: cache hit for $videoId ✅")
                             dataSpec.withUri(Uri.parse(cached.first))
@@ -103,7 +108,7 @@ class MusicService : MediaSessionService() {
                             // (poToken + player API only). A genuinely slow cold-start or
                             // bad network can still exceed this and throw below.
                             while (waited < 12000) {
-                                val ready = songUrlCache[videoId]
+                                val ready = songUrlCache[urlKey(videoId)]
                                 if (ready != null && ready.second > System.currentTimeMillis()) {
                                     Timber.d("Resolver: pre-resolve ready for $videoId ✅")
                                     return@Factory dataSpec.withUri(Uri.parse(ready.first))
@@ -174,7 +179,7 @@ class MusicService : MediaSessionService() {
     }
 
     fun preResolveUrl(videoId: String, force: Boolean = false) {
-        val cached = songUrlCache[videoId]
+        val cached = songUrlCache[urlKey(videoId)]
         if (!force && cached != null && cached.second > System.currentTimeMillis()) {
             Timber.d("preResolve: already cached for $videoId ✅")
             return
@@ -184,7 +189,7 @@ class MusicService : MediaSessionService() {
             val result = Innertube.getStreamUrl(this@MusicService, videoId)
             if (result != null) {
                 val (url, expiryMs) = result
-                songUrlCache[videoId] = url to expiryMs
+                songUrlCache[urlKey(videoId)] = url to expiryMs
                 Timber.d("preResolve: cached stream for $videoId ✅ (expires in ${(expiryMs - System.currentTimeMillis()) / 60000}min)")
 
                 // Probe URL to confirm it's alive
