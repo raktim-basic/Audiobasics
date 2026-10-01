@@ -116,7 +116,14 @@ fun CustomPlaylistScreen(
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
 
-    LaunchedEffect(isSearching) { if (isSearching) focusRequester.requestFocus() }
+    LaunchedEffect(isSearching) {
+        if (isSearching) {
+            // Scroll to the sticky playlist header so filtered results remain visible
+            // when the IME opens. The playlist artwork is item 0, header is item 1.
+            listState.animateScrollToItem(1)
+            focusRequester.requestFocus()
+        }
+    }
     LaunchedEffect(playlist.id) { vm.loadPlaylistSongs(playlist.id) }
 
     val filteredSongs = remember(playlistSongs, searchQuery) {
