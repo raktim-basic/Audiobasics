@@ -610,7 +610,7 @@ private fun PlayerFrontContent(
                         },
                         modifier = Modifier.morphAnchor(sleepAnchor)
                     ) {
-                        Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer active", tint = Color.Red, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer active", tint = Color.Red, modifier = Modifier.size(24.dp))
                     }
                 }
                 if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) {
@@ -622,7 +622,7 @@ private fun PlayerFrontContent(
                         },
                         modifier = Modifier.morphAnchor(tempoAnchor)
                     ) {
-                        Icon(Icons.Default.Speed, contentDescription = "Tempo and pitch active", tint = Color.Red, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Speed, contentDescription = "Tempo and pitch active", tint = Color.Red, modifier = Modifier.size(24.dp))
                     }
                 }
             }
@@ -633,7 +633,7 @@ private fun PlayerFrontContent(
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                 }) {
-                    Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = textColor, modifier = Modifier.size(24.dp))
                 }
 
                 // Song info — flips the card
@@ -641,7 +641,7 @@ private fun PlayerFrontContent(
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onShowInfo()
                 }) {
-                    Icon(Icons.Default.Info, contentDescription = "Song info", tint = textColor, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Info, contentDescription = "Song info", tint = textColor, modifier = Modifier.size(24.dp))
                 }
 
                 // Close
@@ -649,7 +649,7 @@ private fun PlayerFrontContent(
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     onDismiss()
                 }) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor, modifier = Modifier.size(24.dp))
                 }
             }
         }
@@ -678,7 +678,7 @@ private fun PlayerFrontContent(
                     text = song?.title ?: "Song Name",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
+                    fontSize = 22.sp,
                     color = textColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -709,7 +709,7 @@ private fun PlayerFrontContent(
                         text = song?.artist ?: "Artist",
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Normal,
-                        fontSize = 13.sp,
+                        fontSize = 16.sp,
                         color = subTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -737,7 +737,7 @@ private fun PlayerFrontContent(
                 text = formatTime(displayPosition),
                 fontFamily = if (EasterEggUtils.isAprilFoolsDay()) FontFamily.Monospace else NothingFont,
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
+                fontSize = 18.sp,
                 color = textColor
             )
             Spacer(Modifier.width(8.dp))
@@ -768,7 +768,7 @@ private fun PlayerFrontContent(
                 text = formatTime(duration),
                 fontFamily = if (EasterEggUtils.isAprilFoolsDay()) FontFamily.Monospace else NothingFont,
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
+                fontSize = 18.sp,
                 color = textColor
             )
         }
@@ -787,13 +787,13 @@ private fun PlayerFrontContent(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 vm.skipToPrevious()
             }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = textColor, modifier = Modifier.size(36.dp))
+                Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = textColor, modifier = Modifier.size(43.dp))
             }
 
             Box(
                 modifier = Modifier
-                    .width(140.dp)
-                    .height(48.dp)
+                    .width(168.dp)
+                    .height(58.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(surfaceColor)
                     .clickable {
@@ -803,21 +803,21 @@ private fun PlayerFrontContent(
                 contentAlignment = Alignment.Center
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = textColor)
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = textColor)
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
                             tint = textColor,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(24.dp)
                         )
-                        Spacer(Modifier.width(6.dp))
+                        Spacer(Modifier.width(7.dp))
                         Text(
                             text = if (isPlaying) "Pause" else "Play",
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
+                            fontSize = 19.sp,
                             color = textColor
                         )
                     }
@@ -828,7 +828,7 @@ private fun PlayerFrontContent(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 vm.skipToNext()
             }) {
-                Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = textColor, modifier = Modifier.size(36.dp))
+                Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = textColor, modifier = Modifier.size(43.dp))
             }
         }
 
@@ -839,7 +839,7 @@ private fun PlayerFrontContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(surfaceColor)
-                .padding(horizontal = 32.dp, vertical = 14.dp),
+                .padding(horizontal = 32.dp, vertical = 17.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -848,7 +848,7 @@ private fun PlayerFrontContent(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onShowAddToSheet()
             }) {
-                Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = textColor, modifier = Modifier.size(26.dp))
+                Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = textColor, modifier = Modifier.size(31.dp))
             }
 
             // Lyrics — flips the card
@@ -856,7 +856,7 @@ private fun PlayerFrontContent(
                 text = "LYRICS",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
+                fontSize = 17.sp,
                 color = textColor,
                 modifier = Modifier.clickable {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -1019,7 +1019,7 @@ private fun PlayerOverflowMenuButton(
         },
         modifier = Modifier.morphAnchor(threeDotAnchor)
     ) {
-        Icon(Icons.Default.MoreVert, contentDescription = "More", tint = iconTint, modifier = Modifier.size(26.dp))
+        Icon(Icons.Default.MoreVert, contentDescription = "More", tint = iconTint, modifier = Modifier.size(31.dp))
     }
 }
 
@@ -1167,7 +1167,7 @@ private fun PlayerFrontContentV2(
                                 },
                                 modifier = Modifier.morphAnchor(sleepAnchor)
                             ) {
-                                Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer active", tint = Color.Red, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer active", tint = Color.Red, modifier = Modifier.size(24.dp))
                             }
                         }
                         if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) {
@@ -1179,7 +1179,7 @@ private fun PlayerFrontContentV2(
                                 },
                                 modifier = Modifier.morphAnchor(tempoAnchor)
                             ) {
-                                Icon(Icons.Default.Speed, contentDescription = "Tempo and pitch active", tint = Color.Red, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Speed, contentDescription = "Tempo and pitch active", tint = Color.Red, modifier = Modifier.size(24.dp))
                             }
                         }
                     }
@@ -1189,19 +1189,19 @@ private fun PlayerFrontContentV2(
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
                         }) {
-                            Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
                         }
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             onShowInfo()
                         }) {
-                            Icon(Icons.Default.Info, contentDescription = "Song info", tint = Color.White, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Info, contentDescription = "Song info", tint = Color.White, modifier = Modifier.size(24.dp))
                         }
                         IconButton(onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             onDismiss()
                         }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(24.dp))
                         }
                     }
                 }
@@ -1218,7 +1218,7 @@ private fun PlayerFrontContentV2(
                         text = song?.title ?: "Song Name",
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 24.sp,
+                        fontSize = 29.sp,
                         color = Color.White,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -1248,7 +1248,7 @@ private fun PlayerFrontContentV2(
                             text = song?.artist ?: "Artist",
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Normal,
-                            fontSize = 15.sp,
+                            fontSize = 18.sp,
                             color = Color.White.copy(alpha = 0.75f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -1256,7 +1256,7 @@ private fun PlayerFrontContentV2(
                     }
                 }
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(24.dp))
 
                 // ── Progress bar ──────────────────────────
                 val displayPosition = dragPosition ?: position
@@ -1270,12 +1270,12 @@ private fun PlayerFrontContentV2(
                         text = formatTime(displayPosition),
                         fontFamily = if (EasterEggUtils.isAprilFoolsDay()) FontFamily.Monospace else NothingFont,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontSize = 18.sp,
                         color = Color.White
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     Box(
-                        modifier = Modifier.weight(1f).height(20.dp),
+                        modifier = Modifier.weight(1f).height(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         DashedProgressBar(
@@ -1296,17 +1296,17 @@ private fun PlayerFrontContentV2(
                             unfilledColorOverride = Color.White.copy(alpha = 0.35f)
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         text = formatTime(duration),
                         fontFamily = if (EasterEggUtils.isAprilFoolsDay()) FontFamily.Monospace else NothingFont,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontSize = 18.sp,
                         color = Color.White
                     )
                 }
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(24.dp))
 
                 // ── Playback controls ─────────────────────
                 Row(
@@ -1320,13 +1320,13 @@ private fun PlayerFrontContentV2(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.skipToPrevious()
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(36.dp))
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(43.dp))
                     }
 
                     Box(
                         modifier = Modifier
-                            .width(140.dp)
-                            .height(48.dp)
+                            .width(168.dp)
+                            .height(58.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(buttonBg)
                             .clickable {
@@ -1336,21 +1336,21 @@ private fun PlayerFrontContentV2(
                         contentAlignment = Alignment.Center
                     ) {
                         if (isLoading) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = buttonFg)
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = buttonFg)
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = if (isPlaying) "Pause" else "Play",
                                     tint = buttonFg,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                Spacer(Modifier.width(6.dp))
+                                Spacer(Modifier.width(7.dp))
                                 Text(
                                     text = if (isPlaying) "Pause" else "Play",
                                     fontFamily = NothingFont,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
+                                    fontSize = 19.sp,
                                     color = buttonFg
                                 )
                             }
@@ -1361,11 +1361,11 @@ private fun PlayerFrontContentV2(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.skipToNext()
                     }) {
-                        Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(36.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(43.dp))
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
 
                 // ── Bottom bar ─────────────────────────────
                 Row(
@@ -1379,14 +1379,14 @@ private fun PlayerFrontContentV2(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onShowAddToSheet()
                     }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = Color.White, modifier = Modifier.size(26.dp))
+                        Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = Color.White, modifier = Modifier.size(31.dp))
                     }
 
                     Text(
                         text = "LYRICS",
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = 17.sp,
                         color = Color.White,
                         modifier = Modifier.clickable {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
