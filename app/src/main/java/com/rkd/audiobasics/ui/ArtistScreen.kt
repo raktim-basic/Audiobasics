@@ -535,8 +535,14 @@ fun AlbumRowItem(
                 else -> album.artist
             }
             if (sub.isNotBlank()) {
-                Text(text = sub, fontFamily = NothingFont, fontSize = 13.sp,
-                    color = subTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (album.isExplicit) {
+                        ExplicitBadge(isDarkMode)
+                        Spacer(Modifier.width(5.dp))
+                    }
+                    Text(text = sub, fontFamily = NothingFont, fontSize = 13.sp,
+                        color = subTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }
