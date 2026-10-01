@@ -96,10 +96,12 @@ fun ArtistScreen(
 
     LaunchedEffect(isSearching) {
         if (isSearching) {
-            // Keep the sticky artist tabs/header visible while the keyboard is open.
-            // The artist hero is item 0 and the sticky tabs are item 1.
-            listState.animateScrollToItem(1)
+            // Request focus first so the keyboard opens immediately; let the list
+            // animation continue independently instead of delaying the keyboard.
             focusRequester.requestFocus()
+            launch {
+                listState.animateScrollToItem(1)
+            }
         }
     }
 
@@ -447,7 +449,7 @@ fun ArtistScreen(
                     Icon(Icons.Default.Search, contentDescription = "Search",
                         tint = textColor, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("(Artist)", fontFamily = NothingFont,
+                    Text("(ARTIST)", fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
                 }
                 IconButton(onClick = {
