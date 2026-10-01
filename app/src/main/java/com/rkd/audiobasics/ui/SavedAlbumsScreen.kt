@@ -60,6 +60,7 @@ fun SavedAlbumsScreen(
 ) {
     val context = LocalContext.current
     val savedAlbums by vm.savedAlbums.collectAsState()
+    val savedAlbumSongs by vm.savedAlbumSongs.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
@@ -260,6 +261,7 @@ fun SavedAlbumsScreen(
                                     isDarkMode = isDarkMode,
                                     hapticsEnabled = hapticsEnabled,
                                     context = context,
+                                    isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
                                     onClick = {
                                         if (draggingIndex == null) onAlbumClick(album)
                                     },
@@ -278,6 +280,7 @@ fun SavedAlbumsScreen(
                             isDarkMode = isDarkMode,
                             hapticsEnabled = hapticsEnabled,
                             context = context,
+                            isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
                             onClick = { onAlbumClick(album) },
                             onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
                         )
@@ -413,6 +416,7 @@ fun AlbumItem(
     hapticsEnabled: Boolean,
     context: android.content.Context,
     onClick: () -> Unit,
+    isExplicit: Boolean = album.isExplicit,
     isDragging: Boolean = false,
     onReorder: (() -> Unit)? = null,
     onRemoveFromSave: (() -> Unit)? = null
@@ -473,14 +477,20 @@ fun AlbumItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = album.artist,
-                fontFamily = NothingFont,
-                fontSize = 12.sp,
-                color = subTextColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isExplicit) {
+                    ExplicitBadge(isDarkMode)
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(
+                    text = album.artist,
+                    fontFamily = NothingFont,
+                    fontSize = 12.sp,
+                    color = subTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             if (album.songCount > 0) {
                 Text(
                     text = "${album.songCount} songs · ${formatTime(album.duration)}",
