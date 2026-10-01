@@ -174,7 +174,7 @@ object CacheManager {
             repeat(3) { attempt ->
                 try {
                     // getStreamUrl returns Pair(url, expiryMs) — we only need the URL for download
-                    val streamUrl = Innertube.getStreamUrl(context, song.id)?.first
+                    val streamUrl = Innertube.getStreamUrl(context, song.id, forDownload = true)?.first
                         ?: run {
                             lastError = "Could not get stream URL"
                             return@repeat
