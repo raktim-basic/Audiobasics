@@ -144,8 +144,10 @@ fun LikedScreen(
     LaunchedEffect(isSearching) {
         if (isSearching) {
             // Scroll to the sticky liked-songs header before showing the keyboard.
-            listState.animateScrollToItem(1)
             focusRequester.requestFocus()
+            launch {
+                listState.animateScrollToItem(1)
+            }
         }
     }
 
