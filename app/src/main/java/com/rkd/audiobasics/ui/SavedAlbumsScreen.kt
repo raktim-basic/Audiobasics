@@ -106,6 +106,9 @@ fun SavedAlbumsScreen(
     // Auto‑focus when entering search mode
     LaunchedEffect(isSearching) {
         if (isSearching) {
+            // Keep the sticky saved-albums header pinned above the keyboard.
+            // The artwork is item 0 and the sticky header is item 1.
+            listState.animateScrollToItem(1)
             focusRequester.requestFocus()
         }
     }
