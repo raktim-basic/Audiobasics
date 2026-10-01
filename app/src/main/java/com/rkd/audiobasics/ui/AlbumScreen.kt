@@ -175,7 +175,9 @@ fun AlbumScreen(
                     thumbnail = meta.thumbnail.ifBlank { album.thumbnail },
                     year = meta.year.ifBlank { album.year },
                     artistNames = meta.artistNames.ifEmpty { album.artistNames },
-                    artistIds = meta.artistIds.ifEmpty { album.artistIds }
+                    artistIds = meta.artistIds.ifEmpty { album.artistIds },
+                    // An album is explicit if YTM says so, or if even one of its songs is
+                    isExplicit = album.isExplicit || meta.isExplicit || albumSongs.any { it.isExplicit }
                 )
                 // Share this resolved metadata app-wide so Song Info (and anywhere else
                 // that looks up album titles by id) benefits immediately, not just this screen.
@@ -283,10 +285,15 @@ fun AlbumScreen(
                         // later children's available width instead of wrapping the whole
                         // group, which on a long artist list forced individual names into a
                         // near-zero-width column, wrapping letter-by-letter down the screen.
+                        val albumIsExplicit = enrichedAlbum.isExplicit || albumSongs.any { it.isExplicit }
                         FlowRow(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.Center
                         ) {
+                            if (albumIsExplicit) {
+                                ExplicitBadge(isDarkMode, Modifier.align(Alignment.CenterVertically))
+                                Spacer(Modifier.width(6.dp))
+                            }
                             artistList.forEachIndexed { i, artist ->
                                 Text(
                                     text = buildAnnotatedString {
@@ -548,6 +555,7 @@ fun AlbumScreen(
                                 items(otherVersions, key = { it.id }) { version ->
                                     OtherVersionCard(
                                         album = version,
+                                        isDarkMode = isDarkMode,
                                         textColor = textColor,
                                         subTextColor = subTextColor,
                                         onClick = {
@@ -890,6 +898,7 @@ fun AlbumSongRow(
 @Composable
 private fun OtherVersionCard(
     album: Album,
+    isDarkMode: Boolean,
     textColor: Color,
     subTextColor: Color,
     onClick: () -> Unit
@@ -916,15 +925,21 @@ private fun OtherVersionCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
-        if (album.artist.isNotBlank()) {
-            Text(
-                text = album.artist,
-                fontFamily = NothingFont,
-                fontSize = 11.sp,
-                color = subTextColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        if (album.artist.isNotBlank() || album.isExplicit) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (album.isExplicit) {
+                    ExplicitBadge(isDarkMode)
+                    Spacer(Modifier.width(5.dp))
+                }
+                Text(
+                    text = album.artist,
+                    fontFamily = NothingFont,
+                    fontSize = 11.sp,
+                    color = subTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
