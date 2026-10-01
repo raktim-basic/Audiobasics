@@ -48,7 +48,7 @@ fun AppLinksNudgeDialog(
         ) {
             Column {
                 Text(
-                    text = "New feature: Audiobasics Link",
+                    text = "Audiobasics Link",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
@@ -58,8 +58,8 @@ fun AppLinksNudgeDialog(
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    text = "Audiobasics now has a new sharing system. Allow Audiobasics to " +
-                        "open raktim-basic.github.io links for a seamless experience:",
+                    text = "Audiobasics has its own sharing system. Allow Audiobasics to " +
+                        "open raktim-basic.github.io links for a seamless experience.",
                     fontSize = 14.sp,
                     color = subTextColor,
                     lineHeight = 20.sp
