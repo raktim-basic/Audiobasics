@@ -39,9 +39,11 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -201,21 +203,40 @@ fun PlayerDialog(
             // of recent absolute positions) if the resize happened to land inside that window —
             // sign and all, which is exactly the "random" wrong-direction flips this was causing.
             val sizingFace = faceFor(settleRotation.value)
-            val cardWidthFraction = when (sizingFace) {
-                PlayerFace.PLAYER -> 0.88f
-                PlayerFace.LYRICS -> 0.92f
-                PlayerFace.INFO -> 0.88f
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(cardWidthFraction)
-                    .then(
-                        when (sizingFace) {
-                            PlayerFace.PLAYER -> Modifier.aspectRatio(1f) // square
-                            PlayerFace.LYRICS -> Modifier.fillMaxHeight(0.75f)
-                            PlayerFace.INFO -> Modifier.wrapContentHeight()
-                        }
-                    )
+
+            // The player is intentionally locked to the reference composition used on the
+            // 378-dpi reference device. Android's Display size setting changes the effective
+            // density, so using the normal LocalDensity here would make the player (and every
+            // dp-sized child inside it) grow/shrink with the system setting. Only the PLAYER
+            // face gets this fixed density; Lyrics/Info and the rest of the app remain normal.
+            val systemDensity = LocalDensity.current
+            val playerDensity = remember(systemDensity.fontScale) { Density(378f / 160f, systemDensity.fontScale) }
+            val playerReferenceSize = 402.dp
+
+            CompositionLocalProvider(
+                LocalDensity provides if (sizingFace == PlayerFace.PLAYER) {
+                    playerDensity
+                } else {
+                    systemDensity
+                }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .then(
+                            when (sizingFace) {
+                                // 402dp at the 378-dpi reference density is ~950px, matching
+                                // the current 0.88f player on the 1080px-wide reference device.
+                                PlayerFace.PLAYER -> Modifier
+                                    .width(playerReferenceSize)
+                                    .aspectRatio(1f)
+                                PlayerFace.LYRICS -> Modifier
+                                    .fillMaxWidth(0.92f)
+                                    .fillMaxHeight(0.75f)
+                                PlayerFace.INFO -> Modifier
+                                    .fillMaxWidth(0.88f)
+                                    .wrapContentHeight()
+                            }
+                        )
                     .onSizeChanged { cardWidthPx = it.width.coerceAtLeast(1) }
                     .graphicsLayer {
                         rotationY = rotationValue
@@ -449,6 +470,7 @@ fun PlayerDialog(
                     }
                 }
             }
+        }
 
         // ── Add to playlist sheet ──────────────────────────────────────────────
         if (showAddToSheet && song != null) {
