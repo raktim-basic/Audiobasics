@@ -10,7 +10,12 @@ import com.rkd.audiobasics.api.potoken.PoTokenGenerator
 import com.rkd.audiobasics.api.potoken.PoTokenResult
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -25,6 +30,7 @@ import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.stream.AudioStream
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 object Innertube {
@@ -1224,7 +1230,13 @@ object Innertube {
         val userAgent: String,
         val usePoTokenInBody: Boolean = false,
         val appendPotToUrl: Boolean = false,
-        val useSignatureTimestamp: Boolean = false
+        val useSignatureTimestamp: Boolean = false,
+        // Native-app clients identify the device; YouTube rejects some of them without these.
+        val androidSdkVersion: Int? = null,
+        val osName: String? = null,
+        val osVersion: String? = null,
+        val deviceMake: String? = null,
+        val deviceModel: String? = null
     )
 
     // WEB_REMIX first — its CDN URLs have no per-URL chunk request limit.
@@ -1234,12 +1246,22 @@ object Innertube {
             usePoTokenInBody = true, appendPotToUrl = true, useSignatureTimestamp = true),
         YTClient("WEB", "2.20260213.00.00", "1", FIREFOX_UA,
             usePoTokenInBody = true, appendPotToUrl = true, useSignatureTimestamp = true),
+        // ANDROID_VR: the Oculus Quest YouTube app. Usually plays without sign-in or a poToken,
+        // which makes it the most useful fallback when the other clients get LOGIN_REQUIRED
+        // (Metrolist falls back to it for the same reason). Version/UA mirror the values other
+        // open-source extractors use for it; if YouTube retires this version, bump it here.
+        YTClient("ANDROID_VR", "1.65.10", "28",
+            "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+            usePoTokenInBody = false, appendPotToUrl = false, useSignatureTimestamp = false,
+            androidSdkVersion = 32, osName = "Android", osVersion = "12L",
+            deviceMake = "Oculus", deviceModel = "Quest 3"),
         YTClient("IOS", "21.03.1", "5",
             "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)",
             usePoTokenInBody = false, appendPotToUrl = true, useSignatureTimestamp = false),
         YTClient("ANDROID", "19.44.38", "3",
             "com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip",
-            usePoTokenInBody = false, appendPotToUrl = true, useSignatureTimestamp = false),
+            usePoTokenInBody = false, appendPotToUrl = true, useSignatureTimestamp = false,
+            androidSdkVersion = 30, osName = "Android", osVersion = "11"),
     )
 
     fun parseExpiry(url: String): Long {
@@ -1344,6 +1366,10 @@ object Innertube {
         // Any other failure (bad playabilityStatus, no formats, network error, etc.) —
         // may well be a legitimately unavailable video, not an identity problem.
         object OtherFailure : StreamAttemptResult()
+        // playabilityStatus=LOGIN_REQUIRED — YouTube wants a signed-in / non-flagged client.
+        // Not a per-video problem: it tends to hit every client at once when a connection
+        // has been rate limited, and retrying immediately only digs the hole deeper.
+        object SignInRequired : StreamAttemptResult()
     }
 
     private suspend fun tryClientForStream(
@@ -1359,6 +1385,11 @@ object Innertube {
             .put("clientVersion", client.clientVersion)
             .put("hl", "en")
             .put("gl", "US")
+        client.androidSdkVersion?.let { clientContext.put("androidSdkVersion", it) }
+        client.osName?.let { clientContext.put("osName", it) }
+        client.osVersion?.let { clientContext.put("osVersion", it) }
+        client.deviceMake?.let { clientContext.put("deviceMake", it) }
+        client.deviceModel?.let { clientContext.put("deviceModel", it) }
 
         // Include visitorData in context for web clients — ties request to real browser session
         visitorData?.let { clientContext.put("visitorData", it) }
@@ -1406,7 +1437,8 @@ object Innertube {
         val status = json.optJSONObject("playabilityStatus")?.optString("status")
         if (status != "OK") {
             Timber.w("${client.clientName}: playabilityStatus=$status")
-            return StreamAttemptResult.OtherFailure
+            return if (status == "LOGIN_REQUIRED") StreamAttemptResult.SignInRequired
+            else StreamAttemptResult.OtherFailure
         }
 
         val adaptiveFormats = json.optJSONObject("streamingData")
@@ -1473,6 +1505,8 @@ object Innertube {
         quality: String
     ): Pair<String?, Boolean> {
         var sawForbidden = false
+        var sawSignIn = false
+        lastRoundSawSignIn = false
         for (client in STREAM_CLIENTS) {
             try {
                 Timber.d("Trying client: ${client.clientName} sigTs=$sigTimestamp poToken=${poToken?.playerRequestPoToken?.take(10)}...")
@@ -1486,6 +1520,7 @@ object Innertube {
                 val url = when (result) {
                     is StreamAttemptResult.Forbidden -> { sawForbidden = true; continue }
                     is StreamAttemptResult.OtherFailure -> continue
+                    is StreamAttemptResult.SignInRequired -> { sawSignIn = true; lastRoundSawSignIn = true; continue }
                     is StreamAttemptResult.Success -> result.url
                 }
 
@@ -1511,15 +1546,84 @@ object Innertube {
         return null to sawForbidden
     }
 
+    // ── Request hygiene: one lookup per song at a time, and back off when YouTube says
+    //    "sign in" instead of hammering it with retries ─────────────────────────────
+
+    @Volatile private var lastRoundSawSignIn = false
+    @Volatile private var signInBlockedUntil = 0L
+    @Volatile private var signInBlockNetwork: String? = null
+    @Volatile private var signInBlockStreak = 0
+    private val signInBackoffMs = longArrayOf(20_000L, 45_000L, 90_000L, 180_000L)
+
+    private fun activeNetworkId(context: Context): String? = try {
+        context.getSystemService(android.net.ConnectivityManager::class.java)?.activeNetwork?.toString()
+    } catch (_: Exception) { null }
+
+    /** Remaining back-off in ms, or 0. The back-off only applies on the network where the
+     *  block was seen — switching Wi-Fi <-> mobile data (a new address to YouTube) clears it,
+     *  so you can try that immediately. */
+    private fun signInCooldownRemainingMs(context: Context): Long {
+        val remaining = signInBlockedUntil - System.currentTimeMillis()
+        if (remaining <= 0L) return 0L
+        if (activeNetworkId(context) != signInBlockNetwork) { signInBlockedUntil = 0L; return 0L }
+        return remaining
+    }
+
+    private fun registerSignInBlock(context: Context) {
+        signInBlockStreak++
+        val delay = signInBackoffMs[(signInBlockStreak - 1).coerceAtMost(signInBackoffMs.size - 1)]
+        signInBlockedUntil = System.currentTimeMillis() + delay
+        signInBlockNetwork = activeNetworkId(context)
+        Timber.w("YouTube is asking for sign-in on every client — pausing stream lookups for ${delay / 1000}s (streak=$signInBlockStreak)")
+    }
+
+    private fun clearSignInBlock() {
+        signInBlockStreak = 0
+        signInBlockedUntil = 0L
+    }
+
+    private val streamScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val inFlightStreams = ConcurrentHashMap<String, Deferred<Pair<String, Long>?>>()
+
     // Returns Pair(streamUrl, expiryMs) or null.
-    // Tries WEB_REMIX first (no CDN chunk limit), falls back to IOS/ANDROID.
-    // Validates each URL with a HEAD request before returning.
+    // If the same song is already being looked up (the player, the pre-resolver and the
+    // retry path often ask at once), callers share that one lookup instead of each running
+    // their own full client chain.
     suspend fun getStreamUrl(
         context: Context,
         videoId: String,
         forceFallback: Boolean = false,
         forDownload: Boolean = false
+    ): Pair<String, Long>? {
+        val key = "$videoId|$forceFallback|${effectiveAudioQuality(context, forDownload)}"
+        val mine = streamScope.async(start = CoroutineStart.LAZY) {
+            resolveStreamUrl(context, videoId, forceFallback, forDownload)
+        }
+        val running = inFlightStreams.putIfAbsent(key, mine)
+        if (running != null) {
+            mine.cancel()
+            Timber.d("getStreamUrl: joining in-flight lookup for $videoId")
+            return running.await()
+        }
+        mine.invokeOnCompletion { inFlightStreams.remove(key, mine) }
+        mine.start()
+        return mine.await()
+    }
+
+    // Tries WEB_REMIX first (no CDN chunk limit), falls back to the other clients.
+    // Validates each URL with a HEAD request before returning.
+    private suspend fun resolveStreamUrl(
+        context: Context,
+        videoId: String,
+        forceFallback: Boolean,
+        forDownload: Boolean
     ): Pair<String, Long>? = withContext(Dispatchers.IO) {
+
+        val coolDownMs = signInCooldownRemainingMs(context)
+        if (coolDownMs > 0L) {
+            Timber.w("getStreamUrl: holding off ${coolDownMs / 1000}s more after a sign-in rejection (videoId=$videoId)")
+            return@withContext null
+        }
 
         val quality = effectiveAudioQuality(context, forDownload)
         Timber.d("getStreamUrl: quality=$quality (forDownload=$forDownload)")
@@ -1543,12 +1647,15 @@ object Innertube {
 
         poToken?.let { NewPipeDownloader.poToken = it.playerRequestPoToken }
 
+        var sawSignIn = false
         if (!forceFallback) {
             val (firstUrl, sawForbidden) = tryNativeClients(videoId, sigTimestamp, poToken, quality)
             if (firstUrl != null) {
                 resetRecent403s()
+                clearSignInBlock()
                 return@withContext firstUrl to parseExpiry(firstUrl)
             }
+            sawSignIn = lastRoundSawSignIn
 
             if (sawForbidden) {
                 record403(videoId)
@@ -1571,8 +1678,10 @@ object Innertube {
                     val (retryUrl, _) = tryNativeClients(videoId, sigTimestamp, poToken, quality)
                     if (retryUrl != null) {
                         resetRecent403s()
+                        clearSignInBlock()
                         return@withContext retryUrl to parseExpiry(retryUrl)
                     }
+                    sawSignIn = sawSignIn || lastRoundSawSignIn
                 }
             } else {
                 // Failures that weren't 403s (e.g. a legitimately region-locked or
@@ -1586,7 +1695,7 @@ object Innertube {
         // NewPipe fallback
         Timber.w("Falling to NewPipe (forceFallback=$forceFallback)")
         initNewPipe()
-        try {
+        val fallbackResult: Pair<String, Long>? = try {
             val extractor = ServiceList.YouTube
                 .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
@@ -1603,6 +1712,14 @@ object Innertube {
             Timber.e("NewPipe ALSO failed: ${e.message} ❌")
             null
         }
+        if (fallbackResult != null) {
+            clearSignInBlock()
+        } else if (sawSignIn) {
+            // Every native client was told to sign in and NewPipe didn't get through either:
+            // this connection is being gated, so stop retrying for a short while.
+            registerSignInBlock(context)
+        }
+        fallbackResult
     }
 
     suspend fun getRelatedSongs(context: Context, videoId: String, limit: Int = 15): List<Song> =
