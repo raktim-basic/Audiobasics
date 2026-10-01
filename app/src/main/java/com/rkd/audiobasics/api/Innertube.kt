@@ -347,6 +347,10 @@ object Innertube {
                     ?.optJSONObject("accessibilityData")
                     ?.optString("label") ?: ""
                 if (label.equals("Explicit", ignoreCase = true)) return true
+                // Album cards (artist pages, "Other versions") mark it by icon type instead
+                val icon = badges.getJSONObject(i).optJSONObject("musicInlineBadgeRenderer")
+                    ?.optJSONObject("icon")?.optString("iconType") ?: ""
+                if (icon == "MUSIC_EXPLICIT_BADGE") return true
             } catch (_: Exception) {}
         }
         return false
@@ -794,7 +798,8 @@ object Innertube {
                         }
                         out.add(Song(id = browseId, title = title,
                             artist = "(Album) ${artist.ifBlank { "Unknown Artist" }}",
-                            thumbnail = thumb, isAlbum = true, year = albumYear))
+                            thumbnail = thumb, isAlbum = true, year = albumYear,
+                            isExplicit = parseExplicit(item.optJSONArray("badges"))))
                     } catch (_: Exception) {}
                 }
             }
@@ -1243,6 +1248,32 @@ object Innertube {
         else System.currentTimeMillis() + 6 * 60 * 60 * 1000L
     }
 
+    // ── Audio quality (mirrors Metrolist's Auto / High / Low) ────────────────
+    const val AUDIO_QUALITY_PREF_KEY = "audio_quality"
+    const val AUDIO_QUALITY_AUTO = "auto"
+    const val AUDIO_QUALITY_HIGH = "high"
+    const val AUDIO_QUALITY_BASIC = "basic"
+
+    /** What to actually use right now: always HIGH or BASIC. "Auto" is High on an unmetered
+     *  connection (Wi-Fi) and Basic on a metered one (mobile data), same as Metrolist.
+     *  Downloads for offline use ([forDownload]) treat Auto as High, since the saved file is
+     *  permanent — it shouldn't end up low quality just because it was fetched on mobile data. */
+    fun effectiveAudioQuality(context: Context, forDownload: Boolean = false): String {
+        val pref = context.getSharedPreferences("ytlite", Context.MODE_PRIVATE)
+            .getString(AUDIO_QUALITY_PREF_KEY, AUDIO_QUALITY_AUTO)
+        return when (pref) {
+            AUDIO_QUALITY_HIGH -> AUDIO_QUALITY_HIGH
+            AUDIO_QUALITY_BASIC -> AUDIO_QUALITY_BASIC
+            else -> {
+                if (forDownload) return AUDIO_QUALITY_HIGH
+                try {
+                    val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+                    if (cm?.isActiveNetworkMetered == true) AUDIO_QUALITY_BASIC else AUDIO_QUALITY_HIGH
+                } catch (_: Exception) { AUDIO_QUALITY_HIGH }
+            }
+        }
+    }
+
     private data class ResolvedFormat(
         val url: String,
         val bitrate: Int,
@@ -1253,16 +1284,26 @@ object Innertube {
 
     // Pure selection — no suspend, no side effects.
     // Web clients prefer opus for quality; mobile clients prefer mp4a for compatibility.
-    private fun selectBestAudioFormat(formats: List<ResolvedFormat>, client: YTClient): ResolvedFormat? {
+    private fun selectBestAudioFormat(formats: List<ResolvedFormat>, client: YTClient, quality: String): ResolvedFormat? {
         if (formats.isEmpty()) return null
-        val sorted = formats.sortedWith(
-            compareByDescending<ResolvedFormat> { if (!it.hasAlr) 1 else 0 }
-                .thenByDescending { it.bitrate }
-                .thenByDescending {
-                    if (client.usePoTokenInBody) { if (it.mimeType.contains("opus")) 1 else 0 }
-                    else { if (it.mimeType.contains("mp4a")) 1 else 0 }
-                }
-        )
+        val codecPref = { f: ResolvedFormat ->
+            if (client.usePoTokenInBody) { if (f.mimeType.contains("opus")) 1 else 0 }
+            else { if (f.mimeType.contains("mp4a")) 1 else 0 }
+        }
+        val sorted = if (quality == AUDIO_QUALITY_BASIC) {
+            // Basic: the lowest bitrate on offer (non-ALR still first — ExoPlayer can't use ALR)
+            formats.sortedWith(
+                compareByDescending<ResolvedFormat> { if (!it.hasAlr) 1 else 0 }
+                    .thenBy { if (it.bitrate > 0) it.bitrate else Int.MAX_VALUE }
+                    .thenByDescending(codecPref)
+            )
+        } else {
+            formats.sortedWith(
+                compareByDescending<ResolvedFormat> { if (!it.hasAlr) 1 else 0 }
+                    .thenByDescending { it.bitrate }
+                    .thenByDescending(codecPref)
+            )
+        }
         val best = sorted.first()
         Timber.d("${client.clientName}: selected itag=${best.itag} bitrate=${best.bitrate} mime=${best.mimeType} alr=${best.hasAlr}")
         return best
@@ -1310,7 +1351,8 @@ object Innertube {
         client: YTClient,
         playerRequestPoToken: String?,
         streamingDataPoToken: String?,
-        sigTimestamp: Int?
+        sigTimestamp: Int?,
+        quality: String
     ): StreamAttemptResult {
         val clientContext = JSONObject()
             .put("clientName", client.clientName)
@@ -1398,7 +1440,7 @@ object Innertube {
 
         if (resolvedFormats.isEmpty()) return StreamAttemptResult.OtherFailure
 
-        val best = selectBestAudioFormat(resolvedFormats, client) ?: return StreamAttemptResult.OtherFailure
+        val best = selectBestAudioFormat(resolvedFormats, client, quality) ?: return StreamAttemptResult.OtherFailure
 
         // Remove alr=yes — ExoPlayer can't handle YouTube's adaptive loading protocol
         var finalUrl = best.url
@@ -1427,7 +1469,8 @@ object Innertube {
     private suspend fun tryNativeClients(
         videoId: String,
         sigTimestamp: Int?,
-        poToken: PoTokenResult?
+        poToken: PoTokenResult?,
+        quality: String
     ): Pair<String?, Boolean> {
         var sawForbidden = false
         for (client in STREAM_CLIENTS) {
@@ -1437,7 +1480,8 @@ object Innertube {
                     videoId, client,
                     poToken?.playerRequestPoToken,
                     poToken?.streamingDataPoToken,
-                    if (client.useSignatureTimestamp) sigTimestamp else null
+                    if (client.useSignatureTimestamp) sigTimestamp else null,
+                    quality
                 )
                 val url = when (result) {
                     is StreamAttemptResult.Forbidden -> { sawForbidden = true; continue }
@@ -1473,8 +1517,12 @@ object Innertube {
     suspend fun getStreamUrl(
         context: Context,
         videoId: String,
-        forceFallback: Boolean = false
+        forceFallback: Boolean = false,
+        forDownload: Boolean = false
     ): Pair<String, Long>? = withContext(Dispatchers.IO) {
+
+        val quality = effectiveAudioQuality(context, forDownload)
+        Timber.d("getStreamUrl: quality=$quality (forDownload=$forDownload)")
 
         // Ensure visitorData + signatureTimestamp are ready
         if (visitorData == null) fetchVisitorData()
@@ -1496,7 +1544,7 @@ object Innertube {
         poToken?.let { NewPipeDownloader.poToken = it.playerRequestPoToken }
 
         if (!forceFallback) {
-            val (firstUrl, sawForbidden) = tryNativeClients(videoId, sigTimestamp, poToken)
+            val (firstUrl, sawForbidden) = tryNativeClients(videoId, sigTimestamp, poToken, quality)
             if (firstUrl != null) {
                 resetRecent403s()
                 return@withContext firstUrl to parseExpiry(firstUrl)
@@ -1520,7 +1568,7 @@ object Innertube {
                     }
                     poToken?.let { NewPipeDownloader.poToken = it.playerRequestPoToken }
 
-                    val (retryUrl, _) = tryNativeClients(videoId, sigTimestamp, poToken)
+                    val (retryUrl, _) = tryNativeClients(videoId, sigTimestamp, poToken, quality)
                     if (retryUrl != null) {
                         resetRecent403s()
                         return@withContext retryUrl to parseExpiry(retryUrl)
@@ -1544,7 +1592,12 @@ object Innertube {
             extractor.fetchPage()
             val url = extractor.audioStreams
                 .filter { it.content != null && it.content.isNotEmpty() }
-                .maxByOrNull { it.averageBitrate }?.content
+                .let { streams ->
+                    if (quality == AUDIO_QUALITY_BASIC) {
+                        streams.filter { it.averageBitrate > 0 }.minByOrNull { it.averageBitrate }
+                            ?: streams.firstOrNull()
+                    } else streams.maxByOrNull { it.averageBitrate }
+                }?.content
             if (url != null) url to parseExpiry(url) else null
         } catch (e: Exception) {
             Timber.e("NewPipe ALSO failed: ${e.message} ❌")
@@ -1764,7 +1817,7 @@ object Innertube {
             albums.map { song ->
                 com.rkd.audiobasics.data.Album(id = song.id, title = song.title,
                     artist = song.artist.removePrefix("(Album) "), thumbnail = song.thumbnail,
-                    year = song.year)
+                    year = song.year, isExplicit = song.isExplicit)
             }
         } catch (e: Exception) { Log.e("Innertube", "searchAlbums error: ${e.message}"); emptyList() }
     }
@@ -1991,7 +2044,8 @@ object Innertube {
                                     val thumb = if (thumbArr2 != null && thumbArr2.length() > 0)
                                         upscaleThumbnail(thumbArr2.getJSONObject(thumbArr2.length() - 1).optString("url", "")) else ""
                                     val album = com.rkd.audiobasics.data.Album(id = albumBrowseId, title = title,
-                                        artist = artistName, thumbnail = thumb, year = year)
+                                        artist = artistName, thumbnail = thumb, year = year,
+                                        isExplicit = parseExplicit(r.optJSONArray("subtitleBadges")))
                                     if (isAlbums) { if (albums.none { it.id == albumBrowseId }) albums.add(album) }
                                     else { if (singles.none { it.id == albumBrowseId }) singles.add(album) }
                                 } catch (_: Exception) {}
@@ -2078,7 +2132,8 @@ object Innertube {
                     val thumb = thumbs?.takeIf { it.length() > 0 }
                         ?.optJSONObject(thumbs.length() - 1)?.optString("url")
                         ?.takeIf { it.isNotBlank() }?.let { upscaleThumbnail(it) }.orEmpty()
-                    out.add(Album(id = id, title = title, artist = artist, thumbnail = thumb, year = year))
+                    out.add(Album(id = id, title = title, artist = artist, thumbnail = thumb, year = year,
+                        isExplicit = parseExplicit(r.optJSONArray("subtitleBadges"))))
                 } catch (_: Exception) {}
             }
             out
