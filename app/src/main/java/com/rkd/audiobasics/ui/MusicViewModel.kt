@@ -352,6 +352,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("share_show_youtube_option", _shareYoutubeLinkEnabled.value).apply()
     }
 
+    // Streaming audio quality: Auto (High on Wi-Fi, Basic on mobile data) / High / Basic (low).
+    // Read directly from prefs by Innertube at stream-resolve time — no restart needed.
+    private val _audioQuality = MutableStateFlow(
+        prefs.getString(Innertube.AUDIO_QUALITY_PREF_KEY, Innertube.AUDIO_QUALITY_AUTO) ?: Innertube.AUDIO_QUALITY_AUTO
+    )
+    val audioQuality: StateFlow<String> = _audioQuality
+
+    fun setAudioQuality(quality: String) {
+        if (quality != Innertube.AUDIO_QUALITY_AUTO &&
+            quality != Innertube.AUDIO_QUALITY_HIGH &&
+            quality != Innertube.AUDIO_QUALITY_BASIC
+        ) return
+        _audioQuality.value = quality
+        prefs.edit().putString(Innertube.AUDIO_QUALITY_PREF_KEY, quality).apply()
+    }
+
     // Set when an incoming Audiobasics album link (see AudiobasicsLinks.parse) needs the UI to
     // navigate to that album; MainActivity observes this, pushes AlbumDetailKey, then calls
     // onAudiobasicsAlbumLinkNavigated() to clear it. AlbumScreen resolves the full tracklist
@@ -1748,7 +1764,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         if (existing.title == resolved.title &&
             existing.artist == resolved.artist &&
             existing.thumbnail == resolved.thumbnail &&
-            existing.year == resolved.year
+            existing.year == resolved.year &&
+            existing.isExplicit == resolved.isExplicit
         ) return // already up to date, avoid redundant writes
         _savedAlbums.value = _savedAlbums.value.map {
             if (it.id == resolved.id) resolved.copy(id = it.id) else it
@@ -2233,6 +2250,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 put("songCount", album.songCount)
                 put("youtubeUrl", album.youtubeUrl)
                 put("year", album.year)
+                put("isExplicit", album.isExplicit)
             })
         }
         prefs.edit().putString("saved_albums", arr.toString()).apply()
@@ -2249,7 +2267,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     duration = obj.optLong("duration", 0L),
                     songCount = obj.optInt("songCount", 0),
                     youtubeUrl = obj.optString("youtubeUrl", ""),
-                    year = obj.optString("year", "")
+                    year = obj.optString("year", ""),
+                    isExplicit = obj.optBoolean("isExplicit", false)
                 )
             }
         } catch (_: Exception) { emptyList() }
@@ -2329,6 +2348,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         put("artist", album.artist); put("thumbnail", album.thumbnail)
                         put("duration", album.duration); put("songCount", album.songCount)
                         put("youtubeUrl", album.youtubeUrl); put("year", album.year)
+                        put("isExplicit", album.isExplicit)
                     })
                 }
                 val playlistsArr = JSONArray()
@@ -2387,7 +2407,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                         artist = obj.getString("artist"), thumbnail = obj.getString("thumbnail"),
                         duration = obj.optLong("duration", 0L),
                         songCount = obj.optInt("songCount", 0),
-                        youtubeUrl = obj.optString("youtubeUrl", "")
+                        youtubeUrl = obj.optString("youtubeUrl", ""),
+                        isExplicit = obj.optBoolean("isExplicit", false)
                     )
                 }
 
