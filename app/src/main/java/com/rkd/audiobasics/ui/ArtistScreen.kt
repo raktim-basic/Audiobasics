@@ -94,7 +94,14 @@ fun ArtistScreen(
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
 
-    LaunchedEffect(isSearching) { if (isSearching) focusRequester.requestFocus() }
+    LaunchedEffect(isSearching) {
+        if (isSearching) {
+            // Keep the sticky artist tabs/header visible while the keyboard is open.
+            // The artist hero is item 0 and the sticky tabs are item 1.
+            listState.animateScrollToItem(1)
+            focusRequester.requestFocus()
+        }
+    }
 
     LaunchedEffect(artistName, artistBrowseId) {
         artistVm.loadIfNeeded(artistName, artistBrowseId)
@@ -213,9 +220,20 @@ fun ArtistScreen(
                             ) {
                                 IconButton(onClick = {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    artistVm.clearView = true
+                                    when {
+                                        shareArtistId.isBlank() ->
+                                            Toast.makeText(context, "Artist isn't loaded yet", Toast.LENGTH_SHORT).show()
+                                        com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context) ->
+                                            showShareChoice = true
+                                        else -> com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                            context,
+                                            com.rkd.audiobasics.utils.AudiobasicsLinks.artistLink(shareArtistId, displayName),
+                                            "Share artist"
+                                        )
+                                    }
                                 }) {
-                                    ClearViewIcon(outward = true, color = Color.Red)
+                                    Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor,
+                                        modifier = Modifier.size(24.dp))
                                 }
                                 val wiki = artistVm.wikiUrl
                                 if (wiki != null) {
@@ -242,20 +260,9 @@ fun ArtistScreen(
                                 Spacer(Modifier.weight(1f))
                                 IconButton(onClick = {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    when {
-                                        shareArtistId.isBlank() ->
-                                            Toast.makeText(context, "Artist isn't loaded yet", Toast.LENGTH_SHORT).show()
-                                        com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context) ->
-                                            showShareChoice = true
-                                        else -> com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
-                                            context,
-                                            com.rkd.audiobasics.utils.AudiobasicsLinks.artistLink(shareArtistId, displayName),
-                                            "Share artist"
-                                        )
-                                    }
+                                    artistVm.clearView = true
                                 }) {
-                                    Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor,
-                                        modifier = Modifier.size(24.dp))
+                                    ClearViewIcon(outward = true, color = Color.Red)
                                 }
                             }
                         }
