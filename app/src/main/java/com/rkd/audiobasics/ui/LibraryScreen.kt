@@ -76,6 +76,7 @@ fun LibraryScreen(
 
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    val listState = rememberLazyListState()
 
     LaunchedEffect(isSearching) {
         if (isSearching) {
@@ -108,7 +109,6 @@ fun LibraryScreen(
         livePlaylists.addAll(customPlaylists)
     }
 
-    val listState = rememberLazyListState()
     val totalItems = remember(showLiked, showAlbums, filteredCustom) {
         (if (showLiked) 1 else 0) + (if (showAlbums) 1 else 0) + filteredCustom.size
     }
