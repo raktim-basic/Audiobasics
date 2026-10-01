@@ -2,6 +2,8 @@ package com.rkd.audiobasics.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -499,6 +501,7 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(bgColor)
+                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(28.dp)
         ) {
@@ -507,6 +510,7 @@ fun SearchScreen(
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
+                maxLines = 1,
                 color = textColor,
                 modifier = Modifier.clickable {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -524,6 +528,7 @@ fun SearchScreen(
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
+                    maxLines = 1,
                     color = if (selectedFilter == filter) Color.Red else textColor,
                     modifier = Modifier.clickable {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
