@@ -103,7 +103,12 @@ fun AlbumScreen(
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isSearching) {
-        if (isSearching) focusRequester.requestFocus()
+        if (isSearching) {
+            // Keep the sticky album header/search context visible above the keyboard.
+            // The header is LazyColumn item 1 (album hero is item 0).
+            listState.animateScrollToItem(1)
+            focusRequester.requestFocus()
+        }
     }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
