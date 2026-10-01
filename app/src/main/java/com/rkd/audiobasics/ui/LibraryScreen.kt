@@ -80,9 +80,12 @@ fun LibraryScreen(
 
     LaunchedEffect(isSearching) {
         if (isSearching) {
-            // The library header is the first LazyColumn item and is sticky.
-            listState.animateScrollToItem(0)
+            // Request focus first so the keyboard opens immediately; let the list
+            // animation continue independently instead of delaying the keyboard.
             focusRequester.requestFocus()
+            launch {
+                listState.animateScrollToItem(0)
+            }
         }
     }
 
