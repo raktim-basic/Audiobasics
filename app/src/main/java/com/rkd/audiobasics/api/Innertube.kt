@@ -1436,8 +1436,17 @@ object Innertube {
 
         val status = json.optJSONObject("playabilityStatus")?.optString("status")
         if (status != "OK") {
-            Timber.w("${client.clientName}: playabilityStatus=$status")
-            return if (status == "LOGIN_REQUIRED") StreamAttemptResult.SignInRequired
+            val reason = json.optJSONObject("playabilityStatus")?.optString("reason").orEmpty()
+            Timber.w("${client.clientName}: playabilityStatus=$status${if (reason.isNotBlank()) " reason=\"$reason\"" else ""}")
+            // LOGIN_REQUIRED is also what age-restricted, private and members-only videos
+            // return, for every client, regardless of how the connection is doing. Only count
+            // it as "this connection is being gated" when the reason isn't one of those, so a
+            // single restricted song can't pause lookups for the rest of the queue.
+            val perVideo = reason.lowercase().let { r ->
+                listOf("your age", "age-restrict", "age restrict", "private video", "members-only",
+                    "members only", "join this channel", "purchase", "rent ").any { r.contains(it) }
+            }
+            return if (status == "LOGIN_REQUIRED" && !perVideo) StreamAttemptResult.SignInRequired
             else StreamAttemptResult.OtherFailure
         }
 
