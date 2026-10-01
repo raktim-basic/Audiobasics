@@ -78,7 +78,11 @@ fun LibraryScreen(
     val focusManager = LocalFocusManager.current
 
     LaunchedEffect(isSearching) {
-        if (isSearching) focusRequester.requestFocus()
+        if (isSearching) {
+            // The library header is the first LazyColumn item and is sticky.
+            listState.animateScrollToItem(0)
+            focusRequester.requestFocus()
+        }
     }
 
     // Filter: custom playlists by name; fixed rows always shown unless filtered out
