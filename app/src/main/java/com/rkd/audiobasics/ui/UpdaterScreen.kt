@@ -2,6 +2,8 @@ package com.rkd.audiobasics.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,13 +22,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.rkd.audiobasics.utils.AppUpdater
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -39,7 +49,15 @@ const val APP_GITHUB_RELEASES_API =
 const val APP_GITHUB_RELEASES_URL =
     "https://github.com/raktim-basic/Audiobasics/releases/latest"
 
-suspend fun fetchLatestAppVersion(): String? = withContext(Dispatchers.IO) {
+/** The latest GitHub release: tag (without "v"), notes, and the first attached .apk asset. */
+data class AppRelease(
+    val version: String,
+    val body: String,
+    val apkUrl: String?,
+    val apkSize: Long
+)
+
+suspend fun fetchLatestRelease(): AppRelease? = withContext(Dispatchers.IO) {
     try {
         val client = OkHttpClient()
         val req = Request.Builder()
@@ -49,11 +67,29 @@ suspend fun fetchLatestAppVersion(): String? = withContext(Dispatchers.IO) {
         val resp = client.newCall(req).execute()
         val body = resp.body?.string() ?: return@withContext null
         val arr = JSONArray(body)
-        if (arr.length() > 0)
-            arr.getJSONObject(0).optString("tag_name")?.removePrefix("v")
-        else null
+        if (arr.length() == 0) return@withContext null
+        val release = arr.getJSONObject(0)
+        val version = release.optString("tag_name").removePrefix("v")
+        if (version.isBlank()) return@withContext null
+
+        var apkUrl: String? = null
+        var apkSize = -1L
+        val assets = release.optJSONArray("assets")
+        if (assets != null) {
+            for (i in 0 until assets.length()) {
+                val asset = assets.getJSONObject(i)
+                if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
+                    apkUrl = asset.optString("browser_download_url").takeIf { it.isNotBlank() }
+                    apkSize = asset.optLong("size", -1L)
+                    break
+                }
+            }
+        }
+        AppRelease(version, release.optString("body"), apkUrl, apkSize)
     } catch (_: Exception) { null }
 }
+
+suspend fun fetchLatestAppVersion(): String? = fetchLatestRelease()?.version
 
 @Composable
 fun UpdaterScreen(
@@ -68,8 +104,16 @@ fun UpdaterScreen(
     val scope = rememberCoroutineScope()
 
     var isChecking by remember { mutableStateOf(false) }
-    var latestVersion by remember { mutableStateOf<String?>(null) }
+    var release by remember { mutableStateOf<AppRelease?>(null) }
     var checked by remember { mutableStateOf(false) }
+    val latestVersion = release?.version
+
+    // null = no download in progress; otherwise whole-percent progress for the dialog.
+    var downloadPercent by remember { mutableStateOf<Int?>(null) }
+    var downloadJob by remember { mutableStateOf<Job?>(null) }
+    var showChangelog by remember { mutableStateOf(false) }
+    // Set when we sent the user to "Install unknown apps"; checked on return (see below).
+    var awaitingInstallPermission by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -77,6 +121,93 @@ fun UpdaterScreen(
 
     val updateAvailable = checked && latestVersion != null &&
             latestVersion != APP_CURRENT_VERSION
+    val linkColor = if (isDarkMode) Color(0xFF4A9EFF) else Color(0xFF1A73E8)
+
+    fun openReleasesPage() {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(APP_GITHUB_RELEASES_URL))
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
+
+    fun startUpdate() {
+        val rel = release ?: return
+        val apkUrl = rel.apkUrl
+        if (apkUrl == null) {
+            Toast.makeText(context, "No APK is attached to this release", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // One-time permission: Android requires "Install unknown apps" to be allowed for us.
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            awaitingInstallPermission = true
+            Toast.makeText(context, "Allow Audiobasics to install updates", Toast.LENGTH_LONG).show()
+            context.startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")
+                )
+            )
+            return
+        }
+        downloadJob = scope.launch {
+            downloadPercent = 0
+            try {
+                val file = AppUpdater.downloadApk(context, apkUrl, rel.apkSize) { downloadPercent = it }
+                downloadPercent = null
+                // Once the download is done, the install hand-off always runs to completion,
+                // even if the dialog's dismissal cancels this job in the meantime.
+                withContext(NonCancellable) { AppUpdater.installApk(context, file) }
+            } catch (e: CancellationException) {
+                downloadPercent = null
+                throw e
+            } catch (_: Exception) {
+                downloadPercent = null
+                Toast.makeText(
+                    context,
+                    "Download failed. Try again, or use Update via GitHub",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    // Coming back from the "Install unknown apps" screen: if the user allowed it, carry on
+    // with the update automatically; if not, just stop waiting.
+    val startUpdateState = rememberUpdatedState(newValue = { startUpdate() })
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && awaitingInstallPermission) {
+                awaitingInstallPermission = false
+                if (context.packageManager.canRequestPackageInstalls()) startUpdateState.value()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (downloadPercent != null) {
+        DownloadProgressDialog(
+            percent = { downloadPercent ?: 0 },
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onCancel = {
+                downloadJob?.cancel()
+                downloadPercent = null
+            }
+        )
+    }
+
+    if (showChangelog) {
+        ChangelogDialog(
+            version = latestVersion ?: "",
+            body = release?.body ?: "",
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onDismiss = { showChangelog = false }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -129,7 +260,7 @@ fun UpdaterScreen(
             text = "Latest app version : ${
                 when {
                     !checked -> "—"
-                    latestVersion != null -> latestVersion!!
+                    latestVersion != null -> latestVersion
                     else -> "Error"
                 }
             }",
@@ -166,7 +297,7 @@ fun UpdaterScreen(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         scope.launch {
                             isChecking = true
-                            latestVersion = fetchLatestAppVersion()
+                            release = fetchLatestRelease()
                             checked = true
                             isChecking = false
                         }
@@ -200,12 +331,7 @@ fun UpdaterScreen(
                         .background(Color.Red)
                         .clickable {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            val intent = Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse(APP_GITHUB_RELEASES_URL)
-                            )
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            context.startActivity(intent)
+                            startUpdate()
                         }
                         .padding(vertical = 16.dp),
                     contentAlignment = Alignment.Center
@@ -216,6 +342,40 @@ fun UpdaterScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = Color.White
+                    )
+                }
+
+                // Only shown while an update is available.
+                Spacer(Modifier.height(16.dp))
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "View changelogs",
+                        fontFamily = NothingFont,
+                        fontSize = 14.sp,
+                        color = linkColor,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                showChangelog = true
+                            }
+                            .padding(vertical = 6.dp)
+                    )
+                    Text(
+                        text = "Update via GitHub",
+                        fontFamily = NothingFont,
+                        fontSize = 14.sp,
+                        color = linkColor,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                openReleasesPage()
+                            }
+                            .padding(vertical = 6.dp)
                     )
                 }
             }
