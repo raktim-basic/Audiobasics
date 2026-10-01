@@ -120,8 +120,10 @@ fun CustomPlaylistScreen(
         if (isSearching) {
             // Scroll to the sticky playlist header so filtered results remain visible
             // when the IME opens. The playlist artwork is item 0, header is item 1.
-            listState.animateScrollToItem(1)
             focusRequester.requestFocus()
+            launch {
+                listState.animateScrollToItem(1)
+            }
         }
     }
     LaunchedEffect(playlist.id) { vm.loadPlaylistSongs(playlist.id) }
