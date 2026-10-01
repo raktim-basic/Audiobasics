@@ -17,7 +17,11 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Hd
+import androidx.compose.material.icons.filled.SignalCellularAlt
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
@@ -718,6 +722,7 @@ private fun GeneralPage(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val tempoPitchApplyToAll by vm.tempoPitchApplyToAll.collectAsState()
     val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
+    val audioQuality by vm.audioQuality.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Row(
@@ -857,6 +862,84 @@ private fun GeneralPage(
                     uncheckedThumbColor = Color.White,
                     uncheckedTrackColor = Color.Gray
                 )
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .padding(horizontal = 20.dp, vertical = 14.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.GraphicEq,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = "Audio quality",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                val options = listOf(
+                    Triple(Innertube.AUDIO_QUALITY_AUTO, "Auto", Icons.Default.AutoAwesome),
+                    Triple(Innertube.AUDIO_QUALITY_HIGH, "High", Icons.Default.Hd),
+                    Triple(Innertube.AUDIO_QUALITY_BASIC, "Basic", Icons.Default.SignalCellularAlt)
+                )
+                options.forEach { (mode, label, icon) ->
+                    val isSelected = audioQuality == mode
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) Color.Red else Color.Transparent)
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                vm.setAudioQuality(mode)
+                            }
+                            .padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = if (isSelected) Color.White else textColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = label,
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = if (isSelected) Color.White else textColor
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Auto uses High on Wi-Fi and Basic on mobile data. Applies to the next song you play.",
+                fontSize = 12.sp,
+                color = textColor.copy(alpha = 0.6f)
             )
         }
 
