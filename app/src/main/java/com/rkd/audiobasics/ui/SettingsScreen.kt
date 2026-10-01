@@ -938,7 +938,7 @@ private fun GeneralPage(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Auto uses High on Wi-Fi and Basic on mobile data. Applies to the next song you play.",
+                text = "Auto adjusts quality depending on the network and speed.",
                 fontSize = 12.sp,
                 color = textColor.copy(alpha = 0.6f)
             )
