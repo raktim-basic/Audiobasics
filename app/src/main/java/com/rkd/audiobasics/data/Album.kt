@@ -13,5 +13,7 @@ data class Album(
     val youtubeUrl: String = "",
     val year: String = "",
     val artistNames: List<String> = emptyList(),
-    val artistIds: Map<String, String> = emptyMap()
+    val artistIds: Map<String, String> = emptyMap(),
+    // True if the album is marked explicit by YouTube Music, or any of its known songs is.
+    val isExplicit: Boolean = false
 )
