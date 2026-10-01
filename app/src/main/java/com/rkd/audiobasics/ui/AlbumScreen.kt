@@ -106,8 +106,10 @@ fun AlbumScreen(
         if (isSearching) {
             // Keep the sticky album header/search context visible above the keyboard.
             // The header is LazyColumn item 1 (album hero is item 0).
-            listState.animateScrollToItem(1)
             focusRequester.requestFocus()
+            launch {
+                listState.animateScrollToItem(1)
+            }
         }
     }
 
