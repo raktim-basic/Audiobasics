@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -120,12 +121,11 @@ fun CustomPlaylistScreen(
 
     LaunchedEffect(isSearching) {
         if (isSearching) {
-            // Scroll to the sticky playlist header so filtered results remain visible
-            // when the IME opens. The playlist artwork is item 0, header is item 1.
+            // Let the IME finish resizing the window before repositioning the list.
+            // Doing both during the same frame causes a brief up/down jump.
             focusRequester.requestFocus()
-            launch {
-                listState.animateScrollToItem(1)
-            }
+            delay(300)
+            listState.animateScrollToItem(1)
         }
     }
     LaunchedEffect(playlist.id) { vm.loadPlaylistSongs(playlist.id) }
@@ -301,7 +301,7 @@ fun CustomPlaylistScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .then(if (!isSearching) Modifier.animateItem() else Modifier)
+                            .animateItem()
                             .graphicsLayer {
                                 val scale = if (isActivelyDragging) 1.02f else 1f
                                 scaleX = scale
