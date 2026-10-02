@@ -280,7 +280,7 @@ fun LikedScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .animateItem()
+                            .then(if (!isSearching) Modifier.animateItem() else Modifier)
                             .graphicsLayer {
                                 val scale = if (isActivelyDragging) 1.02f else 1f
                                 scaleX = scale
@@ -318,9 +318,7 @@ fun LikedScreen(
                             onPlayNext = { vm.playNext(song) },
                             onLike = { vm.toggleLike(song) },
                             onShare = {},
-                            onReorder = if (reorderEnabled) {
-                                { draggingIndex = if (armed) null else index }
-                            } else null,
+                            onReorder = null,
                             onRetryCache = { vm.retryCache(song) },
                             onRemoveLike = { removeConfirm = song },
                             onAddTo = { onAddTo(song) },
