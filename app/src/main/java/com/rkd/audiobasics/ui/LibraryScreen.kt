@@ -80,13 +80,20 @@ fun LibraryScreen(
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
 
+    var reorderTemporarilyDisabled by remember { mutableStateOf(false) }
+    val reorderEnabled = !reorderTemporarilyDisabled && searchQuery.isBlank()
+
     LaunchedEffect(isSearching) {
         if (isSearching) {
-            // Request focus immediately, but wait for the IME resize to settle before
-            // moving the list so the keyboard and list don't fight over the layout.
+            // Keep reorder/placement animation out of the IME transition.
+            reorderTemporarilyDisabled = true
             focusRequester.requestFocus()
             delay(300)
             listState.animateScrollToItem(0)
+        } else {
+            // Keep it disabled while the keyboard is still finishing its close animation.
+            delay(300)
+            reorderTemporarilyDisabled = false
         }
     }
 
@@ -100,7 +107,6 @@ fun LibraryScreen(
 
     // Reordering only makes sense against the full, unfiltered list — while searching, the
     // custom-playlist rows use filteredCustom read-only below instead.
-    val reorderEnabled = searchQuery.isBlank()
 
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
 
@@ -275,7 +281,7 @@ fun LibraryScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .animateItem()
+                                .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
                                 .graphicsLayer {
                                     val s = if (isActivelyDragging) 1.02f else 1f
                                     scaleX = s
