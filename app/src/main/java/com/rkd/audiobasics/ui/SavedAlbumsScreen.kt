@@ -235,7 +235,7 @@ fun SavedAlbumsScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .animateItem()
+                                    .then(if (!isSearching) Modifier.animateItem() else Modifier)
                                     .graphicsLayer {
                                         val scale = if (isActivelyDragging) 1.02f else 1f
                                         scaleX = scale
