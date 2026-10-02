@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -81,12 +82,11 @@ fun LibraryScreen(
 
     LaunchedEffect(isSearching) {
         if (isSearching) {
-            // Request focus first so the keyboard opens immediately; let the list
-            // animation continue independently instead of delaying the keyboard.
+            // Request focus immediately, but wait for the IME resize to settle before
+            // moving the list so the keyboard and list don't fight over the layout.
             focusRequester.requestFocus()
-            launch {
-                listState.animateScrollToItem(0)
-            }
+            delay(300)
+            listState.animateScrollToItem(0)
         }
     }
 
@@ -275,7 +275,7 @@ fun LibraryScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .then(if (!isSearching) Modifier.animateItem() else Modifier)
+                                .animateItem()
                                 .graphicsLayer {
                                     val s = if (isActivelyDragging) 1.02f else 1f
                                     scaleX = s
