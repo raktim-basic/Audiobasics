@@ -38,6 +38,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -209,9 +210,35 @@ fun PlayerDialog(
             // density, so using the normal LocalDensity here would make the player (and every
             // dp-sized child inside it) grow/shrink with the system setting. Only the PLAYER
             // face gets this fixed density; Lyrics/Info and the rest of the app remain normal.
+            //
+            // On screens too small for the reference card (e.g. 720px-wide HD+ phones), the
+            // same locked composition is scaled DOWN uniformly so it still fits, instead of
+            // the card being squeezed while its contents keep their fixed size (which clipped
+            // the bottom + / LYRICS / menu row). The scale is derived from the screen's
+            // PHYSICAL pixel size (screenWidthDp * density is invariant under the Display
+            // size setting, since that setting changes dp and density together), so extreme
+            // zoom in/out cannot change the result. Density only ever scales down, never up:
+            // on 1080px-wide screens this resolves to exactly the reference 378-dpi value.
             val systemDensity = LocalDensity.current
-            val playerDensity = remember(systemDensity.fontScale) { Density(378f / 160f, systemDensity.fontScale) }
+            val configuration = LocalConfiguration.current
             val playerReferenceSize = 402.dp
+            val playerDensity = remember(
+                systemDensity.density,
+                systemDensity.fontScale,
+                configuration.screenWidthDp,
+                configuration.screenHeightDp
+            ) {
+                val referenceDensity = 378f / 160f
+                val referenceSidePx = playerReferenceSize.value * referenceDensity
+                val screenWidthPx = configuration.screenWidthDp * systemDensity.density
+                val screenHeightPx = configuration.screenHeightDp * systemDensity.density
+                val sidePx = minOf(
+                    referenceSidePx,
+                    screenWidthPx * 0.88f,
+                    screenHeightPx * 0.80f
+                )
+                Density(sidePx / playerReferenceSize.value, systemDensity.fontScale)
+            }
 
             CompositionLocalProvider(
                 LocalDensity provides if (sizingFace == PlayerFace.PLAYER) {
