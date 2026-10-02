@@ -301,7 +301,7 @@ fun CustomPlaylistScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .animateItem()
+                            .then(if (!isSearching) Modifier.animateItem() else Modifier)
                             .graphicsLayer {
                                 val scale = if (isActivelyDragging) 1.02f else 1f
                                 scaleX = scale
@@ -344,12 +344,7 @@ fun CustomPlaylistScreen(
                             onShare = {},
                             onAddToQueue = { vm.addToQueue(song) },
                             onPlayNext = { vm.playNext(song) },
-                            onReorder = if (reorderEnabled) {
-                                {
-                                    draggingIndex = if (armed) null else index
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                }
-                            } else null,
+                            onReorder = null,
                             onAddTo = { onAddTo(song) },
                             onRetryCache = { vm.retryCacheInPlaylist(song) },
                             onRemoveLike = { removeConfirm = song },
