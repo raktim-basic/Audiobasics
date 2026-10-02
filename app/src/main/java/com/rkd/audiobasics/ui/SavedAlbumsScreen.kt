@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -108,12 +109,11 @@ fun SavedAlbumsScreen(
     // Auto‑focus when entering search mode
     LaunchedEffect(isSearching) {
         if (isSearching) {
-            // Keep the sticky saved-albums header pinned above the keyboard.
-            // The artwork is item 0 and the sticky header is item 1.
+            // Let the IME finish resizing the window before repositioning the list.
+            // Doing both during the same frame causes a brief up/down jump.
             focusRequester.requestFocus()
-            launch {
-                listState.animateScrollToItem(1)
-            }
+            delay(300)
+            listState.animateScrollToItem(1)
         }
     }
 
@@ -235,7 +235,7 @@ fun SavedAlbumsScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .then(if (!isSearching) Modifier.animateItem() else Modifier)
+                                    .animateItem()
                                     .graphicsLayer {
                                         val scale = if (isActivelyDragging) 1.02f else 1f
                                         scaleX = scale
