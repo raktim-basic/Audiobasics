@@ -4,7 +4,7 @@ A lightweight music client for android
 (really lightweight..)
 
 #
-<a href="https://github.com/raktim-basic/Audiobasics/releases/latest">
+<a href="https://github.com/raktim-basic/Audiobasics/releases/latest/download/Audiobasics.apk">
   <img src="https://raw.githubusercontent.com/raktim-basic/Audiobasics/main/app/src/main/assets/download.svg"
        alt="DOWNLOAD for android">
 </a>
