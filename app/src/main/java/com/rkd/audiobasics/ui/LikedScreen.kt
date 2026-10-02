@@ -76,7 +76,8 @@ fun LikedScreen(
         initialFirstVisibleItemIndex = savedLikedIndex,
         initialFirstVisibleItemScrollOffset = savedLikedOffset
     )
-    val reorderEnabled = searchQuery.isBlank()
+    var reorderTemporarilyDisabled by remember { mutableStateOf(false) }
+    val reorderEnabled = !reorderTemporarilyDisabled && searchQuery.isBlank()
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
 
     val liveLikedSongs = remember { mutableStateListOf<Song>().apply { addAll(likedSongs) } }
@@ -145,11 +146,15 @@ fun LikedScreen(
 
     LaunchedEffect(isSearching) {
         if (isSearching) {
-            // Let the IME finish resizing the window before repositioning the list.
-            // Doing both during the same frame causes a brief up/down jump.
+            // Keep reorder/placement animation out of the IME transition.
+            reorderTemporarilyDisabled = true
             focusRequester.requestFocus()
             delay(300)
             listState.animateScrollToItem(1)
+        } else {
+            // Keep it disabled while the keyboard is still finishing its close animation.
+            delay(300)
+            reorderTemporarilyDisabled = false
         }
     }
 
@@ -281,7 +286,7 @@ fun LikedScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .animateItem()
+                            .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
                             .graphicsLayer {
                                 val scale = if (isActivelyDragging) 1.02f else 1f
                                 scaleX = scale
