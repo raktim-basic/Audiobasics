@@ -168,7 +168,25 @@ class CipherWebView private constructor(
             // N-transform: expression-based takes priority (modern players, 2026+)
             // e.g. jsExpression = "(function(n){...})(INPUT)" → wrap as function(n) { return (function(n){...})(n); }
             val nJsExpr = nFuncInfo?.jsExpression
-            if (nJsExpr != null) {
+            val nClassCandidates = nFuncInfo?.classCandidates
+                ?.filter { it.matches(Regex("[A-Za-z0-9$\\_]{1,4}")) }
+            if (nJsExpr == null && !nClassCandidates.isNullOrEmpty()) {
+                // Unknown player: try each candidate URL class against a probe value and keep
+                // the first whose get('n') yields a valid, changed token. `g` is the player
+                // namespace, in scope because exports are injected inside the player IIFE.
+                val namesJs = nClassCandidates.joinToString(",") { "'$it'" }
+                Timber.tag(TAG).d("N: runtime-verified class discovery over ${nClassCandidates.size} candidates")
+                add(
+                    "window._nTransformFunc = (function(){ var names=[$namesJs]; var good=null; " +
+                        "function run(name,n){ var u=new g[name]('https://x.googlevideo.com/videoplayback?n='+n,true); " +
+                        "var t=u.get('n'); return (typeof t==='string'&&t!==n)?t:null; } " +
+                        "return function(n){ if(good!==null){ try{ var r=run(good,n); if(r) return r; }catch(e){} return n; } " +
+                        "var probe='KdrqFlzJXl9EcCwlmEy'; " +
+                        "for(var i=0;i<names.length;i++){ try{ var p=run(names[i],probe); " +
+                        "if(p&&/^[A-Za-z0-9_-]{5,}\$/.test(p)){ good=names[i]; var r2=run(good,n); return r2||n; } }catch(e){} } " +
+                        "return n; }; })();"
+                )
+            } else if (nJsExpr != null) {
                 val expr = nJsExpr.replace("INPUT", "n")
                 Timber.tag(TAG).d("N: expression-based export: ${expr.take(80)}")
                 add("window._nTransformFunc = function(n) { try { return $expr; } catch(e) { return n; } };")
