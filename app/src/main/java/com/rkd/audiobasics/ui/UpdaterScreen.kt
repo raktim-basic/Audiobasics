@@ -43,7 +43,7 @@ import org.json.JSONArray
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
-const val APP_CURRENT_VERSION = "2.6.1"
+const val APP_CURRENT_VERSION = "2.6.2"
 const val APP_UPDATE_APK_NAME = "Audiobasics.apk"
 const val APP_GITHUB_RELEASES_API =
     "https://api.github.com/repos/raktim-basic/Audiobasics/releases?per_page=5"
