@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "players": {
+    "1b3be681": { "sig": "wh(9,7481,INPUT)", "nClass": "jJ", "sts": 20728, "aliases": [] },
     "69e2a55d": { "sig": "Jf(20,3699,INPUT)", "nClass": "iE", "sts": 20611, "aliases": ["70d8066f"] },
     "9d2ef9ef": { "sig": "v0(35,4499,INPUT)", "nClass": "uY", "sts": 20607, "aliases": ["6fb43da5"] },
     "16ee6936": { "sig": "mP(4,155,INPUT)", "nClass": "Yx", "sts": 20613, "aliases": ["ca366632"] },
