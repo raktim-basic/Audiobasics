@@ -2,6 +2,7 @@ package com.rkd.audiobasics.api.cipher
 
 import android.content.Context
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -28,6 +29,12 @@ object CipherDeobfuscator {
 
     private var cipherWebView: CipherWebView? = null
     private var currentPlayerHash: String? = null
+
+    // Hash of the player most recently analysed; used by the EJS fallback tier, which loads
+    // the player text lazily (only if it has to prepare from scratch).
+    @Volatile
+    private var lastPlayerHash: String? = null
+    private val ejsPlayerProvider: suspend () -> String? = { PlayerJsFetcher.getPlayerJs()?.first }
 
     // Prevents two coroutines from creating a CipherWebView simultaneously.
     private val deobfuscateMutex = Mutex()
@@ -129,13 +136,33 @@ object CipherDeobfuscator {
         }
 
         val webView = getOrCreateWebView(forceRefresh = isRetry)
-        if (webView == null) {
-            Timber.tag(TAG).e("Failed to get/create CipherWebView")
+
+        // Tier 1: config / structural-regex path (fast). Tier 2: EJS AST solver (format-proof).
+        var deobfuscatedSig: String? = null
+        if (webView != null) {
+            Timber.tag(TAG).d("Calling webView.deobfuscateSignature()...")
+            deobfuscatedSig = try {
+                webView.deobfuscateSignature(obfuscatedSig).takeIf { isPlausibleSig(obfuscatedSig, it) }
+                    ?: run {
+                        Timber.tag(TAG).w("Config/regex sig result implausible — falling back to EJS")
+                        null
+                    }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.tag(TAG).w(e, "WebView sig path failed (${e.message}) — falling back to EJS")
+                null
+            }
+        } else {
+            Timber.tag(TAG).w("No CipherWebView (no usable config for this player) — trying EJS")
+        }
+        if (deobfuscatedSig == null) {
+            deobfuscatedSig = ejsSolveSig(obfuscatedSig)
+        }
+        if (deobfuscatedSig == null) {
+            Timber.tag(TAG).e("Signature could not be solved by any tier")
             return null
         }
-
-        Timber.tag(TAG).d("Calling webView.deobfuscateSignature()...")
-        val deobfuscatedSig = webView.deobfuscateSignature(obfuscatedSig)
         Timber.tag(TAG).d("Deobfuscated signature: ${deobfuscatedSig.take(30)}... (length=${deobfuscatedSig.length})")
 
         val separator = if ("?" in baseUrl) "&" else "?"
@@ -146,6 +173,25 @@ object CipherDeobfuscator {
         Timber.tag(TAG).d("Final URL preview: ${finalUrl.take(100)}...")
 
         return finalUrl
+    }
+
+    // Real sig transforms keep the length (yt-dlp tests) — anything far off means a wrong
+    // config/regex guess and we should not ship it to the server.
+    private fun isPlausibleSig(input: String, output: String): Boolean =
+        output.isNotBlank() && kotlin.math.abs(output.length - input.length) <= 20
+
+    private suspend fun ejsSolveSig(obfuscatedSig: String): String? {
+        val hash = lastPlayerHash ?: return null
+        return EjsSolver.solveSig(hash, obfuscatedSig, playerProvider = ejsPlayerProvider)
+            ?.takeIf { isPlausibleSig(obfuscatedSig, it) }
+    }
+
+    private suspend fun ejsTransformUrl(url: String, nValue: String): String {
+        val hash = lastPlayerHash ?: return url
+        val solved = EjsSolver.solveN(hash, nValue, playerProvider = ejsPlayerProvider)
+        if (solved.isNullOrEmpty() || solved == nValue) return url
+        Timber.tag(TAG).d("N-param (EJS): $nValue -> $solved")
+        return url.replaceFirst(Regex("([?&])n=[^&]+"), "$1n=${Uri.encode(solved)}")
     }
 
     suspend fun transformNParamInUrl(url: String): String {
@@ -172,8 +218,8 @@ object CipherDeobfuscator {
                     deobfuscateMutex.withLock {
                         val wv = getOrCreateWebView(forceRefresh = false)
                         if (wv == null || !wv.nFunctionAvailable) {
-                            Timber.tag(TAG).e("N-transform function not available")
-                            return@withLock url
+                            Timber.tag(TAG).w("N-transform function not available in WebView path — trying EJS")
+                            return@withLock ejsTransformUrl(url, nValue)
                         }
                         val transformed = wv.transformN(nValue)
                         Timber.tag(TAG).d("N-param: $nValue -> $transformed")
@@ -188,8 +234,8 @@ object CipherDeobfuscator {
         }
 
         if (!webView.nFunctionAvailable) {
-            Timber.tag(TAG).e("N-transform function not available")
-            return url
+            Timber.tag(TAG).w("N-transform function not available in WebView path — trying EJS")
+            return ejsTransformUrl(url, nValue)
         }
 
         val transformedN = try {
@@ -227,6 +273,7 @@ object CipherDeobfuscator {
             return null
         }
         val (playerJs, hash) = result
+        lastPlayerHash = hash
         Timber.tag(TAG).d("Got player JS: hash=$hash, length=${playerJs.length}")
 
         Timber.tag(TAG).d("Analyzing player JS for cipher functions (knownHash=$hash)...")
@@ -248,6 +295,9 @@ object CipherDeobfuscator {
 
         if (analysis.sigInfo == null) {
             Timber.tag(TAG).e("Could not extract signature function info from player JS")
+            // Format we don't understand: start the AST solver in the background (its first
+            // parse takes seconds and must not run under our 20 s op timeout).
+            EjsSolver.prewarm(hash) { playerJs }
             return null
         }
 
@@ -311,6 +361,7 @@ object CipherDeobfuscator {
             withTimeout(CIPHER_OP_TIMEOUT_MS) {
                 deobfuscateMutex.withLock {
                     PlayerJsFetcher.invalidateCache()
+                    EjsSolver.reset()
                     closeWebView()
                     getOrCreateWebView(forceRefresh = true) != null
                 }
