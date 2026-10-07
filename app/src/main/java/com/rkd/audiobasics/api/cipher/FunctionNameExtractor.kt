@@ -24,6 +24,9 @@ object FunctionNameExtractor {
         val constantArgs: List<Int>? = null,
         // Expression-based n-transform (modern players, 2026+)
         val jsExpression: String? = null,
+        // Auto-discovered URL-class candidates (g.<name>) to be verified at runtime in the
+        // WebView; the first one whose get('n') transform passes validation wins.
+        val classCandidates: List<String>? = null,
         val isHardcoded: Boolean = false
     )
 
@@ -51,6 +54,28 @@ object FunctionNameExtractor {
         Regex("""/s/player/([a-f0-9]{8})/""")
     )
 
+    // ── Structural (format-tolerant) patterns for 2026+ players ──────────────
+    // Modern sig call:  NAME(<ints...>,decodeURIComponent(x.s))  -> NAME(<ints...>,INPUT)
+    // The number of leading int args has changed between rotations, so accept 1..4.
+    private val SIG_EXPR_LEADING_ARGS = Regex(
+        """\b([A-Za-z0-9${'$'}_]{1,8})\(\s*((?:\d+\s*,\s*){1,4})decodeURIComponent\s*\("""
+    )
+    // Same call with the signature first:  NAME(decodeURIComponent(x.s),<ints...>)
+    private val SIG_EXPR_TRAILING_ARGS = Regex(
+        """\b([A-Za-z0-9${'$'}_]{1,8})\(\s*decodeURIComponent\s*\([^)]*\)((?:\s*,\s*\d+){1,4})\s*\)"""
+    )
+
+    // URL-class constructors exported on the player namespace: g.XX=function(a,b){  /  g.XX=class
+    private val URL_CLASS_CANDIDATE = Regex(
+        """\bg\.([A-Za-z0-9${'$'}_]{1,4})\s*=\s*(?:function\s*\(\s*\w+\s*,\s*\w+\s*\)|class\b)"""
+    )
+    private const val MAX_CLASS_CANDIDATES = 300
+
+    // yt-dlp/ejs anchors the URL-class function by a call with the literal args ("alr","yes")
+    // inside its body (a stable marker across rotations). We use it to rank candidates.
+    private val ALR_YES_ANCHOR = Regex("""\(\s*["']alr["']\s*,\s*["']yes["']\s*\)""")
+    private const val ANCHOR_MAX_DISTANCE = 12_000
+
     private val SIG_FUNCTION_PATTERNS = listOf(
         // Pattern 1 (2025+): &&(VAR=FUNC(NUM,decodeURIComponent(VAR))
         Regex("""&&\s*\(\s*[a-zA-Z0-9$]+\s*=\s*([a-zA-Z0-9$]+)\s*\(\s*(\d+)\s*,\s*decodeURIComponent\s*\(\s*[a-zA-Z0-9$]+\s*\)"""),
@@ -71,6 +96,61 @@ object FunctionNameExtractor {
         Regex("""\(\s*([a-zA-Z0-9$]+)\s*=\s*String\.fromCharCode\(110\)"""),
         Regex("""([a-zA-Z0-9$]+)\s*=\s*function\([a-zA-Z0-9]\)\s*\{[^}]*?enhanced_except_"""),
     )
+
+    // ── Structural discovery helpers ──────────────────────────────────────────
+
+    internal fun discoverSigExpression(playerJs: String): String? {
+        SIG_EXPR_LEADING_ARGS.find(playerJs)?.let { m ->
+            val args = m.groupValues[2].split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            if (args.isNotEmpty()) return "${m.groupValues[1]}(${args.joinToString(",")},INPUT)"
+        }
+        SIG_EXPR_TRAILING_ARGS.find(playerJs)?.let { m ->
+            val args = m.groupValues[2].split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            if (args.isNotEmpty()) return "${m.groupValues[1]}(INPUT,${args.joinToString(",")})"
+        }
+        return null
+    }
+
+    /**
+     * Collects g.<Name> constructors that could be the URL class whose get('n') applies the
+     * n-transform. Candidates whose body looks URL-ish (query-string handling) are ordered
+     * first; the WebView verifies each one by actually running it, so a wrong guess costs a
+     * skipped candidate, not a broken player.
+     */
+    internal fun discoverNClassCandidates(playerJs: String): List<String> {
+        val defs = URL_CLASS_CANDIDATE.findAll(playerJs)
+            .map { it.range.first to it.groupValues[1] }
+            .toList()
+        if (defs.isEmpty()) return emptyList()
+
+        // 1) Anchored: nearest preceding g.X= definition for each ("alr","yes") call site.
+        val anchored = LinkedHashSet<String>()
+        for (a in ALR_YES_ANCHOR.findAll(playerJs)) {
+            val pos = a.range.first
+            var lo = 0
+            var hi = defs.size - 1
+            var best = -1
+            while (lo <= hi) {
+                val mid = (lo + hi) ushr 1
+                if (defs[mid].first < pos) { best = mid; lo = mid + 1 } else hi = mid - 1
+            }
+            if (best >= 0 && pos - defs[best].first <= ANCHOR_MAX_DISTANCE) anchored += defs[best].second
+        }
+
+        // 2) Heuristic: URL-ish bodies next, everything else last. Runtime probe decides.
+        val seen = LinkedHashSet<String>(anchored)
+        val hinted = mutableListOf<String>()
+        val rest = mutableListOf<String>()
+        for ((start, name) in defs) {
+            if (!seen.add(name)) continue
+            val body = playerJs.substring(start, minOf(playerJs.length, start + 1500))
+            val urlish = body.contains("\"?\"") || body.contains("'?'") ||
+                body.contains("\"&\"") || body.contains("searchParams") ||
+                body.contains("\"=\"")
+            if (urlish) hinted += name else rest += name
+        }
+        return (anchored.toList() + hinted + rest).take(MAX_CLASS_CANDIDATES)
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -142,8 +222,20 @@ object FunctionNameExtractor {
             }
         }
 
-        // Regex fallback for unknown players
-        Timber.tag(TAG).w("No config for hash $hashToUse, trying sig regex patterns...")
+        // Structural discovery first (handles the 2026+ NAME(ints...,INPUT) shape)
+        Timber.tag(TAG).w("No config for hash $hashToUse, trying structural sig discovery...")
+        discoverSigExpression(playerJs)?.let { expr ->
+            Timber.tag(TAG).d("SIG expression discovered structurally: $expr")
+            return SigFunctionInfo(
+                name = "_expr_sig",
+                constantArg = null,
+                jsExpression = expr,
+                isHardcoded = false
+            )
+        }
+
+        // Legacy regex fallback
+        Timber.tag(TAG).w("Structural sig discovery found nothing, trying legacy sig regex patterns...")
         for ((index, pattern) in SIG_FUNCTION_PATTERNS.withIndex()) {
             val match = pattern.find(playerJs) ?: continue
             val name = match.groupValues[1]
@@ -183,8 +275,21 @@ object FunctionNameExtractor {
             }
         }
 
-        // Regex fallback for unknown players
-        Timber.tag(TAG).w("No config for hash $hashToUse, trying n-func regex patterns...")
+        // Structural discovery first: candidate URL classes, verified at runtime in the WebView
+        Timber.tag(TAG).w("No config for hash $hashToUse, trying structural n-class discovery...")
+        val candidates = discoverNClassCandidates(playerJs)
+        if (candidates.isNotEmpty()) {
+            Timber.tag(TAG).d("N-class candidates: ${candidates.size} (first: ${candidates.take(5)})")
+            return NFunctionInfo(
+                name = "_auto_n",
+                arrayIndex = null,
+                classCandidates = candidates,
+                isHardcoded = false
+            )
+        }
+
+        // Legacy regex fallback
+        Timber.tag(TAG).w("No n-class candidates, trying legacy n-func regex patterns...")
         for ((index, pattern) in N_FUNCTION_PATTERNS.withIndex()) {
             val match = pattern.find(playerJs) ?: continue
             when (index) {
