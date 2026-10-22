@@ -54,6 +54,15 @@ class CipherWebView private constructor(
     @Volatile
     private var isDestroyed: Boolean = false
 
+    /**
+     * False once this WebView has been torn down (explicit close() or the renderer process
+     * dying). CipherDeobfuscator checks this before reusing a cached instance: a destroyed
+     * WebView never answers evaluateJavascript(), so reusing one used to hang the caller until
+     * the 20 s operation timeout fired.
+     */
+    val isUsable: Boolean
+        get() = !isDestroyed
+
     init {
         Timber.tag(TAG).d("Initializing CipherWebView...")
         Timber.tag(TAG).d("  sigInfo: name=${sigInfo?.name}, constantArg=${sigInfo?.constantArg}, hardcoded=${sigInfo?.isHardcoded}")
@@ -78,7 +87,7 @@ class CipherWebView private constructor(
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
                 val didCrash = runCatching { detail.didCrash() }.getOrNull()
                 Timber.tag(TAG).e("CipherWebView render process gone (didCrash=$didCrash)")
-                val exception = CipherException("WebView render process gone (didCrash=$didCrash)")
+                val exception = CipherWebViewGoneException("WebView render process gone (didCrash=$didCrash)")
 
                 if (!initResolved) {
                     initResolved = true
@@ -508,8 +517,10 @@ function discoverAndInit() {
             Timber.tag(TAG).e("Signature function info not available")
             throw CipherException("Signature function info not available")
         }
+        if (isDestroyed) throw CipherWebViewGoneException("CipherWebView already destroyed")
 
         return withContext(Dispatchers.Main) {
+            if (isDestroyed) throw CipherWebViewGoneException("CipherWebView already destroyed")
             suspendCancellableCoroutine { cont ->
                 sigContinuation = cont
                 val constArgJs = if (sigInfo.constantArg != null) "${sigInfo.constantArg}" else "null"
@@ -547,8 +558,10 @@ function discoverAndInit() {
             Timber.tag(TAG).e("N-transform function not discovered")
             throw CipherException("N-transform function not discovered")
         }
+        if (isDestroyed) throw CipherWebViewGoneException("CipherWebView already destroyed")
 
         return withContext(Dispatchers.Main) {
+            if (isDestroyed) throw CipherWebViewGoneException("CipherWebView already destroyed")
             suspendCancellableCoroutine { cont ->
                 nContinuation = cont
                 val jsCall = "transformN('${escapeJsString(nValue)}')"
@@ -582,6 +595,14 @@ function discoverAndInit() {
         }
         isDestroyed = true
         Timber.tag(TAG).d("Closing CipherWebView...")
+        // Anything still waiting on this WebView will never get an answer — fail it now
+        // instead of leaving it to the caller's timeout. (Continuations already resumed by
+        // onRenderProcessGone are null by this point, so this can't double-resume.)
+        val closed = CipherWebViewGoneException("CipherWebView closed")
+        runCatching { sigContinuation?.resumeWithException(closed) }
+        sigContinuation = null
+        runCatching { nContinuation?.resumeWithException(closed) }
+        nContinuation = null
         // A prior onRenderProcessGone (or a second close() call) may have already torn
         // this WebView down; the renderer can also already be dead when we get here.
         // Any of clearHistory/clearCache/loadUrl/onPause/removeAllViews/destroy can throw
@@ -632,4 +653,11 @@ function discoverAndInit() {
     }
 }
 
-class CipherException(message: String) : Exception(message)
+open class CipherException(message: String) : Exception(message)
+
+/**
+ * The WebView itself is unusable (destroyed, renderer process died, or it stopped answering) —
+ * as opposed to the cipher *logic* failing. Callers should rebuild the WebView and retry rather
+ * than fall through to slower tiers.
+ */
+class CipherWebViewGoneException(message: String) : CipherException(message)
