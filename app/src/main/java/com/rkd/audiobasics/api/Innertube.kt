@@ -229,6 +229,22 @@ object Innertube {
         if (signatureTimestamp == null) fetchSignatureTimestamp()
     }
 
+    /**
+     * Builds the poToken WebView + BotGuard integrity token ahead of time (about 2-3 s the first
+     * time, valid for hours) so the first song after launch doesn't pay for it. Uses the same
+     * session id resolveStreamUrl() derives, so the generator is reused rather than recreated.
+     */
+    suspend fun warmPoToken() = withContext(Dispatchers.IO) {
+        try {
+            if (visitorData == null) fetchVisitorData()
+            val sessionId = visitorData?.take(36) ?: return@withContext
+            poTokenGenerator.getWebClientPoToken("aaaaaaaaaaa", sessionId)
+            Timber.d("poToken warm-up done ✅")
+        } catch (e: Exception) {
+            Timber.w("poToken warm-up failed (non-fatal): ${e.message}")
+        }
+    }
+
     private suspend fun fetchVisitorData() {
         try {
             // Hit the YouTube homepage with a browser UA — YouTube sets X-Visitor-Data
@@ -1692,7 +1708,7 @@ object Innertube {
         if (visitorData == null) fetchVisitorData()
         syncSignatureTimestamp()
 
-        val sigTimestamp = signatureTimestamp
+        var sigTimestamp = signatureTimestamp
 
         // Generate poToken — use visitorData as session ID for consistent entropy
         // Use first 36 chars of visitorData as session ID — full string causes 598-byte tokens
@@ -1709,7 +1725,24 @@ object Innertube {
 
         var sawSignIn = false
         if (!forceFallback) {
-            val (firstUrl, sawForbidden) = tryNativeClients(videoId, sigTimestamp, poToken, quality)
+            var (firstUrl, sawForbidden) = tryNativeClients(videoId, sigTimestamp, poToken, quality)
+            if (firstUrl == null) {
+                // The player.js can rotate while this lookup is in flight (the cipher's own
+                // retry re-downloads it). Requests then went out with the OLD version's
+                // signatureTimestamp while signatures were decoded with the NEW algorithm, so
+                // every client came back 403 and we burned seconds on NewPipe before the next
+                // attempt happened to line up. If the timestamp has moved on, redo the client
+                // round straight away with the matching one.
+                syncSignatureTimestamp()
+                val freshSigTs = signatureTimestamp
+                if (freshSigTs != null && freshSigTs != sigTimestamp) {
+                    Timber.w("signatureTimestamp changed mid-lookup ($sigTimestamp -> $freshSigTs) — retrying clients immediately")
+                    sigTimestamp = freshSigTs
+                    val retry = tryNativeClients(videoId, sigTimestamp, poToken, quality)
+                    firstUrl = retry.first
+                    sawForbidden = sawForbidden || retry.second
+                }
+            }
             if (firstUrl != null) {
                 resetRecent403s()
                 clearSignInBlock()
