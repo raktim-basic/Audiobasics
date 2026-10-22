@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 object CipherDeobfuscator {
@@ -48,7 +49,11 @@ object CipherDeobfuscator {
     private const val CIPHER_OP_TIMEOUT_MS = 20_000L
     // The n-transform fast path below runs without the mutex, so it gets its own
     // shorter budget — matches PoTokenGenerator's existing timeout convention.
-    private const val N_TRANSFORM_FAST_PATH_TIMEOUT_MS = 8_000L
+    private const val N_TRANSFORM_FAST_PATH_TIMEOUT_MS = 5_000L
+    // A healthy WebView answers a signature in well under 100 ms (see logs). If one call takes
+    // this long the WebView is hung or dead, so give up on it and rebuild instead of burning
+    // the full 20 s operation budget on it.
+    private const val SIG_CALL_TIMEOUT_MS = 5_000L
 
     // Pre-warm the CipherWebView at startup so it's ready before the first song plays.
     // Without this, the first deobfuscation call bears the full ~8-10s WebView init cost,
@@ -58,7 +63,7 @@ object CipherDeobfuscator {
         try {
             withTimeout(CIPHER_OP_TIMEOUT_MS) {
                 deobfuscateMutex.withLock {
-                    if (cipherWebView != null) {
+                    if (cipherWebView?.isUsable == true) {
                         Timber.tag(TAG).d("warmUp: CipherWebView already exists, skipping")
                         return@withLock
                     }
@@ -142,13 +147,21 @@ object CipherDeobfuscator {
         if (webView != null) {
             Timber.tag(TAG).d("Calling webView.deobfuscateSignature()...")
             deobfuscatedSig = try {
-                webView.deobfuscateSignature(obfuscatedSig).takeIf { isPlausibleSig(obfuscatedSig, it) }
+                val raw = withTimeoutOrNull(SIG_CALL_TIMEOUT_MS) { webView.deobfuscateSignature(obfuscatedSig) }
+                    ?: throw CipherWebViewGoneException("WebView did not answer within ${SIG_CALL_TIMEOUT_MS}ms")
+                raw.takeIf { isPlausibleSig(obfuscatedSig, it) }
                     ?: run {
                         Timber.tag(TAG).w("Config/regex sig result implausible — falling back to EJS")
                         null
                     }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: CipherWebViewGoneException) {
+                // The WebView itself is dead/hung (not a cipher-logic problem). On the first
+                // attempt let the caller rebuild it and retry; EJS is only for the retry.
+                if (!isRetry) throw e
+                Timber.tag(TAG).w("WebView still unusable on retry (${e.message}) — falling back to EJS")
+                null
             } catch (e: Exception) {
                 Timber.tag(TAG).w(e, "WebView sig path failed (${e.message}) — falling back to EJS")
                 null
@@ -211,7 +224,7 @@ object CipherDeobfuscator {
 
         // N-transform uses the existing WebView — no new lock needed since
         // transformNParamInUrl is called after deobfuscateStreamUrl in the same flow
-        val webView = cipherWebView ?: run {
+        val webView = cipherWebView?.takeIf { it.isUsable } ?: run {
             Timber.tag(TAG).w("No CipherWebView for n-transform, acquiring lock...")
             return try {
                 withTimeout(CIPHER_OP_TIMEOUT_MS) {
@@ -256,9 +269,15 @@ object CipherDeobfuscator {
     private suspend fun getOrCreateWebView(forceRefresh: Boolean): CipherWebView? {
         Timber.tag(TAG).d("getOrCreateWebView: forceRefresh=$forceRefresh, existing=${cipherWebView != null}")
 
-        if (!forceRefresh && cipherWebView != null) {
+        val existing = cipherWebView
+        if (!forceRefresh && existing != null && existing.isUsable) {
             Timber.tag(TAG).d("Reusing existing CipherWebView (hash=$currentPlayerHash)")
-            return cipherWebView
+            return existing
+        }
+        if (existing != null && !existing.isUsable) {
+            // Its renderer died (or it was closed) behind our back — rebuilding from the
+            // cached player.js is far cheaper than discovering that via a 20 s hang.
+            Timber.tag(TAG).w("Existing CipherWebView is no longer usable — rebuilding")
         }
 
         if (cipherWebView != null) {
