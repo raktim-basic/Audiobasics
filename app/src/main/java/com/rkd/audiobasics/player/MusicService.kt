@@ -23,6 +23,8 @@ import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.api.cipher.CipherDeobfuscator
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -48,7 +50,18 @@ class MusicService : MediaSessionService() {
         // 512KB chunks — same as Metrolist. Keeps each Range request small so we
         // don't exhaust the CDN's per-URL request limit.
         private const val CHUNK_LENGTH = 512 * 1024L
+
+        // How long a play request may wait for its stream URL. Only an upper bound now: the
+        // wait ends early (and retries once) as soon as the lookup itself finishes without a
+        // URL, instead of sitting out a fixed timer.
+        private const val RESOLVE_WAIT_MS = 30_000
     }
+
+    // One lookup per song at a time — the player, onMediaItemTransition and the resolver all
+    // ask for the same video, and each used to launch (and log) its own copy.
+    private val resolveJobs = ConcurrentHashMap<String, Job>()
+
+    private fun isResolving(videoId: String) = resolveJobs[urlKey(videoId)]?.isActive == true
 
     override fun onCreate() {
         super.onCreate()
@@ -63,6 +76,9 @@ class MusicService : MediaSessionService() {
             // warmUp after init so signatureTimestamp is available for player JS analysis
             CipherDeobfuscator.warmUp()
         }
+        // Independent of the cipher: build the poToken WebView in parallel so the first
+        // song doesn't wait for BotGuard.
+        serviceScope.launch { Innertube.warmPoToken() }
 
         val iosUserAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)"
 
@@ -103,19 +119,24 @@ class MusicService : MediaSessionService() {
                             Timber.d("Resolver: waiting for pre-resolve of $videoId (forceFallback=$forceFallback)...")
                             preResolveUrl(videoId, force = forceFallback)
                             var waited = 0
-                            // 12s timeout — in practice warmUp() means WebView is already
-                            // ready, so resolution typically finishes in ~5-7 seconds
-                            // (poToken + player API only). A genuinely slow cold-start or
-                            // bad network can still exceed this and throw below.
-                            while (waited < 12000) {
+                            var restarted = false
+                            while (waited < RESOLVE_WAIT_MS) {
                                 val ready = songUrlCache[urlKey(videoId)]
                                 if (ready != null && ready.second > System.currentTimeMillis()) {
                                     Timber.d("Resolver: pre-resolve ready for $videoId ✅")
                                     return@Factory dataSpec.withUri(Uri.parse(ready.first))
                                         .subrange(dataSpec.uriPositionOffset, CHUNK_LENGTH)
                                 }
-                                Thread.sleep(200)
-                                waited += 200
+                                if (!isResolving(videoId)) {
+                                    // The lookup ended without producing a URL. Retry once
+                                    // right away; if that fails too, stop waiting.
+                                    if (restarted) break
+                                    restarted = true
+                                    Timber.w("Resolver: lookup for $videoId ended without a URL — retrying once")
+                                    preResolveUrl(videoId, force = true)
+                                }
+                                Thread.sleep(100)
+                                waited += 100
                             }
                             Timber.e("Resolver: timed out waiting for $videoId ❌")
                             throw DataSourceException(
@@ -184,7 +205,15 @@ class MusicService : MediaSessionService() {
             Timber.d("preResolve: already cached for $videoId ✅")
             return
         }
-        serviceScope.launch {
+        val key = urlKey(videoId)
+        val running = resolveJobs[key]
+        if (running != null) {
+            if (running.isActive) return
+            // Finished but its completion handler hasn't unregistered it yet — clear it so a
+            // retry isn't swallowed by the stale entry.
+            resolveJobs.remove(key, running)
+        }
+        val job = serviceScope.launch(start = CoroutineStart.LAZY) {
             Timber.d("preResolve: fetching stream for $videoId...")
             val result = Innertube.getStreamUrl(this@MusicService, videoId)
             if (result != null) {
@@ -213,6 +242,12 @@ class MusicService : MediaSessionService() {
                 Timber.e("preResolve: failed for $videoId ❌")
             }
         }
+        if (resolveJobs.putIfAbsent(key, job) != null) {
+            job.cancel()
+            return
+        }
+        job.invokeOnCompletion { resolveJobs.remove(key, job) }
+        job.start()
     }
 
     private fun extractVideoId(url: String): String? {
