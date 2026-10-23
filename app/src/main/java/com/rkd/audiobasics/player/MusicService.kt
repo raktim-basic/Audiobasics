@@ -16,6 +16,8 @@ import okhttp3.OkHttpClient
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.rkd.audiobasics.MainActivity
@@ -129,14 +131,22 @@ class MusicService : MediaSessionService() {
                                 }
                                 if (!isResolving(videoId)) {
                                     // The lookup ended without producing a URL. Retry once
-                                    // right away; if that fails too, stop waiting.
-                                    if (restarted) break
+                                    // right away (unless YouTube said the song needs login —
+                                    // a retry can't change that); if that fails too, stop.
+                                    if (restarted || Innertube.getLastFailure(videoId)?.loginRequired == true) break
                                     restarted = true
                                     Timber.w("Resolver: lookup for $videoId ended without a URL — retrying once")
                                     preResolveUrl(videoId, force = true)
                                 }
                                 Thread.sleep(100)
                                 waited += 100
+                            }
+                            if (Innertube.getLastFailure(videoId) != null) {
+                                // The lookup finished and failed (not a timeout). ExoPlayer would
+                                // otherwise re-run this whole resolve 3 more times, each with its
+                                // own lookups, before reporting the error — see StreamUnavailableException.
+                                Timber.e("Resolver: no stream available for $videoId ❌")
+                                throw StreamUnavailableException("No stream available for $videoId")
                             }
                             Timber.e("Resolver: timed out waiting for $videoId ❌")
                             throw DataSourceException(
@@ -164,7 +174,10 @@ class MusicService : MediaSessionService() {
                 true
             )
             .setLoadControl(loadControl)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(finalResolvingFactory))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(finalResolvingFactory)
+                    .setLoadErrorHandlingPolicy(NoRetryWhenUnavailablePolicy())
+            )
             .setHandleAudioBecomingNoisy(true)
             .build()
 
@@ -274,5 +287,27 @@ class MusicService : MediaSessionService() {
         }
         songUrlCache.clear()
         super.onDestroy()
+    }
+}
+
+
+/** A stream lookup completed and found nothing playable (login required, blocked, ...). */
+private class StreamUnavailableException(message: String) : java.io.IOException(message)
+
+/**
+ * ExoPlayer retries IO errors up to 3 times with backoff, and every retry re-runs the stream
+ * lookup. For a definitive "no stream" answer that just makes the spinner last minutes, so
+ * report it right away and let the app's own single fallback retry + error dialog take over.
+ * Everything else (real network errors) keeps the default retry behaviour.
+ */
+@UnstableApi
+private class NoRetryWhenUnavailablePolicy : DefaultLoadErrorHandlingPolicy() {
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        var t: Throwable? = loadErrorInfo.exception
+        while (t != null) {
+            if (t is StreamUnavailableException) return C.TIME_UNSET
+            t = t.cause
+        }
+        return super.getRetryDelayMsFor(loadErrorInfo)
     }
 }
