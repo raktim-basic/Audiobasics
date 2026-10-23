@@ -1377,6 +1377,25 @@ object Innertube {
         return best
     }
 
+    // ── Why the last lookup for a song failed — read by the UI to explain it to the user ──
+    private val lastFailures = ConcurrentHashMap<String, StreamFailure>()
+
+    /** The most recent failed stream lookup for [videoId], or null if its last lookup succeeded. */
+    fun getLastFailure(videoId: String): StreamFailure? = lastFailures[videoId]
+
+    private fun MutableList<String>?.note(msg: String) {
+        this?.add(msg.replace('\n', ' ').take(160))
+    }
+
+    private fun recordFailure(videoId: String, loginRequired: Boolean, trail: List<String>) {
+        val log = buildString {
+            append("videoId=").append(videoId)
+            append(" · Android ").append(android.os.Build.VERSION.SDK_INT)
+            trail.takeLast(14).forEach { append('\n').append(it) }
+        }
+        lastFailures[videoId] = StreamFailure(videoId, loginRequired, log, System.currentTimeMillis())
+    }
+
     private sealed class ValidateResult {
         object Ok : ValidateResult()
         object Forbidden : ValidateResult()
@@ -1424,7 +1443,8 @@ object Innertube {
         playerRequestPoToken: String?,
         streamingDataPoToken: String?,
         sigTimestamp: Int?,
-        quality: String
+        quality: String,
+        trail: MutableList<String>? = null
     ): StreamAttemptResult {
         val clientContext = JSONObject()
             .put("clientName", client.clientName)
@@ -1475,6 +1495,7 @@ object Innertube {
         val response = httpClient.newCall(request).execute()
         if (response.code == 403) {
             Timber.w("${client.clientName}: player endpoint returned 403")
+            trail.note("${client.clientName}: player request HTTP 403")
             return StreamAttemptResult.Forbidden
         }
         val text = response.body?.string() ?: return StreamAttemptResult.OtherFailure
@@ -1484,6 +1505,7 @@ object Innertube {
         if (status != "OK") {
             val reason = json.optJSONObject("playabilityStatus")?.optString("reason").orEmpty()
             Timber.w("${client.clientName}: playabilityStatus=$status${if (reason.isNotBlank()) " reason=\"$reason\"" else ""}")
+            trail.note("${client.clientName}: status=$status${if (reason.isNotBlank()) " ($reason)" else ""}")
             // LOGIN_REQUIRED is also what age-restricted, private and members-only videos
             // return, for every client, regardless of how the connection is doing. Only count
             // it as "this connection is being gated" when the reason isn't one of those, so a
@@ -1497,8 +1519,14 @@ object Innertube {
         }
 
         val adaptiveFormats = json.optJSONObject("streamingData")
-            ?.optJSONArray("adaptiveFormats") ?: return StreamAttemptResult.OtherFailure
-        if (adaptiveFormats.length() == 0) return StreamAttemptResult.OtherFailure
+            ?.optJSONArray("adaptiveFormats") ?: run {
+                trail.note("${client.clientName}: no streamingData")
+                return StreamAttemptResult.OtherFailure
+            }
+        if (adaptiveFormats.length() == 0) {
+            trail.note("${client.clientName}: empty adaptiveFormats")
+            return StreamAttemptResult.OtherFailure
+        }
 
         // Pre-resolve all URLs in suspend context (cipher deobfuscation is suspend)
         val resolvedFormats = mutableListOf<ResolvedFormat>()
@@ -1525,7 +1553,10 @@ object Innertube {
             ))
         }
 
-        if (resolvedFormats.isEmpty()) return StreamAttemptResult.OtherFailure
+        if (resolvedFormats.isEmpty()) {
+            trail.note("${client.clientName}: no usable audio format (cipher failed or no audio)")
+            return StreamAttemptResult.OtherFailure
+        }
 
         val best = selectBestAudioFormat(resolvedFormats, client, quality) ?: return StreamAttemptResult.OtherFailure
 
@@ -1557,7 +1588,8 @@ object Innertube {
         videoId: String,
         sigTimestamp: Int?,
         poToken: PoTokenResult?,
-        quality: String
+        quality: String,
+        trail: MutableList<String>? = null
     ): Pair<String?, Boolean> {
         var sawForbidden = false
         var sawSignIn = false
@@ -1570,7 +1602,8 @@ object Innertube {
                     poToken?.playerRequestPoToken,
                     poToken?.streamingDataPoToken,
                     if (client.useSignatureTimestamp) sigTimestamp else null,
-                    quality
+                    quality,
+                    trail
                 )
                 val url = when (result) {
                     is StreamAttemptResult.Forbidden -> { sawForbidden = true; continue }
@@ -1583,8 +1616,12 @@ object Innertube {
                 val isLastClient = client == STREAM_CLIENTS.last()
                 if (!isLastClient) {
                     when (validateStreamUrl(url, client.clientName)) {
-                        ValidateResult.Forbidden -> { sawForbidden = true; continue }
+                        ValidateResult.Forbidden -> {
+                            trail.note("${client.clientName}: stream check HTTP 403")
+                            sawForbidden = true; continue
+                        }
                         ValidateResult.OtherFailure -> {
+                            trail.note("${client.clientName}: stream check failed")
                             Timber.w("${client.clientName}: stream validation failed, trying next")
                             continue
                         }
@@ -1596,6 +1633,7 @@ object Innertube {
                 return url to sawForbidden
             } catch (e: Exception) {
                 Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
+                trail.note("${client.clientName}: ${e.javaClass.simpleName}: ${e.message}")
             }
         }
         return null to sawForbidden
@@ -1695,9 +1733,14 @@ object Innertube {
         forDownload: Boolean
     ): Pair<String, Long>? = withContext(Dispatchers.IO) {
 
+        lastFailures.remove(videoId)
+        val trail = ArrayList<String>()
+
         val coolDownMs = signInCooldownRemainingMs(context)
         if (coolDownMs > 0L) {
             Timber.w("getStreamUrl: holding off ${coolDownMs / 1000}s more after a sign-in rejection (videoId=$videoId)")
+            trail.note("Lookups paused for ${coolDownMs / 1000}s: YouTube asked for sign-in on several songs in a row")
+            recordFailure(videoId, loginRequired = false, trail = trail)
             return@withContext null
         }
 
@@ -1724,8 +1767,9 @@ object Innertube {
         poToken?.let { NewPipeDownloader.poToken = it.playerRequestPoToken }
 
         var sawSignIn = false
+        var signInEarlier = false
         if (!forceFallback) {
-            var (firstUrl, sawForbidden) = tryNativeClients(videoId, sigTimestamp, poToken, quality)
+            var (firstUrl, sawForbidden) = tryNativeClients(videoId, sigTimestamp, poToken, quality, trail)
             if (firstUrl == null) {
                 // The player.js can rotate while this lookup is in flight (the cipher's own
                 // retry re-downloads it). Requests then went out with the OLD version's
@@ -1738,7 +1782,9 @@ object Innertube {
                 if (freshSigTs != null && freshSigTs != sigTimestamp) {
                     Timber.w("signatureTimestamp changed mid-lookup ($sigTimestamp -> $freshSigTs) — retrying clients immediately")
                     sigTimestamp = freshSigTs
-                    val retry = tryNativeClients(videoId, sigTimestamp, poToken, quality)
+                    signInEarlier = lastRoundSawSignIn
+                    trail.note("signatureTimestamp changed to $freshSigTs — retrying clients")
+                    val retry = tryNativeClients(videoId, sigTimestamp, poToken, quality, trail)
                     firstUrl = retry.first
                     sawForbidden = sawForbidden || retry.second
                 }
@@ -1748,7 +1794,7 @@ object Innertube {
                 clearSignInBlock()
                 return@withContext firstUrl to parseExpiry(firstUrl)
             }
-            sawSignIn = lastRoundSawSignIn
+            sawSignIn = signInEarlier || lastRoundSawSignIn
 
             if (sawForbidden) {
                 record403(videoId)
@@ -1768,7 +1814,7 @@ object Innertube {
                     }
                     poToken?.let { NewPipeDownloader.poToken = it.playerRequestPoToken }
 
-                    val (retryUrl, _) = tryNativeClients(videoId, sigTimestamp, poToken, quality)
+                    val (retryUrl, _) = tryNativeClients(videoId, sigTimestamp, poToken, quality, trail)
                     if (retryUrl != null) {
                         resetRecent403s()
                         clearSignInBlock()
@@ -1803,14 +1849,19 @@ object Innertube {
             if (url != null) url to parseExpiry(url) else null
         } catch (e: Exception) {
             Timber.e("NewPipe ALSO failed: ${e.message} ❌")
+            trail.note("NewPipe: ${e.javaClass.simpleName}: ${e.message}")
             null
         }
         if (fallbackResult != null) {
             clearSignInBlock()
-        } else if (sawSignIn) {
-            // Every native client was told to sign in and NewPipe didn't get through either.
-            // That's either this one song or the whole connection — see noteSignInFailure().
-            noteSignInFailure(context, videoId)
+        } else {
+            if (trail.none { it.startsWith("NewPipe") }) trail.note("NewPipe: no audio streams found")
+            recordFailure(videoId, loginRequired = sawSignIn, trail = trail)
+            if (sawSignIn) {
+                // Every native client was told to sign in and NewPipe didn't get through either.
+                // That's either this one song or the whole connection — see noteSignInFailure().
+                noteSignInFailure(context, videoId)
+            }
         }
         fallbackResult
     }
