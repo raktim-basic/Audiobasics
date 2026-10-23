@@ -182,6 +182,56 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private val _cacheSize = MutableStateFlow("")
     val cacheSize: StateFlow<String> = _cacheSize
 
+    // Error dialog for failed playback / downloads (see StreamErrorDialog.kt)
+    private val _streamErrors = MutableStateFlow<StreamErrorState?>(null)
+    val streamErrors: StateFlow<StreamErrorState?> = _streamErrors
+    fun dismissStreamErrors() { _streamErrors.value = null }
+
+    // Download failures are collected and shown together once the batch is done, so
+    // "Download all" / saving an album produces one dialog, not one per song.
+    private val pendingDownloadFailures = mutableListOf<StreamErrorEntry>()
+    private var downloadFailureFlushJob: Job? = null
+
+    private fun queueDownloadFailure(song: Song, result: CacheResult.Failed) {
+        synchronized(pendingDownloadFailures) {
+            pendingDownloadFailures.removeAll { it.songId == song.id }
+            pendingDownloadFailures.add(
+                StreamErrorEntry(song.id, song.title, song.artist, result.loginRequired, result.log)
+            )
+        }
+        downloadFailureFlushJob?.cancel()
+        downloadFailureFlushJob = viewModelScope.launch {
+            // Wait until nothing is downloading any more (batch finished). The 1.5 s poll is far
+            // longer than the gap between two queued songs, so it won't fire mid-batch.
+            do { delay(1500) } while (_cachingSongIds.value.isNotEmpty() || _cacheProgress.value != null)
+            val batch = synchronized(pendingDownloadFailures) {
+                pendingDownloadFailures.toList().also { pendingDownloadFailures.clear() }
+            }
+            if (batch.isEmpty()) return@launch
+            val existing = _streamErrors.value?.takeIf { it.isDownload }?.entries.orEmpty()
+            _streamErrors.value = StreamErrorState(
+                isDownload = true,
+                entries = existing.filter { e -> batch.none { it.songId == e.songId } } + batch
+            )
+        }
+    }
+
+    private fun showPlaybackError(song: Song, error: PlaybackException) {
+        val failure = Innertube.getLastFailure(song.id)
+            ?.takeIf { System.currentTimeMillis() - it.at < 120_000L }
+        val log = buildString {
+            append(failure?.log ?: "videoId=${song.id} · Android ${android.os.Build.VERSION.SDK_INT}")
+            append("\nPlayer: ").append(error.errorCodeName).append(": ").append(error.message ?: "no message")
+            error.cause?.message?.let { append("\nCause: ").append(it.take(160)) }
+        }
+        _streamErrors.value = StreamErrorState(
+            isDownload = false,
+            entries = listOf(
+                StreamErrorEntry(song.id, song.title, song.artist, failure?.loginRequired == true, log)
+            )
+        )
+    }
+
     private val _showStorageLow = MutableStateFlow(false)
     val showStorageLow: StateFlow<Boolean> = _showStorageLow
 
@@ -562,7 +612,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 _isLoading.value = false
                 _isPlaying.value = false
                 _error.value = "Stream failed. Please try another song."
-                Toast.makeText(getApplication(), "Stream unavailable right now", Toast.LENGTH_SHORT).show()
+                _currentSong.value?.let { showPlaybackError(it, error) }
             }
         }
 
@@ -1485,6 +1535,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     is CacheResult.Failed -> {
                         updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = true)
                         Log.e("YTLite", "Cache failed ${song.title}: ${result.reason}")
+                        queueDownloadFailure(song, result)
                         false
                     }
                 }
