@@ -1733,14 +1733,16 @@ object Innertube {
         forDownload: Boolean
     ): Pair<String, Long>? = withContext(Dispatchers.IO) {
 
-        lastFailures.remove(videoId)
+        val previousFailure = lastFailures.remove(videoId)
         val trail = ArrayList<String>()
 
         val coolDownMs = signInCooldownRemainingMs(context)
         if (coolDownMs > 0L) {
             Timber.w("getStreamUrl: holding off ${coolDownMs / 1000}s more after a sign-in rejection (videoId=$videoId)")
             trail.note("Lookups paused for ${coolDownMs / 1000}s: YouTube asked for sign-in on several songs in a row")
-            recordFailure(videoId, loginRequired = false, trail = trail)
+            // Keep "needs login" if this very song already proved it; the pause itself says nothing
+            // about the song.
+            recordFailure(videoId, loginRequired = previousFailure?.loginRequired == true, trail = trail)
             return@withContext null
         }
 
