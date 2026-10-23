@@ -244,7 +244,12 @@ object CacheManager {
 
             tempFile.delete()
             Log.e("CacheManager", "All attempts failed for ${song.title}: $lastError")
-            CacheResult.Failed(lastError)
+            // Pull in why the stream lookup itself failed (login required, client errors) so the
+            // UI can explain it. Cleared at the start of every lookup, so it only exists if the
+            // last attempt's lookup failed.
+            val failure = Innertube.getLastFailure(song.id)
+            val log = (failure?.log ?: "videoId=${song.id}") + "\nDownload: $lastError"
+            CacheResult.Failed(lastError, loginRequired = failure?.loginRequired == true, log = log)
         }
 
     fun removeCachedSong(context: Context, songId: String) {
@@ -258,5 +263,9 @@ object CacheManager {
 sealed class CacheResult {
     object Success : CacheResult()
     object StorageLow : CacheResult()
-    data class Failed(val reason: String) : CacheResult()
+    data class Failed(
+        val reason: String,
+        val loginRequired: Boolean = false,
+        val log: String = reason
+    ) : CacheResult()
 }
