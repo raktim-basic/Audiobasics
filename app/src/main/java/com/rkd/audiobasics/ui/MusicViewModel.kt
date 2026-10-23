@@ -555,7 +555,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            fallbackRetryCount = 0
+            // The fallback retry swaps the current item (replaceMediaItem), which fires this with
+            // PLAYLIST_CHANGED. Resetting the counter there made the retry count restart at 0
+            // after every failure, so a song that can't play retried forever and the error
+            // dialog was never reached. Real song changes reset it in the play paths and on
+            // STATE_READY.
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) fallbackRetryCount = 0
             _isLoading.value = true
             _currentPosition.value = 0L
             _duration.value = 0L
