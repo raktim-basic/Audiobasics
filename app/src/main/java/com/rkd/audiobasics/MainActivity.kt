@@ -95,6 +95,7 @@ import com.rkd.audiobasics.ui.SavedAlbumsScreen
 import com.rkd.audiobasics.ui.SearchAlbumsScreen
 import com.rkd.audiobasics.ui.SearchArtistsScreen
 import com.rkd.audiobasics.ui.SearchScreen
+import com.rkd.audiobasics.ui.StreamErrorDialog
 import com.rkd.audiobasics.ui.SettingsScreen
 import com.rkd.audiobasics.ui.AppLinksNudgeDialog
 import com.rkd.audiobasics.ui.SmartInputsDialog
@@ -338,6 +339,7 @@ fun AudiobasicsApp(
     val pendingAlbumLinkNavigation by vm.pendingAlbumLinkNavigation.collectAsState()
     val pendingArtistLinkNavigation by vm.pendingArtistLinkNavigation.collectAsState()
     val showAppLinksNudge by vm.showAppLinksNudge.collectAsState()
+    val streamErrors by vm.streamErrors.collectAsState()
 
     val backStack = rememberNavBackStack(HomeKey)
     var showPlayerDialog by remember { mutableStateOf(false) }
@@ -526,6 +528,18 @@ fun AudiobasicsApp(
                 com.rkd.audiobasics.utils.AudiobasicsLinks.openLinkHandlingSettings(context)
                 vm.dismissAppLinksNudge()
             }
+        )
+    }
+    // Playback / download failures (see StreamErrorDialog.kt)
+    streamErrors?.let { errors ->
+        val context = LocalContext.current
+        val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+        StreamErrorDialog(
+            state = errors,
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onDismiss = { vm.dismissStreamErrors() }
         )
     }
     if (showCreatePlaylistFromSheet) {
