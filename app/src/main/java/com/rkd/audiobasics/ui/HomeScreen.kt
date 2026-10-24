@@ -66,7 +66,9 @@ fun HomeScreen(
             .fillMaxSize()
             .background(bodyColor)
     ) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+      // Home is entirely pure black in dark mode, slogan header included (bodyColor == bgColor
+      // in light mode, so light is unchanged).
+      Column(modifier = Modifier.fillMaxWidth().background(bodyColor)) {
         // ── Header / slogan ────────────────────────────────────────────────
         Column(
             modifier = Modifier
