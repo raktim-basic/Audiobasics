@@ -1,7 +1,7 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.launch
-
 import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -116,6 +116,7 @@ fun AlbumScreen(
     }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
@@ -246,7 +247,7 @@ fun AlbumScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(bodyColor)
     ) {
         if (isLoading) {
             Box(
@@ -262,7 +263,7 @@ fun AlbumScreen(
             ) {
                 item {
                     Column(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().background(bgColor),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Spacer(Modifier.height(24.dp))
@@ -708,7 +709,7 @@ fun AlbumSongRow(
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val bgColor = if (isDarkMode) AmoledBlack else Color.White
     val titleColor = if (isPlaying) Color.Red else textColor
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
