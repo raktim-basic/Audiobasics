@@ -555,6 +555,13 @@ fun AudiobasicsApp(
         )
     }
 
+    // NavDisplay keeps each NavEntry's content lambda from the moment the entry was created, so
+    // a plain `isDarkMode` captured in the entryProvider below stays frozen at its old value
+    // until the entry is rebuilt (e.g. after leaving Settings). Changing the theme from inside
+    // Settings therefore updated the status/nav bars and the root background but not the page
+    // itself. Reading through a State makes those entries recompose when the theme changes.
+    val isDarkModeNow by rememberUpdatedState(isDarkMode)
+
     val rootBgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
 
     // Root box for the nav stack + player bar. MorphOverlayHost (below) draws above both;
@@ -608,7 +615,7 @@ fun AudiobasicsApp(
                         is SearchKey -> NavEntry(key) {
                             SearchScreen(
                                 vm = vm,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onNavigateQueue = { push(QueueKey) },
                                 onAlbumClick = { album -> push(AlbumDetailKey(album)) },
@@ -619,7 +626,7 @@ fun AudiobasicsApp(
                         is QueueKey -> NavEntry(key) {
                             QueueScreen(
                                 vm = vm,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onAddTo = { song -> addToSheetSong = song }
                             )
@@ -627,7 +634,7 @@ fun AudiobasicsApp(
                         is SettingsKey -> NavEntry(key) {
                             SettingsScreen(
                                 vm = vm,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 openCache = key.openCache,
                                 openLibrary = key.openLibrary,
                                 onBack = { navigateBack() },
@@ -637,7 +644,7 @@ fun AudiobasicsApp(
                         is LikedKey -> NavEntry(key) {
                             LikedScreen(
                                 vm = vm,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onNavigateQueue = { push(QueueKey) },
                                 onNavigateCacheSettings = { push(SettingsKey(openCache = true)) },
@@ -647,7 +654,7 @@ fun AudiobasicsApp(
                         is AlbumsKey -> NavEntry(key) {
                             SavedAlbumsScreen(
                                 vm = vm,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onNavigateQueue = { push(QueueKey) },
                                 onAlbumClick = { album -> push(AlbumDetailKey(album)) }
@@ -666,7 +673,7 @@ fun AudiobasicsApp(
                         is UpdaterKey -> NavEntry(key) {
                             UpdaterScreen(
                                 vm = vm,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onEngineInfo = { push(EngineInfoKey) },
                                 onNavigateLibrary = { push(SettingsKey(openLibrary = true)) }
@@ -674,7 +681,7 @@ fun AudiobasicsApp(
                         }
                         is EngineInfoKey -> NavEntry(key) {
                             EngineInfoScreen(
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() }
                             )
                         }
@@ -682,7 +689,7 @@ fun AudiobasicsApp(
                             AlbumScreen(
                                 vm = vm,
                                 album = key.album,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onNavigateQueue = { push(QueueKey) },
                                 onNavigateArtist = { name, artistId ->
@@ -698,7 +705,7 @@ fun AudiobasicsApp(
                                 vm = vm,
                                 artistName = key.artistName,
                                 artistBrowseId = key.artistBrowseId,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onAlbumClick = { album -> push(AlbumDetailKey(album)) },
                                 onAddTo = { song -> addToSheetSong = song },
@@ -711,7 +718,7 @@ fun AudiobasicsApp(
                                 query = key.query,
                                 expectedTitle = key.expectedTitle,
                                 expectedArtist = key.expectedArtist,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onAlbumClick = { album -> push(AlbumDetailKey(album)) },
                                 onAutoMatchedAlbum = { album -> replaceTop(AlbumDetailKey(album)) },
@@ -722,7 +729,7 @@ fun AudiobasicsApp(
                             SearchArtistsScreen(
                                 vm = vm,
                                 query = key.query,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onArtistClick = { artist -> push(ArtistDetailKey(artist.name, artist.id)) },
                                 onNavigateQueue = { push(QueueKey) }
@@ -732,7 +739,7 @@ fun AudiobasicsApp(
                             CustomPlaylistScreen(
                                 vm = vm,
                                 playlist = key.playlist,
-                                isDarkMode = isDarkMode,
+                                isDarkMode = isDarkModeNow,
                                 onBack = { navigateBack() },
                                 onAddTo = { song -> addToSheetSong = song },
                                 onNavigateQueue = { push(QueueKey) },
