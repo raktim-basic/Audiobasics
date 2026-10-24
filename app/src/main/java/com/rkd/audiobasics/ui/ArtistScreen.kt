@@ -1,7 +1,10 @@
 package com.rkd.audiobasics.ui
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.launch
+
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -194,7 +197,12 @@ fun ArtistScreen(
                     }
 
                     // Same fixed height in both states so the tabs below never jump on toggle
-                    Crossfade(targetState = clear, animationSpec = tween(250), label = "heroControls") { isClear ->
+                    Crossfade(
+                        targetState = clear,
+                        modifier = Modifier.fillMaxWidth().background(bgColor),
+                        animationSpec = tween(250),
+                        label = "heroControls"
+                    ) { isClear ->
                         if (isClear) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().height(72.dp).padding(start = 20.dp, end = 12.dp),
@@ -285,13 +293,19 @@ fun ArtistScreen(
                             ) { }
                             .background(bgColor)
                     ) {
+                        // Scrolls sideways so all three tabs stay reachable on low-DPI / narrow screens
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.spacedBy(20.dp)
                         ) {
                             tabs.forEachIndexed { i, label ->
                                 Text(
                                     text = label,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     fontFamily = NothingFont,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
