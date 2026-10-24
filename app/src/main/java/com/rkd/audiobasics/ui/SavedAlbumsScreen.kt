@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -123,6 +124,7 @@ fun SavedAlbumsScreen(
     }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -151,7 +153,7 @@ fun SavedAlbumsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(bodyColor)
     ) {
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -161,6 +163,7 @@ fun SavedAlbumsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .background(bgColor)
                         .padding(bottom = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -435,7 +438,7 @@ fun AlbumItem(
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val bgColor = if (isDarkMode) AmoledBlack else Color.White
     val rowAnchor = rememberMorphAnchor()
     val menuAnchor = rememberMorphAnchor()
 
