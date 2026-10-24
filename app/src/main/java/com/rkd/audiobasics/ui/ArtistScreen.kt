@@ -4,7 +4,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.launch
-
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -171,7 +170,20 @@ fun ArtistScreen(
                     val dim by animateFloatAsState(if (clear) 0f else 0.45f, tween(300), label = "heroDim")
                     val nameAlpha by animateFloatAsState(if (clear) 0f else 1f, tween(300), label = "heroName")
 
-                    Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                            // Tapping the hero image toggles clear view (replaces the old
+                            // red-arrows button in the controls row)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                artistVm.clearView = !artistVm.clearView
+                            }
+                    ) {
                         AsyncImage(
                             model = artistVm.artistPage?.artist?.thumbnail,
                             contentDescription = null,
@@ -219,12 +231,6 @@ fun ArtistScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
-                                IconButton(onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    artistVm.clearView = false
-                                }) {
-                                    ClearViewIcon(outward = false, color = Color.Red)
-                                }
                             }
                         } else {
                             Row(
@@ -269,13 +275,6 @@ fun ArtistScreen(
                                             }
                                             .padding(horizontal = 8.dp, vertical = 12.dp)
                                     )
-                                }
-                                Spacer(Modifier.weight(1f))
-                                IconButton(onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    artistVm.clearView = true
-                                }) {
-                                    ClearViewIcon(outward = true, color = Color.Red)
                                 }
                             }
                         }
@@ -500,34 +499,6 @@ fun ArtistScreen(
             onDismiss = { showShareChoice = false }
         )
     }
-}
-
-/** The "clear view" toggle glyph: two horizontal arrows pointing outward (enter clear view)
- *  or inward (exit it). */
-@Composable
-private fun ClearViewIcon(outward: Boolean, color: Color) {
-    Canvas(Modifier.size(width = 28.dp, height = 16.dp)) {
-        val w = size.width
-        val cy = size.height / 2f
-        val stroke = 2.5.dp.toPx()
-        val head = 5.dp.toPx()
-        val mid = w / 2f
-        val gap = 2.dp.toPx()
-        if (outward) {
-            drawArrow(mid - gap, 0f, cy, color, stroke, head)
-            drawArrow(mid + gap, w, cy, color, stroke, head)
-        } else {
-            drawArrow(0f, mid - gap, cy, color, stroke, head)
-            drawArrow(w, mid + gap, cy, color, stroke, head)
-        }
-    }
-}
-
-private fun DrawScope.drawArrow(fromX: Float, toX: Float, cy: Float, color: Color, stroke: Float, head: Float) {
-    drawLine(color, Offset(fromX, cy), Offset(toX, cy), strokeWidth = stroke, cap = StrokeCap.Round)
-    val back = if (toX > fromX) -head else head
-    drawLine(color, Offset(toX, cy), Offset(toX + back, cy - head), strokeWidth = stroke, cap = StrokeCap.Round)
-    drawLine(color, Offset(toX, cy), Offset(toX + back, cy + head), strokeWidth = stroke, cap = StrokeCap.Round)
 }
 
 @Composable
