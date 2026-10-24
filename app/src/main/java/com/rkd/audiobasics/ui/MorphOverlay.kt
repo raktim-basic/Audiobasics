@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -331,7 +332,10 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val imeInsets = WindowInsets.ime
     val containerColor = entry.containerColor.takeOrElse { MaterialTheme.colorScheme.surface }
     val isAnchored = entry.placement == MorphPlacement.Anchored
-    val isDarkTheme = isSystemInDarkTheme()
+    // The app's own theme (Settings > Appearance), NOT the system's. Using the system setting
+    // meant a Light app theme on a dark-mode phone was treated as dark here: the drop shadow
+    // was switched off and the (light) glow was drawn instead, invisible on a light surface.
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     // In dark mode, only anchored menus get the explicit outline. Centered dialogs stay clean.
     val isDarkMenu = isDarkTheme && isAnchored
     val scrimAlpha = if (isAnchored) 0f else 0.5f
@@ -488,8 +492,8 @@ private fun MorphSurface(
 
                 if (isDarkMenu && alpha > 0f) {
                     val glowLayers = 5
-                    val maxSpread = with(density) { 14.dp.toPx() }
-                    val peakAlpha = 0.07f
+                    val maxSpread = with(density) { 10.dp.toPx() }
+                    val peakAlpha = 0.03f
                     for (i in glowLayers downTo 1) {
                         val t = i / glowLayers.toFloat()
                         val spread = maxSpread * t
@@ -614,7 +618,10 @@ fun MorphMenuItem(
     val resolvedIconTint = if (destructive) {
         iconTint.takeOrElse { textColor.takeOrElse { Color.Red } }
     } else {
-        iconTint.takeOrElse { MaterialTheme.colorScheme.onSurfaceVariant }
+        // Pure white / pure black (not the dimmer onSurfaceVariant gray, which read as disabled)
+        iconTint.takeOrElse {
+            if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.White else Color.Black
+        }
     }
 
     Row(
