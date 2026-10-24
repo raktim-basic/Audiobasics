@@ -260,8 +260,6 @@ private fun SettingsMainPage(
                 )
             }
 
-            item { SettingsDivider(isDarkMode) }
-
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
@@ -282,8 +280,6 @@ private fun SettingsMainPage(
                 )
             }
 
-            item { SettingsDivider(isDarkMode) }
-
             item {
                 SettingsRow(
                     isDarkMode = isDarkMode,
@@ -303,8 +299,6 @@ private fun SettingsMainPage(
                     }
                 )
             }
-
-            item { SettingsDivider(isDarkMode) }
 
             item {
                 SettingsRow(
@@ -630,11 +624,6 @@ private fun AppearancePage(
                 }
             }
         }
-
-        Box(
-            modifier = Modifier.fillMaxWidth().height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
 
         // Auto-immerse: only meaningful for the new player design, so it's greyed out
         // (disabled, dimmed) whenever Classic is selected above, or on the Feb 22 anniversary
@@ -1199,8 +1188,6 @@ private fun LibraryPage(
                     }
                 )
             }
-
-            item { SettingsDivider(isDarkMode) }
 
             item {
                 SettingsRow(
