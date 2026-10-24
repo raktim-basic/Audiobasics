@@ -237,10 +237,15 @@ class MainActivity : ComponentActivity() {
                 onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
             }
 
-            AppTheme(darkTheme = isDarkMode) {
+            var blackStatusBar by remember { mutableStateOf(false) }
+            AppTheme(darkTheme = isDarkMode, blackStatusBar = blackStatusBar) {
                 val logsEnabled by vm.logsEnabled.collectAsState()
                 Box(modifier = Modifier.fillMaxSize()) {
-                    AudiobasicsApp(vm = vm, isDarkMode = isDarkMode)
+                    AudiobasicsApp(
+                        vm = vm,
+                        isDarkMode = isDarkMode,
+                        onBlackStatusBarChange = { blackStatusBar = it }
+                    )
                     DebugLogOverlay(logsEnabled = logsEnabled)
                 }
             }
@@ -325,7 +330,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AudiobasicsApp(
     vm: MusicViewModel,
-    isDarkMode: Boolean
+    isDarkMode: Boolean,
+    onBlackStatusBarChange: (Boolean) -> Unit = {}
 ) {
     val currentSong by vm.currentSong.collectAsState()
     val isPlaying by vm.isPlaying.collectAsState()
@@ -562,7 +568,17 @@ fun AudiobasicsApp(
     // itself. Reading through a State makes those entries recompose when the theme changes.
     val isDarkModeNow by rememberUpdatedState(isDarkMode)
 
-    val rootBgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    // Home is pure black top to bottom in dark mode, so the status bar strip above it (which
+    // shows the root background, or the window status-bar color on Android < 15) goes black
+    // too while Home is on screen.
+    val homeBlackStatus = isDarkMode && backStack.lastOrNull() is HomeKey
+    SideEffect { onBlackStatusBarChange(homeBlackStatus) }
+
+    val rootBgColor = when {
+        !isDarkMode -> Color(0xFFF5F5F5)
+        homeBlackStatus -> Color.Black
+        else -> Color(0xFF121212)
+    }
 
     // Root box for the nav stack + player bar. MorphOverlayHost (below) draws above both;
     // LocalMorphOverlay is provided further up, around this whole function body, so every
