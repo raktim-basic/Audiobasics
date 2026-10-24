@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -39,6 +40,7 @@ fun SearchArtistsScreen(
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -60,8 +62,9 @@ fun SearchArtistsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(bodyColor)
     ) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         Text(
             text = "Artists",
             fontFamily = NothingFont,
@@ -72,6 +75,7 @@ fun SearchArtistsScreen(
         )
 
         HorizontalDivider(color = subTextColor.copy(alpha = 0.3f))
+      }
 
         Box(modifier = Modifier.weight(1f)) {
             when {
@@ -155,7 +159,7 @@ fun ArtistRowItem(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "(Artist)",
+                text = "(ARTIST)",
                 fontFamily = NothingFont,
                 fontSize = 13.sp,
                 color = subTextColor
