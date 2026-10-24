@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -171,9 +172,11 @@ private fun SettingsMainPage(
     val isRefreshingCipherEngine by vm.isRefreshingCipherEngine.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -231,6 +234,7 @@ private fun SettingsMainPage(
         }
 
         StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+      }
 
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -456,14 +460,16 @@ private fun AppearancePage(
     val context = LocalContext.current
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val surfaceColor = if (isDarkMode) AmoledBlack else Color.White
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val themeMode by vm.themeMode.collectAsState()
     val newPlayerDesign by vm.newPlayerDesign.collectAsState()
     val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -480,6 +486,7 @@ private fun AppearancePage(
         }
 
         StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+      }
 
         Column(
             modifier = Modifier
@@ -718,14 +725,16 @@ private fun GeneralPage(
     val context = LocalContext.current
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val surfaceColor = if (isDarkMode) AmoledBlack else Color.White
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val tempoPitchApplyToAll by vm.tempoPitchApplyToAll.collectAsState()
     val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
     val audioQuality by vm.audioQuality.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -742,6 +751,7 @@ private fun GeneralPage(
         }
 
         StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+      }
 
         Row(
             modifier = Modifier
@@ -984,8 +994,9 @@ private fun LibraryPage(
     val cacheProgress by vm.cacheProgress.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val surfaceColor = if (isDarkMode) AmoledBlack else Color.White
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
 
     var showImportWarning by remember { mutableStateOf(false) }
@@ -1013,7 +1024,7 @@ private fun LibraryPage(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(surfaceColor)
+                    .background(if (isDarkMode) Color(0xFF1E1E1E) else Color.White)
                     .padding(20.dp)
             ) {
                 Column {
@@ -1067,7 +1078,8 @@ private fun LibraryPage(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1084,6 +1096,7 @@ private fun LibraryPage(
         }
 
         StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+      }
 
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -1246,7 +1259,7 @@ fun SettingsRow(
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val bgColor = if (isDarkMode) AmoledBlack else Color.White
 
     Row(
         modifier = Modifier
@@ -1302,10 +1315,12 @@ private fun DevToolsPage(
     val logsEnabled by vm.logsEnabled.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val surfaceColor = if (isDarkMode) AmoledBlack else Color.White
 
-    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1322,6 +1337,7 @@ private fun DevToolsPage(
         }
 
         StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+      }
 
         SettingsRow(
             isDarkMode = isDarkMode,
