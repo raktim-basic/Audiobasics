@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,6 +61,7 @@ fun QueueScreen(
     val repeatMode by vm.repeatMode.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
@@ -157,8 +159,9 @@ fun QueueScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(bodyColor)
     ) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -195,6 +198,7 @@ fun QueueScreen(
             isDarkMode = isDarkMode,
             scrollProgress = scrollProgress.value
         )
+      }
 
         if (queue.isEmpty()) {
             Box(
