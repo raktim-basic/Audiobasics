@@ -43,6 +43,7 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun AppTheme(
     darkTheme: Boolean = false,
+    blackStatusBar: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val view = LocalView.current
@@ -58,7 +59,11 @@ fun AppTheme(
             // Android 15+ enforces edge-to-edge and handles this automatically.
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 @Suppress("DEPRECATION")
-                window.statusBarColor = if (darkTheme) 0xFF121212.toInt() else 0xFFF5F5F5.toInt()
+                window.statusBarColor = when {
+                    darkTheme && blackStatusBar -> 0xFF000000.toInt()
+                    darkTheme -> 0xFF121212.toInt()
+                    else -> 0xFFF5F5F5.toInt()
+                }
                 @Suppress("DEPRECATION")
                 window.navigationBarColor = if (darkTheme) 0xFF1E1E1E.toInt() else 0xFFE8E8E8.toInt()
                 controller.isAppearanceLightNavigationBars = !darkTheme
