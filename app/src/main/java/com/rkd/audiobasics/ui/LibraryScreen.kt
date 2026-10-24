@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
@@ -65,6 +66,7 @@ fun LibraryScreen(
     val cacheSize by vm.cacheSize.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -157,7 +159,7 @@ fun LibraryScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(bgColor)
+        modifier = Modifier.fillMaxSize().background(bodyColor)
     ) {
         // ── List ───────────────────────────────────────────────────────────
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState) {
