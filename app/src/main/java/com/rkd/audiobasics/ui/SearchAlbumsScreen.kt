@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,6 +40,7 @@ fun SearchAlbumsScreen(
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -69,8 +71,9 @@ fun SearchAlbumsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(bodyColor)
     ) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         // Header
         Text(
             text = "Albums",
@@ -86,6 +89,7 @@ fun SearchAlbumsScreen(
             color = subTextColor.copy(alpha = 0.3f),
             thickness = 1.dp
         )
+      }
 
         Box(modifier = Modifier.weight(1f)) {
             when {
