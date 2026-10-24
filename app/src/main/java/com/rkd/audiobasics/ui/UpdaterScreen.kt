@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -119,6 +120,7 @@ fun UpdaterScreen(
     var awaitingInstallPermission by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
 
@@ -215,7 +217,7 @@ fun UpdaterScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(bodyColor)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
