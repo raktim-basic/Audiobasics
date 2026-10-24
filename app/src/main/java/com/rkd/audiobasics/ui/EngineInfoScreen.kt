@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -55,6 +56,7 @@ fun EngineInfoScreen(
     var checked by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val cardColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
     val subTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF444444)
@@ -62,7 +64,7 @@ fun EngineInfoScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor),
+            .background(bodyColor),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
