@@ -72,3 +72,6 @@ fun AppTheme(
         content = content
     )
 }
+
+/** Pure black used for screen bodies in dark mode (AMOLED). Headers and bars keep their own colors. */
+val AmoledBlack = Color(0xFF000000)
