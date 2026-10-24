@@ -502,7 +502,7 @@ fun SearchScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(bgColor)
+                .background(barColor)
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(28.dp)
