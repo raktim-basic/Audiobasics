@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -55,6 +56,7 @@ fun HomeScreen(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFF888888) else Color(0xFF999999)
     val cardBg = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -62,8 +64,9 @@ fun HomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor)
+            .background(bodyColor)
     ) {
+      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
         // ── Header / slogan ────────────────────────────────────────────────
         Column(
             modifier = Modifier
@@ -112,6 +115,7 @@ fun HomeScreen(
         }
 
         StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+      }
 
         Spacer(Modifier.weight(1f))
 
