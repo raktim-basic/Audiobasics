@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,7 +59,7 @@ fun SongItem(
 
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val bgColor = if (isDarkMode) AmoledBlack else Color.White
     val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
     val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
 
