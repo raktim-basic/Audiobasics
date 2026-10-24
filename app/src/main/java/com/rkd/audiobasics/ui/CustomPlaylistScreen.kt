@@ -1,8 +1,8 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -67,6 +67,7 @@ fun CustomPlaylistScreen(
     val playlistSongs by vm.openPlaylistSongs.collectAsState()
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
+    val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val textColor = if (isDarkMode) Color.White else Color.Black
     val surfaceColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
@@ -169,14 +170,14 @@ fun CustomPlaylistScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(bgColor)) {
+    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
 
         LazyColumn(modifier = Modifier.weight(1f), state = listState) {
 
             // ── Hero emoji (like LikedScreen) ──────────────────────────────
             item {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth().background(bgColor).padding(bottom = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Spacer(Modifier.height(32.dp))
