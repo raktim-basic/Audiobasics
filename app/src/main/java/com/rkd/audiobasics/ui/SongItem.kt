@@ -253,7 +253,7 @@ fun SongItem(
                                 MorphMenuItem(
                                     text = if (isLiked) "Unlike" else "Like",
                                     leadingIcon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                    iconTint = if (isLiked) Color.Red else subTextColor,
+                                    iconTint = if (isLiked) Color.Red else if (isDarkMode) Color.White else Color.Black,
                                     onClick = {
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                         close()
@@ -308,7 +308,7 @@ fun SongItem(
                                 MorphMenuItem(
                                     text = if (isLiked) "Unlike" else "Like",
                                     leadingIcon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                    iconTint = if (isLiked) Color.Red else subTextColor,
+                                    iconTint = if (isLiked) Color.Red else if (isDarkMode) Color.White else Color.Black,
                                     onClick = {
                                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                         close()
