@@ -391,16 +391,11 @@ private fun SettingsMainPage(
             }
         }
 
-        Box(
-            modifier = Modifier.fillMaxWidth().height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(barColor)
-                .padding(vertical = 12.dp, horizontal = 20.dp),
+                .floatingPill(barColor)
+                .padding(vertical = 4.dp, horizontal = 20.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -679,16 +674,11 @@ private fun AppearancePage(
 
         Spacer(Modifier.weight(1f))
 
-        Box(
-            modifier = Modifier.fillMaxWidth().height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(barColor)
-                .padding(vertical = 12.dp, horizontal = 20.dp)
+                .floatingPill(barColor)
+                .padding(vertical = 4.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -945,16 +935,11 @@ private fun GeneralPage(
 
         Spacer(Modifier.weight(1f))
 
-        Box(
-            modifier = Modifier.fillMaxWidth().height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(barColor)
-                .padding(vertical = 12.dp, horizontal = 20.dp)
+                .floatingPill(barColor)
+                .padding(vertical = 4.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -1210,16 +1195,11 @@ private fun LibraryPage(
             }
         }
 
-        Box(
-            modifier = Modifier.fillMaxWidth().height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(barColor)
-                .padding(vertical = 12.dp, horizontal = 20.dp)
+                .floatingPill(barColor)
+                .padding(vertical = 4.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -1376,16 +1356,11 @@ private fun DevToolsPage(
 
         Spacer(Modifier.weight(1f))
 
-        Box(
-            modifier = Modifier.fillMaxWidth().height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(barColor)
-                .padding(vertical = 12.dp, horizontal = 20.dp)
+                .floatingPill(barColor)
+                .padding(vertical = 4.dp, horizontal = 20.dp)
         ) {
             IconButton(onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
