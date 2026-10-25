@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -20,8 +21,9 @@ import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 /**
- * Small floating dialog shown while the update APK downloads. Dismissing it (Cancel, back,
- * or tapping outside) calls [onCancel], which aborts the download.
+ * Small floating dialog shown while the update APK downloads. The Cancel button or back press
+ * calls [onCancel], which aborts the download. Tapping outside does nothing, so a stray tap
+ * can't throw away a download that's part-way through.
  *
  * [percent] is a provider, not a value: MorphPopup captures its content lambda once when it
  * opens, so the live number has to be read inside the content.
@@ -41,7 +43,8 @@ fun DownloadProgressDialog(
     MorphPopup(
         onDismissRequest = onCancel,
         placement = MorphPlacement.Center,
-        containerColor = bgColor
+        containerColor = bgColor,
+        dismissOnOutsideTap = false
     ) { close ->
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
             Text(
@@ -75,6 +78,58 @@ fun DownloadProgressDialog(
                     Text("Cancel", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
                 }
             }
+        }
+    }
+}
+
+/**
+ * Shown from the moment the APK is handed to Android's installer until the app is replaced (the
+ * process then dies) or the install is cancelled / fails. Android's own confirm screen closes as
+ * soon as the user taps Install, and the real install then runs in the background for a few
+ * seconds — without this the user would just be left looking at an idle app, unsure whether
+ * anything is happening. Tapping outside does nothing; back dismisses it (the install carries on).
+ */
+@Composable
+fun InstallingDialog(
+    isDarkMode: Boolean,
+    onDismiss: () -> Unit
+) {
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
+    val trackColor = if (isDarkMode) Color(0xFF3A3A3A) else Color(0xFFD0D0D0)
+
+    MorphPopup(
+        onDismissRequest = onDismiss,
+        placement = MorphPlacement.Center,
+        containerColor = bgColor,
+        dismissOnOutsideTap = false
+    ) { _ ->
+        Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+            Text(
+                text = "Installing update...",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = textColor
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Audiobasics will close by itself when it's done. Open it again afterwards.",
+                fontFamily = NothingFont,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = subTextColor
+            )
+            Spacer(Modifier.height(16.dp))
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = Color.Red,
+                trackColor = trackColor
+            )
         }
     }
 }

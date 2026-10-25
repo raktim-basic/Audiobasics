@@ -40,7 +40,9 @@ fun PlayerBar(
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
 
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE0E0E0)
+    // Only the top corners are rounded: the bottom edge sits flush against the system navigation bar.
+    val barShape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
 
@@ -48,6 +50,7 @@ fun PlayerBar(
         Row(
             modifier = modifier
                 .fillMaxWidth()
+                .clip(barShape)
                 .background(bgColor)
                 .clickable(enabled = false) { }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -57,7 +60,7 @@ fun PlayerBar(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Gray.copy(alpha = 0.3f))
+                    .background(if (isDarkMode) Color.Gray.copy(alpha = 0.3f) else Color.White)
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -87,6 +90,7 @@ fun PlayerBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clip(barShape)
             .background(bgColor)
             .clickable {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -121,7 +125,7 @@ fun PlayerBar(
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (song.isExplicit) {
-                    val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFDDDDDD)
+                    val explicitBgColor = if (isDarkMode) Color(0xFF444444) else Color(0xFFC4C4C4)
                     val explicitTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)
                     Box(
                         modifier = Modifier

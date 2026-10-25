@@ -113,7 +113,9 @@ class MorphEntry internal constructor(
     val wide: Boolean,
     val bare: Boolean,
     val onDismissRequest: () -> Unit,
-    val content: @Composable (close: () -> Unit) -> Unit
+    val content: @Composable (close: () -> Unit) -> Unit,
+    /** False = a tap on the dimmed backdrop does nothing (back press and `close()` still work). */
+    val dismissOnOutsideTap: Boolean = true
 ) {
     /** True once dismissal has started; the host plays the shrink animation, then removes the entry. */
     var closing by mutableStateOf(false)
@@ -167,9 +169,13 @@ class MorphOverlayState {
         wide: Boolean = false,
         bare: Boolean = false,
         onDismissRequest: () -> Unit = {},
+        dismissOnOutsideTap: Boolean = true,
         content: @Composable (close: () -> Unit) -> Unit
     ): MorphEntry {
-        val e = MorphEntry(anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest, content)
+        val e = MorphEntry(
+            anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest, content,
+            dismissOnOutsideTap
+        )
         _entries.add(e)
         return e
     }
@@ -239,11 +245,15 @@ fun MorphPopup(
     highlightBounds: Rect? = anchor,
     wide: Boolean = false,
     bare: Boolean = false,
+    dismissOnOutsideTap: Boolean = true,
     overlay: MorphOverlayState = LocalMorphOverlay.current,
     content: @Composable (close: () -> Unit) -> Unit
 ) {
     DisposableEffect(Unit) {
-        val e = overlay.show(anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest, content)
+        val e = overlay.show(
+            anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest,
+            dismissOnOutsideTap, content
+        )
         onDispose { overlay.requestClose(e) }
     }
 }
@@ -365,7 +375,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     drawRect(Color.Black.copy(alpha = scrimAlpha * progress.value))
                 }
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = { requestClose() })
+                    detectTapGestures(onTap = { if (entry.dismissOnOutsideTap) requestClose() })
                 }
         )
 

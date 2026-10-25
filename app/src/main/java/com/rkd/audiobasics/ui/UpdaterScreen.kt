@@ -128,6 +128,21 @@ fun UpdaterScreen(
             latestVersion != APP_CURRENT_VERSION
     val linkColor = if (isDarkMode) Color(0xFF4A9EFF) else Color(0xFF1A73E8)
 
+    val installing by AppUpdater.installing.collectAsState()
+
+    // Opening the updater checks for a new release by itself, so an update the notification
+    // already announced is shown straight away. A failed check (e.g. offline) stays quiet
+    // here — the manual button still reports "Error" if you tap it.
+    LaunchedEffect(Unit) {
+        isChecking = true
+        val latest = fetchLatestRelease()
+        if (latest != null) {
+            release = latest
+            checked = true
+        }
+        isChecking = false
+    }
+
     fun openReleasesPage() {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(APP_GITHUB_RELEASES_URL))
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -157,6 +172,9 @@ fun UpdaterScreen(
             downloadPercent = 0
             try {
                 val file = AppUpdater.downloadApk(context, apkUrl, rel.apkSize) { downloadPercent = it }
+                // Swap the download dialog for the "Installing update..." one in the same
+                // frame, so there's never a moment where nothing is on screen.
+                AppUpdater.setInstalling(true)
                 downloadPercent = null
                 // Once the download is done, the install hand-off always runs to completion,
                 // even if the dialog's dismissal cancels this job in the meantime.
@@ -165,6 +183,7 @@ fun UpdaterScreen(
                 downloadPercent = null
                 throw e
             } catch (_: Exception) {
+                AppUpdater.setInstalling(false)
                 downloadPercent = null
                 Toast.makeText(
                     context,
@@ -200,6 +219,13 @@ fun UpdaterScreen(
                 downloadJob?.cancel()
                 downloadPercent = null
             }
+        )
+    }
+
+    if (installing) {
+        InstallingDialog(
+            isDarkMode = isDarkMode,
+            onDismiss = { AppUpdater.setInstalling(false) }
         )
     }
 
