@@ -156,222 +156,186 @@ fun QueueScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bodyColor)
-    ) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.QueueMusic,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(28.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = if (draggingIndex != null) "Drag and drop" else "Queue",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                color = textColor
-            )
-            Spacer(Modifier.weight(1f))
-            if (draggingIndex == null) {
-                Text(
-                    text = "${queue.size} songs",
-                    fontFamily = NothingFont,
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
-            }
-        }
-
-        DashedDivider(
-            modifier = Modifier.fillMaxWidth(),
-            isDarkMode = isDarkMode,
-            scrollProgress = scrollProgress.value
-        )
-      }
-
-        if (queue.isEmpty()) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Queue is empty",
-                    fontFamily = NothingFont,
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = listState
-            ) {
-                itemsIndexed(
-                    items = liveQueue,
-                    key = { _, song -> song.id }
-                ) { index, song ->
-                    val isCurrentSong = song.id == currentSong?.id
-                    val isLiked = likedSongs.any { it.id == song.id }
-                    val armed = draggingIndex == index
-
-                    ReorderableItem(
-                        state = reorderableState,
-                        key = song.id
-                    ) { isActivelyDragging ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateItem()
-                                .graphicsLayer {
-                                    val s = if (isActivelyDragging) 1.02f else 1f
-                                    scaleX = s
-                                    scaleY = s
-                                    alpha = if (isActivelyDragging) 0.9f else 1f
-                                }
-                                .then(
-                                    if (armed) {
-                                        Modifier.longPressDraggableHandle(
-                                            onDragStarted = {
-                                                HapticUtils.performStrongHaptic(context)
-                                            }
-                                        )
-                                    } else Modifier
-                                )
-                                .background(
-                                    when {
-                                        isActivelyDragging -> if (isDarkMode)
-                                            Color.White.copy(alpha = 0.1f)
-                                        else Color.Black.copy(alpha = 0.06f)
-                                        armed -> if (isDarkMode)
-                                            Color.White.copy(alpha = 0.06f)
-                                        else Color.Black.copy(alpha = 0.05f)
-                                        isCurrentSong -> if (isDarkMode)
-                                            Color.White.copy(alpha = 0.05f)
-                                        else Color.Black.copy(alpha = 0.04f)
-                                        else -> Color.Transparent
-                                    }
-                                )
-                        ) {
-                            if (isCurrentSong) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.CenterStart)
-                                        .width(3.dp)
-                                        .height(52.dp)
-                                        .background(Color.Red)
-                                )
-                            }
-
-                            SongItem(
-                                song = song,
-                                isDarkMode = isDarkMode,
-                                isLiked = isLiked,
-                                isInQueue = true,
-                                isPlaying = isCurrentSong,
-                                hapticsEnabled = hapticsEnabled,
-                                context = context,
-                                onClick = {
-                                    // While any item is armed for reorder, taps must not change
-                                    // playback — a press-and-release-without-moving can otherwise
-                                    // race the drag gesture and fire this as a normal click.
-                                    if (draggingIndex == null) {
-                                        vm.playWithQueue(song, queue)
-                                    }
-                                },
-                                onLike = { vm.toggleLike(song) },
-                                onShare = {},
-                                onRemoveFromQueue = { vm.removeFromQueue(song) },
-                                onReorder = {
-                                    draggingIndex = if (armed) null else index
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                },
-                                onRetryCache = { vm.retryCache(song) },
-                                onRemoveLike = { vm.toggleLike(song) },
-                                onAddTo = { onAddTo(song) },
-                                isDragging = armed,
-                                isCaching = song.id in cachingSongIds
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(vertical = 4.dp, horizontal = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-
-            val timerActive = sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF
-            val queueNotEmpty = queue.isNotEmpty()
-            Text(
-                text = when (sleepTimerMode) {
-                    MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "Sleep timer (end of this song)"
-                    MusicViewModel.SLEEP_TIMER_CUSTOM -> "Sleep timer (${formatCountdown(sleepTimerRemaining)})"
-                    else -> "Sleep timer"
+    FloatingBarHost(
+        bar = {
+            QueueNavPill(
+                isDarkMode = isDarkMode,
+                timerText = when (sleepTimerMode) {
+                    MusicViewModel.SLEEP_TIMER_END_OF_SONG -> "End of song"
+                    MusicViewModel.SLEEP_TIMER_CUSTOM -> formatCountdown(sleepTimerRemaining)
+                    else -> null
                 },
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = if (timerActive) Color.Red else textColor,
-                modifier = Modifier.clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    if (!queueNotEmpty) {
+                repeatMode = repeatMode,
+                onBack = onBack,
+                onSleepTimer = {
+                    if (queue.isEmpty()) {
                         Toast.makeText(context, "Nothing is playing", Toast.LENGTH_SHORT).show()
-                        return@clickable
-                    }
-                    if (timerActive) {
+                    } else if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
                         vm.cancelSleepTimer()
                     } else {
                         showSleepDialog = true
                     }
-                }
+                },
+                onToggleRepeat = { vm.toggleRepeatMode() },
+                hapticsEnabled = hapticsEnabled,
+                context = context
             )
-
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                vm.toggleRepeatMode()
-            }) {
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(bodyColor)
+        ) {
+          Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
-                    imageVector = if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                    contentDescription = "Repeat Mode",
-                    tint = if (repeatMode == 0) textColor else Color.Red,
-                    modifier = Modifier.size(26.dp)
+                    Icons.Default.QueueMusic,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(28.dp)
                 )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = if (draggingIndex != null) "Drag and drop" else "Queue",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    color = textColor
+                )
+                Spacer(Modifier.weight(1f))
+                if (draggingIndex == null) {
+                    Text(
+                        text = "${queue.size} songs",
+                        fontFamily = NothingFont,
+                        fontSize = 13.sp,
+                        color = Color.Gray
+                    )
+                }
             }
+
+            DashedDivider(
+                modifier = Modifier.fillMaxWidth(),
+                isDarkMode = isDarkMode,
+                scrollProgress = scrollProgress.value
+            )
+          }
+
+            if (queue.isEmpty()) {
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Queue is empty",
+                        fontFamily = NothingFont,
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = FloatingBarClearance)
+                ) {
+                    itemsIndexed(
+                        items = liveQueue,
+                        key = { _, song -> song.id }
+                    ) { index, song ->
+                        val isCurrentSong = song.id == currentSong?.id
+                        val isLiked = likedSongs.any { it.id == song.id }
+                        val armed = draggingIndex == index
+
+                        ReorderableItem(
+                            state = reorderableState,
+                            key = song.id
+                        ) { isActivelyDragging ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateItem()
+                                    .graphicsLayer {
+                                        val s = if (isActivelyDragging) 1.02f else 1f
+                                        scaleX = s
+                                        scaleY = s
+                                        alpha = if (isActivelyDragging) 0.9f else 1f
+                                    }
+                                    .then(
+                                        if (armed) {
+                                            Modifier.longPressDraggableHandle(
+                                                onDragStarted = {
+                                                    HapticUtils.performStrongHaptic(context)
+                                                }
+                                            )
+                                        } else Modifier
+                                    )
+                                    .background(
+                                        when {
+                                            isActivelyDragging -> if (isDarkMode)
+                                                Color.White.copy(alpha = 0.1f)
+                                            else Color.Black.copy(alpha = 0.06f)
+                                            armed -> if (isDarkMode)
+                                                Color.White.copy(alpha = 0.06f)
+                                            else Color.Black.copy(alpha = 0.05f)
+                                            isCurrentSong -> if (isDarkMode)
+                                                Color.White.copy(alpha = 0.05f)
+                                            else Color.Black.copy(alpha = 0.04f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                            ) {
+                                if (isCurrentSong) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterStart)
+                                            .width(3.dp)
+                                            .height(52.dp)
+                                            .background(Color.Red)
+                                    )
+                                }
+
+                                SongItem(
+                                    song = song,
+                                    isDarkMode = isDarkMode,
+                                    isLiked = isLiked,
+                                    isInQueue = true,
+                                    isPlaying = isCurrentSong,
+                                    hapticsEnabled = hapticsEnabled,
+                                    context = context,
+                                    onClick = {
+                                        // While any item is armed for reorder, taps must not change
+                                        // playback — a press-and-release-without-moving can otherwise
+                                        // race the drag gesture and fire this as a normal click.
+                                        if (draggingIndex == null) {
+                                            vm.playWithQueue(song, queue)
+                                        }
+                                    },
+                                    onLike = { vm.toggleLike(song) },
+                                    onShare = {},
+                                    onRemoveFromQueue = { vm.removeFromQueue(song) },
+                                    onReorder = {
+                                        draggingIndex = if (armed) null else index
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    },
+                                    onRetryCache = { vm.retryCache(song) },
+                                    onRemoveLike = { vm.toggleLike(song) },
+                                    onAddTo = { onAddTo(song) },
+                                    isDragging = armed,
+                                    isCaching = song.id in cachingSongIds
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+
         }
     }
 }

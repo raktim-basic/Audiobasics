@@ -175,215 +175,258 @@ private fun SettingsMainPage(
     val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Settings",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 24.sp,
-                color = textColor,
-                modifier = Modifier.weight(1f)
+    FloatingBarHost(
+        barAlignment = Alignment.BottomStart,
+        bar = {
+            BackOnlyPill(
+                isDarkMode = isDarkMode,
+                onBack = onBack,
+                hapticsEnabled = hapticsEnabled,
+                context = context
             )
-            // Kept together in one Row so the pair shifts as a unit — previously only
-            // the dev-tools button had the logs-on offset applied to it individually.
+        }
+    ) {
+        Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+          Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = if (logsEnabled) Modifier.padding(end = 80.dp) else Modifier
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        vm.refreshCipherEngine()
-                    },
-                    enabled = !isRefreshingCipherEngine
+                Text(
+                    text = "Settings",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    color = textColor,
+                    modifier = Modifier.weight(1f)
+                )
+                // Kept together in one Row so the pair shifts as a unit — previously only
+                // the dev-tools button had the logs-on offset applied to it individually.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = if (logsEnabled) Modifier.padding(end = 80.dp) else Modifier
                 ) {
-                    if (isRefreshingCipherEngine) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = textColor
-                        )
-                    } else {
+                    IconButton(
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            vm.refreshCipherEngine()
+                        },
+                        enabled = !isRefreshingCipherEngine
+                    ) {
+                        if (isRefreshingCipherEngine) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = textColor
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh playback engine",
+                                tint = textColor
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateDevTools()
+                        }
+                    ) {
                         Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Refresh playback engine",
+                            Icons.Default.MoreVert,
+                            contentDescription = "Dev tools",
                             tint = textColor
                         )
                     }
                 }
-                IconButton(
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateDevTools()
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "Dev tools",
-                        tint = textColor
+            }
+
+            StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+          }
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(top = 8.dp, bottom = FloatingBarClearance)
+            ) {
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Appearance",
+                        subtitle = "Theme and more",
+                        icon = {
+                            Icon(
+                                Icons.Default.Palette,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateAppearance()
+                        }
                     )
                 }
-            }
-        }
 
-        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-      }
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "General",
+                        subtitle = "The usual settings",
+                        icon = {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateGeneral()
+                        }
+                    )
+                }
 
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Appearance",
-                    subtitle = "Theme and more",
-                    icon = {
-                        Icon(
-                            Icons.Default.Palette,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateAppearance()
-                    }
-                )
-            }
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Library management",
+                        subtitle = "Downloads and backups",
+                        icon = {
+                            Icon(
+                                Icons.Default.LibraryMusic,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateLibrary()
+                        }
+                    )
+                }
 
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "General",
-                    subtitle = "The usual settings",
-                    icon = {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateGeneral()
-                    }
-                )
-            }
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Desk Connect",
+                        subtitle = "Coming soon :D",
+                        icon = {
+                            Icon(
+                                Icons.Default.Computer,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
 
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Library management",
-                    subtitle = "Downloads and backups",
-                    icon = {
-                        Icon(
-                            Icons.Default.LibraryMusic,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateLibrary()
-                    }
-                )
-            }
+                item { SettingsDivider(isDarkMode) }
 
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Desk Connect",
-                    subtitle = "Coming soon :D",
-                    icon = {
-                        Icon(
-                            Icons.Default.Computer,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-
-            item { SettingsDivider(isDarkMode) }
-
-            item {
-                Text(
-                    text = "VERSION AND UPDATE",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    color = Color.Red,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                )
-            }
-
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Updater",
-                    subtitle = "Check for updates",
-                    icon = {
-                        Icon(
-                            Icons.Default.ArrowForward,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        onNavigateUpdater()
-                    }
-                )
-            }
-
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "App Version",
-                    subtitle = APP_CURRENT_VERSION,
-                    icon = {},
-                    onClick = {}
-                )
-            }
-
-            item { SettingsDivider(isDarkMode) }
-
-            item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
+                item {
                     Text(
-                        text = "Audiobasics GitHub",
+                        text = "VERSION AND UPDATE",
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = Color(0xFF1565C0),
-                        textDecoration = TextDecoration.Underline,
+                        fontSize = 11.sp,
+                        color = Color.Red,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
+
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Updater",
+                        subtitle = "Check for updates",
+                        icon = {
+                            Icon(
+                                Icons.Default.ArrowForward,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateUpdater()
+                        }
+                    )
+                }
+
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "App Version",
+                        subtitle = APP_CURRENT_VERSION,
+                        icon = {},
+                        onClick = {}
+                    )
+                }
+
+                item { SettingsDivider(isDarkMode) }
+
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Audiobasics GitHub",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color(0xFF1565C0),
+                            textDecoration = TextDecoration.Underline,
+                            modifier = Modifier.clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW,
+                                        Uri.parse("https://github.com/raktim-basic/Audiobasics"))
+                                )
+                            }
+                        )
+                    }
+                }
+            
+            // "Made by" credit (used to live in the bottom bar)
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val madeByText = buildAnnotatedString {
+                        withStyle(SpanStyle(
+                            fontFamily = NothingFont,
+                            fontSize = 14.sp,
+                            color = textColor
+                        )) { append("Made by ") }
+                        withStyle(SpanStyle(
+                            fontFamily = NothingFont,
+                            fontSize = 14.sp,
+                            color = Color(0xFF1565C0),
+                            textDecoration = TextDecoration.Underline
+                        )) { append("raktim-basic") }
+                    }
+                    Text(
+                        text = madeByText,
                         modifier = Modifier.clickable {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             context.startActivity(
                                 Intent(Intent.ACTION_VIEW,
-                                    Uri.parse("https://github.com/raktim-basic/Audiobasics"))
+                                    Uri.parse("https://github.com/raktim-basic"))
                             )
                         }
                     )
@@ -391,51 +434,7 @@ private fun SettingsMainPage(
             }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(vertical = 4.dp, horizontal = 20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
 
-            val madeByText = buildAnnotatedString {
-                withStyle(SpanStyle(
-                    fontFamily = NothingFont,
-                    fontSize = 14.sp,
-                    color = textColor
-                )) { append("Made by ") }
-                withStyle(SpanStyle(
-                    fontFamily = NothingFont,
-                    fontSize = 14.sp,
-                    color = Color(0xFF1565C0),
-                    textDecoration = TextDecoration.Underline
-                )) { append("raktim-basic") }
-            }
-            Text(
-                text = madeByText,
-                modifier = Modifier.clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW,
-                            Uri.parse("https://github.com/raktim-basic"))
-                    )
-                }
-            )
-
-            Spacer(Modifier.size(48.dp))
         }
     }
 }
@@ -457,113 +456,193 @@ private fun AppearancePage(
     val newPlayerDesign by vm.newPlayerDesign.collectAsState()
     val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Appearance",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 24.sp,
-                color = textColor
+    FloatingBarHost(
+        barAlignment = Alignment.BottomStart,
+        bar = {
+            BackOnlyPill(
+                isDarkMode = isDarkMode,
+                onBack = onBack,
+                hapticsEnabled = hapticsEnabled,
+                context = context
             )
         }
-
-        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-      }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.Palette,
-                    contentDescription = null,
-                    tint = textColor,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(16.dp))
-                Text(
-                    text = "Theme",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = textColor,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Spacer(Modifier.height(12.dp))
+    ) {
+        Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+          Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val options = listOf(
-                    Triple(MusicViewModel.THEME_SYSTEM, "System", Icons.Default.Palette),
-                    Triple(MusicViewModel.THEME_LIGHT, "Light", Icons.Default.LightMode),
-                    Triple(MusicViewModel.THEME_DARK, "Dark", Icons.Default.DarkMode)
+                Text(
+                    text = "Appearance",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    color = textColor
                 )
-                options.forEach { (mode, label, icon) ->
-                    val isSelected = themeMode == mode
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) Color.Red else Color.Transparent)
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                vm.setThemeMode(mode)
-                            }
-                            .padding(vertical = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            icon,
-                            contentDescription = null,
-                            tint = if (isSelected) Color.White else textColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = label,
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = if (isSelected) Color.White else textColor
-                        )
+            }
+
+            StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+          }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Palette,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = "Theme",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    val options = listOf(
+                        Triple(MusicViewModel.THEME_SYSTEM, "System", Icons.Default.Palette),
+                        Triple(MusicViewModel.THEME_LIGHT, "Light", Icons.Default.LightMode),
+                        Triple(MusicViewModel.THEME_DARK, "Dark", Icons.Default.DarkMode)
+                    )
+                    options.forEach { (mode, label, icon) ->
+                        val isSelected = themeMode == mode
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) Color.Red else Color.Transparent)
+                                .clickable {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    vm.setThemeMode(mode)
+                                }
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                icon,
+                                contentDescription = null,
+                                tint = if (isSelected) Color.White else textColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = label,
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (isSelected) Color.White else textColor
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        Box(
-            modifier = Modifier.fillMaxWidth().height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
+            Box(
+                modifier = Modifier.fillMaxWidth().height(1.dp)
+                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
+            )
 
-        // Feb 22 anniversary easter egg: the picker below stays visible and Dark/Light theme
-        // is unaffected, but selecting a player design is disabled for the day (dimmed, and
-        // taps show a toast instead of changing anything) — see MusicViewModel.isAnniversaryDay.
-        val isAnniversaryDay = vm.isAnniversaryDay
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .alpha(if (isAnniversaryDay) 0.4f else 1f)
-                .padding(horizontal = 20.dp, vertical = 14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Feb 22 anniversary easter egg: the picker below stays visible and Dark/Light theme
+            // is unaffected, but selecting a player design is disabled for the day (dimmed, and
+            // taps show a toast instead of changing anything) — see MusicViewModel.isAnniversaryDay.
+            val isAnniversaryDay = vm.isAnniversaryDay
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .alpha(if (isAnniversaryDay) 0.4f else 1f)
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = "Player design",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    val playerDesignOptions = listOf(false to "Classic", true to "New")
+                    playerDesignOptions.forEach { (value, label) ->
+                        val isSelected = newPlayerDesign == value
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) Color.Red else Color.Transparent)
+                                .clickable {
+                                    if (isAnniversaryDay) {
+                                        Toast.makeText(context, "Audiobasics anniversary :D", Toast.LENGTH_SHORT).show()
+                                        return@clickable
+                                    }
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    vm.setNewPlayerDesign(value)
+                                }
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = label,
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (isSelected) Color.White else textColor
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Auto-immerse: only meaningful for the new player design, so it's greyed out
+            // (disabled, dimmed) whenever Classic is selected above, or on the Feb 22 anniversary
+            // (when the player is force-classic'd regardless of the stored preference) — rather
+            // than hidden, which keeps its position stable and hints at the dependency.
+            val autoImmerseRowAlpha = if (newPlayerDesign && !isAnniversaryDay) 1f else 0.4f
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .alpha(autoImmerseRowAlpha)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
                     Icons.Default.PlayArrow,
                     contentDescription = null,
@@ -571,126 +650,41 @@ private fun AppearancePage(
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(16.dp))
-                Text(
-                    text = "Player design",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = textColor,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                val playerDesignOptions = listOf(false to "Classic", true to "New")
-                playerDesignOptions.forEach { (value, label) ->
-                    val isSelected = newPlayerDesign == value
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) Color.Red else Color.Transparent)
-                            .clickable {
-                                if (isAnniversaryDay) {
-                                    Toast.makeText(context, "Audiobasics anniversary :D", Toast.LENGTH_SHORT).show()
-                                    return@clickable
-                                }
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                vm.setNewPlayerDesign(value)
-                            }
-                            .padding(vertical = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = label,
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = if (isSelected) Color.White else textColor
-                        )
-                    }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Auto-immerse",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor
+                    )
+                    Text(
+                        text = "Hide controls automatically",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 12.sp,
+                        color = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
+                    )
                 }
-            }
-        }
-
-        // Auto-immerse: only meaningful for the new player design, so it's greyed out
-        // (disabled, dimmed) whenever Classic is selected above, or on the Feb 22 anniversary
-        // (when the player is force-classic'd regardless of the stored preference) — rather
-        // than hidden, which keeps its position stable and hints at the dependency.
-        val autoImmerseRowAlpha = if (newPlayerDesign && !isAnniversaryDay) 1f else 0.4f
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .alpha(autoImmerseRowAlpha)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.PlayArrow,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Auto-immerse",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = textColor
-                )
-                Text(
-                    text = "Hide controls automatically",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Normal,
-                    fontSize = 12.sp,
-                    color = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
+                Switch(
+                    checked = autoImmerseEnabled,
+                    enabled = newPlayerDesign && !isAnniversaryDay,
+                    onCheckedChange = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.setAutoImmerseEnabled(it)
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color.Red,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
                 )
             }
-            Switch(
-                checked = autoImmerseEnabled,
-                enabled = newPlayerDesign && !isAnniversaryDay,
-                onCheckedChange = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    vm.setAutoImmerseEnabled(it)
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color.Red,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.Gray
-                )
-            )
-        }
 
-        Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(1f))
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(vertical = 4.dp, horizontal = 20.dp)
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+
         }
     }
 }
@@ -712,246 +706,241 @@ private fun GeneralPage(
     val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
     val audioQuality by vm.audioQuality.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "General",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 24.sp,
-                color = textColor
+    FloatingBarHost(
+        barAlignment = Alignment.BottomStart,
+        bar = {
+            BackOnlyPill(
+                isDarkMode = isDarkMode,
+                onBack = onBack,
+                hapticsEnabled = hapticsEnabled,
+                context = context
             )
         }
-
-        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-      }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.PhoneAndroid,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(Modifier.width(16.dp))
-            Text(
-                text = "Haptic feedback (vibration)",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = textColor,
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = hapticsEnabled,
-                onCheckedChange = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    vm.toggleHaptics()
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color.Red,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.Gray
-                )
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.Speed,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
+    ) {
+        Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+          Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "Tempo/Pitch applies to all songs",
+                    text = "General",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
+                    fontSize = 24.sp,
                     color = textColor
                 )
-                Text(
-                    text = "Apply the set tempo/pitch to all songs",
-                    fontSize = 12.sp,
-                    color = textColor.copy(alpha = 0.6f)
-                )
             }
-            Switch(
-                checked = tempoPitchApplyToAll,
-                onCheckedChange = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    vm.toggleTempoPitchApplyToAll()
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color.Red,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.Gray
-                )
-            )
-        }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.Share,
-                contentDescription = null,
-                tint = textColor,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Show YouTube Link option on share",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = textColor
-                )
-                Text(
-                    text = "Show option to share Youtube links on share alongside Audiobasics link",
-                    fontSize = 12.sp,
-                    color = textColor.copy(alpha = 0.6f)
-                )
-            }
-            Switch(
-                checked = shareYoutubeLinkEnabled,
-                onCheckedChange = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    vm.toggleShareYoutubeLinkEnabled()
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color.Red,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.Gray
-                )
-            )
-        }
+            StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+          }
 
-        Spacer(Modifier.height(24.dp))
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
-                    Icons.Default.GraphicEq,
+                    Icons.Default.PhoneAndroid,
                     contentDescription = null,
                     tint = textColor,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(16.dp))
                 Text(
-                    text = "Audio quality",
+                    text = "Haptic feedback (vibration)",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = textColor,
                     modifier = Modifier.weight(1f)
                 )
+                Switch(
+                    checked = hapticsEnabled,
+                    onCheckedChange = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.toggleHaptics()
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color.Red,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
+                )
             }
-            Spacer(Modifier.height(12.dp))
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val options = listOf(
-                    Triple(Innertube.AUDIO_QUALITY_AUTO, "Auto", Icons.Default.AutoAwesome),
-                    Triple(Innertube.AUDIO_QUALITY_HIGH, "High", Icons.Default.Hd),
-                    Triple(Innertube.AUDIO_QUALITY_BASIC, "Basic", Icons.Default.SignalCellularAlt)
+                Icon(
+                    Icons.Default.Speed,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
                 )
-                options.forEach { (mode, label, icon) ->
-                    val isSelected = audioQuality == mode
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isSelected) Color.Red else Color.Transparent)
-                            .clickable {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                vm.setAudioQuality(mode)
-                            }
-                            .padding(vertical = 10.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            icon,
-                            contentDescription = null,
-                            tint = if (isSelected) Color.White else textColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = label,
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = if (isSelected) Color.White else textColor
-                        )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Tempo/Pitch applies to all songs",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor
+                    )
+                    Text(
+                        text = "Apply the set tempo/pitch to all songs",
+                        fontSize = 12.sp,
+                        color = textColor.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(
+                    checked = tempoPitchApplyToAll,
+                    onCheckedChange = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.toggleTempoPitchApplyToAll()
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color.Red,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Share,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Show YouTube Link option on share",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor
+                    )
+                    Text(
+                        text = "Show option to share Youtube links on share alongside Audiobasics link",
+                        fontSize = 12.sp,
+                        color = textColor.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(
+                    checked = shareYoutubeLinkEnabled,
+                    onCheckedChange = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.toggleShareYoutubeLinkEnabled()
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color.Red,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = "Audio quality",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    val options = listOf(
+                        Triple(Innertube.AUDIO_QUALITY_AUTO, "Auto", Icons.Default.AutoAwesome),
+                        Triple(Innertube.AUDIO_QUALITY_HIGH, "High", Icons.Default.Hd),
+                        Triple(Innertube.AUDIO_QUALITY_BASIC, "Basic", Icons.Default.SignalCellularAlt)
+                    )
+                    options.forEach { (mode, label, icon) ->
+                        val isSelected = audioQuality == mode
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) Color.Red else Color.Transparent)
+                                .clickable {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    vm.setAudioQuality(mode)
+                                }
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                icon,
+                                contentDescription = null,
+                                tint = if (isSelected) Color.White else textColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = label,
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = if (isSelected) Color.White else textColor
+                            )
+                        }
                     }
                 }
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "Auto adjusts quality depending on the network and speed.",
-                fontSize = 12.sp,
-                color = textColor.copy(alpha = 0.6f)
-            )
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(vertical = 4.dp, horizontal = 20.dp)
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(28.dp)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Auto adjusts quality depending on the network and speed.",
+                    fontSize = 12.sp,
+                    color = textColor.copy(alpha = 0.6f)
                 )
             }
+
+            Spacer(Modifier.weight(1f))
+
+
         }
     }
 }
@@ -1052,166 +1041,161 @@ private fun LibraryPage(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Library management",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 24.sp,
-                color = textColor
+    FloatingBarHost(
+        barAlignment = Alignment.BottomStart,
+        bar = {
+            BackOnlyPill(
+                isDarkMode = isDarkMode,
+                onBack = onBack,
+                hapticsEnabled = hapticsEnabled,
+                context = context
             )
         }
-
-        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-      }
-
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            // Downloads (formerly the standalone "Downloads" settings page)
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Download Size",
-                    subtitle = if (cacheSize.isBlank()) "No downloads" else cacheSize,
-                    icon = {},
-                    onClick = {}
+    ) {
+        Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+          Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Library management",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    color = textColor
                 )
             }
 
-            item {
-                val isCurrentlyCaching = cacheProgress != null
+            StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+          }
 
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Download All",
-                    subtitle = when {
-                        isCurrentlyCaching -> {
-                            val (done, total) = cacheProgress!!
-                            val percent = if (total > 0)
-                                ((done.toFloat() / total.toFloat()) * 100).toInt() else 0
-                            "Downloading... $done / $total ($percent%)"
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(top = 8.dp, bottom = FloatingBarClearance)
+            ) {
+                // Downloads (formerly the standalone "Downloads" settings page)
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Download Size",
+                        subtitle = if (cacheSize.isBlank()) "No downloads" else cacheSize,
+                        icon = {},
+                        onClick = {}
+                    )
+                }
+
+                item {
+                    val isCurrentlyCaching = cacheProgress != null
+
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Download All",
+                        subtitle = when {
+                            isCurrentlyCaching -> {
+                                val (done, total) = cacheProgress!!
+                                val percent = if (total > 0)
+                                    ((done.toFloat() / total.toFloat()) * 100).toInt() else 0
+                                "Downloading... $done / $total ($percent%)"
+                            }
+                            else -> "Download every song in your library"
+                        },
+                        icon = {
+                            if (isCurrentlyCaching) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.Red
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.Download,
+                                    contentDescription = null,
+                                    tint = textColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        },
+                        onClick = {
+                            if (!isCurrentlyCaching) {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                vm.cacheAllLibrary()
+                            }
                         }
-                        else -> "Download every song in your library"
-                    },
-                    icon = {
-                        if (isCurrentlyCaching) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.Red
+                    )
+
+                    if (isCurrentlyCaching) {
+                        val (done, total) = cacheProgress!!
+                        val progress = if (total > 0) done.toFloat() / total.toFloat() else 0f
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
+                            color = Color.Red,
+                            trackColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
+                        )
+                        Text(
+                            text = "Starting the download.. do not close the app",
+                            fontFamily = NothingFont,
+                            fontSize = 12.sp,
+                            color = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                item { Spacer(Modifier.height(20.dp)) }
+                item { SettingsDivider(isDarkMode) }
+                item { Spacer(Modifier.height(4.dp)) }
+
+                // Export / import (originally this page's own content)
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Export Library",
+                        subtitle = "Create a backup file of your library",
+                        icon = {
+                            Icon(
+                                Icons.Default.Upload,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
                             )
-                        } else {
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            exportLauncher.launch("audiobasics_backup.json")
+                        }
+                    )
+                }
+
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Import Library",
+                        subtitle = "Import a backup file of your library",
+                        icon = {
                             Icon(
                                 Icons.Default.Download,
                                 contentDescription = null,
                                 tint = textColor,
                                 modifier = Modifier.size(24.dp)
                             )
-                        }
-                    },
-                    onClick = {
-                        if (!isCurrentlyCaching) {
+                        },
+                        onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.cacheAllLibrary()
+                            importLauncher.launch(arrayOf("application/json"))
                         }
-                    }
-                )
-
-                if (isCurrentlyCaching) {
-                    val (done, total) = cacheProgress!!
-                    val progress = if (total > 0) done.toFloat() / total.toFloat() else 0f
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 4.dp),
-                        color = Color.Red,
-                        trackColor = if (isDarkMode) Color(0xFF333333) else Color(0xFFE0E0E0)
-                    )
-                    Text(
-                        text = "Starting the download.. do not close the app",
-                        fontFamily = NothingFont,
-                        fontSize = 12.sp,
-                        color = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 2.dp)
                     )
                 }
             }
 
-            item { Spacer(Modifier.height(20.dp)) }
-            item { SettingsDivider(isDarkMode) }
-            item { Spacer(Modifier.height(4.dp)) }
 
-            // Export / import (originally this page's own content)
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Export Library",
-                    subtitle = "Create a backup file of your library",
-                    icon = {
-                        Icon(
-                            Icons.Default.Upload,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        exportLauncher.launch("audiobasics_backup.json")
-                    }
-                )
-            }
-
-            item {
-                SettingsRow(
-                    isDarkMode = isDarkMode,
-                    title = "Import Library",
-                    subtitle = "Import a backup file of your library",
-                    icon = {
-                        Icon(
-                            Icons.Default.Download,
-                            contentDescription = null,
-                            tint = textColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        importLauncher.launch(arrayOf("application/json"))
-                    }
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(vertical = 4.dp, horizontal = 20.dp)
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
         }
     }
 }
@@ -1286,93 +1270,88 @@ private fun DevToolsPage(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) AmoledBlack else Color.White
 
-    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Dev tools",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 24.sp,
-                color = textColor
+    FloatingBarHost(
+        barAlignment = Alignment.BottomStart,
+        bar = {
+            BackOnlyPill(
+                isDarkMode = isDarkMode,
+                onBack = onBack,
+                hapticsEnabled = hapticsEnabled,
+                context = context
             )
         }
-
-        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-      }
-
-        SettingsRow(
-            isDarkMode = isDarkMode,
-            title = "Engine info",
-            subtitle = "Extractor and Innertube versions",
-            icon = {
-                Icon(
-                    Icons.Default.Info,
-                    contentDescription = null,
-                    tint = textColor,
-                    modifier = Modifier.size(24.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+          Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Dev tools",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    color = textColor
                 )
-            },
-            onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onNavigateEngineInfo()
             }
-        )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "The LOGS",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = textColor,
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = logsEnabled,
-                onCheckedChange = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    vm.toggleLogs()
+            StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+          }
+
+            SettingsRow(
+                isDarkMode = isDarkMode,
+                title = "Engine info",
+                subtitle = "Extractor and Innertube versions",
+                icon = {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(24.dp)
+                    )
                 },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color.Red,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = Color.Gray
-                )
+                onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onNavigateEngineInfo()
+                }
             )
-        }
 
-        Spacer(Modifier.weight(1f))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(vertical = 4.dp, horizontal = 20.dp)
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = "Back",
-                    tint = textColor,
-                    modifier = Modifier.size(28.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "The LOGS",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = textColor,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = logsEnabled,
+                    onCheckedChange = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.toggleLogs()
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color.Red,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
                 )
             }
+
+            Spacer(Modifier.weight(1f))
+
+
         }
     }
 }

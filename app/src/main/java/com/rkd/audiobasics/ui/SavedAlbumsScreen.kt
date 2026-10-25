@@ -150,276 +150,186 @@ fun SavedAlbumsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bodyColor)
-    ) {
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            state = listState
-        ) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(bgColor)
-                        .padding(bottom = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Spacer(Modifier.height(32.dp))
-                    Icon(
-                        imageVector = Icons.Default.Bookmark,
-                        contentDescription = "Saved Albums",
-                        modifier = Modifier.size(100.dp),
-                        tint = textColor
-                    )
-                    Spacer(Modifier.height(24.dp))
-                }
-            }
-
-            stickyHeader {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) { }
-                        .background(bgColor)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Saved Albums (${savedAlbums.size})",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = textColor
-                        )
-                    }
-                    DashedDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        isDarkMode = isDarkMode,
-                        scrollProgress = scrollProgress.value
-                    )
-                }
-            }
-
-            if (filteredAlbums.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 80.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (searchQuery.isBlank())
-                                "No saved albums yet"
-                            else "No albums found",
-                            fontFamily = NothingFont,
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            } else {
-                val displayedAlbums = if (reorderEnabled) liveAlbums else filteredAlbums
-                itemsIndexed(
-                    items = displayedAlbums,
-                    key = { _, album -> album.id }
-                ) { index, album ->
-                    val armed = reorderEnabled && draggingIndex == index
-                    if (reorderEnabled) {
-                        ReorderableItem(
-                            state = reorderableState,
-                            key = album.id
-                        ) { isActivelyDragging ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
-                                    .graphicsLayer {
-                                        val scale = if (isActivelyDragging) 1.02f else 1f
-                                        scaleX = scale
-                                        scaleY = scale
-                                        alpha = if (isActivelyDragging) 0.9f else 1f
-                                    }
-                                    .then(
-                                        if (armed) {
-                                            Modifier.longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    HapticUtils.performStrongHaptic(context)
-                                                }
-                                            )
-                                        } else Modifier
-                                    )
-                                    .background(
-                                        when {
-                                            isActivelyDragging -> if (isDarkMode)
-                                                Color.White.copy(alpha = 0.1f)
-                                            else Color.Black.copy(alpha = 0.06f)
-                                            armed -> if (isDarkMode)
-                                                Color.White.copy(alpha = 0.06f)
-                                            else Color.Black.copy(alpha = 0.05f)
-                                            else -> Color.Transparent
-                                        }
-                                    )
-                            ) {
-                                AlbumItem(
-                                    album = album,
-                                    isDarkMode = isDarkMode,
-                                    hapticsEnabled = hapticsEnabled,
-                                    context = context,
-                                    isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
-                                    onClick = {
-                                        if (draggingIndex == null) onAlbumClick(album)
-                                    },
-                                    isDragging = armed,
-                                    onReorder = {
-                                        draggingIndex = if (armed) null else index
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    },
-                                    onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
-                                )
-                            }
-                        }
-                    } else {
-                        AlbumItem(
-                            album = album,
-                            isDarkMode = isDarkMode,
-                            hapticsEnabled = hapticsEnabled,
-                            context = context,
-                            isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
-                            onClick = { onAlbumClick(album) },
-                            onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
-                        )
-                    }
-                }
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
-        if (isSearching) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .floatingPill(barColor)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
-                    placeholder = {
-                        Text(
-                            "Search albums...",
-                            fontFamily = NothingFont,
-                            color = Color.Gray,
-                            fontSize = 14.sp
-                        )
-                    },
-                    textStyle = TextStyle(
-                        fontFamily = NothingFont,
-                        color = textColor,
-                        fontSize = 14.sp
-                    ),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Red,
-                        unfocusedBorderColor = Color.Red,
-                        focusedContainerColor = surfaceColor,
-                        unfocusedContainerColor = surfaceColor
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
-                        focusManager.clearFocus()
-                    })
-                )
-                Spacer(Modifier.width(4.dp))
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+    FloatingBarHost(
+        lockVisible = isSearching,
+        bar = {
+            ContextNavPill(
+                isDarkMode = isDarkMode,
+                contextLabel = "(ALBUMS)",
+                isSearching = isSearching,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                searchPlaceholder = "Search albums...",
+                focusRequester = focusRequester,
+                onBack = onBack,
+                onStartSearch = { isSearching = true },
+                onCancelSearch = {
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
-                }) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Cancel",
-                        tint = textColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .floatingPill(barColor)
-                    .padding(vertical = 4.dp, horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                },
+                onQueue = onNavigateQueue,
+                hapticsEnabled = hapticsEnabled,
+                context = context
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(bodyColor)
+        ) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                state = listState,
+                contentPadding = PaddingValues(bottom = FloatingBarClearance)
             ) {
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onBack()
-                }) {
-                    Icon(
-                        Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = textColor,
-                        modifier = Modifier.size(26.dp)
-                    )
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(bgColor)
+                            .padding(bottom = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Spacer(Modifier.height(32.dp))
+                        Icon(
+                            imageVector = Icons.Default.Bookmark,
+                            contentDescription = "Saved Albums",
+                            modifier = Modifier.size(100.dp),
+                            tint = textColor
+                        )
+                        Spacer(Modifier.height(24.dp))
+                    }
                 }
-                Row(
-                    modifier = Modifier
-                        .clickable {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            isSearching = true
+
+                stickyHeader {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { }
+                            .background(bgColor)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Saved Albums (${savedAlbums.size})",
+                                fontFamily = NothingFont,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                color = textColor
+                            )
                         }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = textColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        "(ALBUMS)",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = textColor
-                    )
+                        DashedDivider(
+                            modifier = Modifier.fillMaxWidth(),
+                            isDarkMode = isDarkMode,
+                            scrollProgress = scrollProgress.value
+                        )
+                    }
                 }
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onNavigateQueue()
-                }) {
-                    Icon(
-                        Icons.Default.QueueMusic,
-                        contentDescription = "Queue",
-                        tint = textColor,
-                        modifier = Modifier.size(26.dp)
-                    )
+
+                if (filteredAlbums.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 80.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (searchQuery.isBlank())
+                                    "No saved albums yet"
+                                else "No albums found",
+                                fontFamily = NothingFont,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    val displayedAlbums = if (reorderEnabled) liveAlbums else filteredAlbums
+                    itemsIndexed(
+                        items = displayedAlbums,
+                        key = { _, album -> album.id }
+                    ) { index, album ->
+                        val armed = reorderEnabled && draggingIndex == index
+                        if (reorderEnabled) {
+                            ReorderableItem(
+                                state = reorderableState,
+                                key = album.id
+                            ) { isActivelyDragging ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
+                                        .graphicsLayer {
+                                            val scale = if (isActivelyDragging) 1.02f else 1f
+                                            scaleX = scale
+                                            scaleY = scale
+                                            alpha = if (isActivelyDragging) 0.9f else 1f
+                                        }
+                                        .then(
+                                            if (armed) {
+                                                Modifier.longPressDraggableHandle(
+                                                    onDragStarted = {
+                                                        HapticUtils.performStrongHaptic(context)
+                                                    }
+                                                )
+                                            } else Modifier
+                                        )
+                                        .background(
+                                            when {
+                                                isActivelyDragging -> if (isDarkMode)
+                                                    Color.White.copy(alpha = 0.1f)
+                                                else Color.Black.copy(alpha = 0.06f)
+                                                armed -> if (isDarkMode)
+                                                    Color.White.copy(alpha = 0.06f)
+                                                else Color.Black.copy(alpha = 0.05f)
+                                                else -> Color.Transparent
+                                            }
+                                        )
+                                ) {
+                                    AlbumItem(
+                                        album = album,
+                                        isDarkMode = isDarkMode,
+                                        hapticsEnabled = hapticsEnabled,
+                                        context = context,
+                                        isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
+                                        onClick = {
+                                            if (draggingIndex == null) onAlbumClick(album)
+                                        },
+                                        isDragging = armed,
+                                        onReorder = {
+                                            draggingIndex = if (armed) null else index
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        },
+                                        onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
+                                    )
+                                }
+                            }
+                        } else {
+                            AlbumItem(
+                                album = album,
+                                isDarkMode = isDarkMode,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
+                                isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
+                                onClick = { onAlbumClick(album) },
+                                onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
+                            )
+                        }
+                    }
                 }
             }
+
+
         }
     }
 }

@@ -170,272 +170,223 @@ fun CustomPlaylistScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+    FloatingBarHost(
+        lockVisible = isSearching,
+        bar = {
+            ContextNavPill(
+                isDarkMode = isDarkMode,
+                contextLabel = "(PLAYLIST)",
+                isSearching = isSearching,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                searchPlaceholder = "Search in playlist...",
+                focusRequester = focusRequester,
+                onBack = onBack,
+                onStartSearch = { isSearching = true },
+                onCancelSearch = {
+                    isSearching = false
+                    searchQuery = ""
+                    focusManager.clearFocus()
+                },
+                onQueue = onNavigateQueue,
+                hapticsEnabled = hapticsEnabled,
+                context = context
+            )
+        }
+    ) {
+        Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
 
-        LazyColumn(modifier = Modifier.weight(1f), state = listState) {
+            LazyColumn(modifier = Modifier.weight(1f), state = listState, contentPadding = PaddingValues(bottom = FloatingBarClearance)) {
 
-            // ── Hero emoji (like LikedScreen) ──────────────────────────────
-            item {
-                Column(
-                    modifier = Modifier.fillMaxWidth().background(bgColor).padding(bottom = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Spacer(Modifier.height(32.dp))
-                    Text(
-                        text = if (isPlaylistCaching) "❤️‍🩹" else if (uncachedCount > 0) "💔" else playlist.emoji,
-                        fontSize = 100.sp
-                    )
-                    Spacer(Modifier.height(24.dp))
-                }
-            }
-
-            // ── Sticky header: name + count + shuffle ──────────────────────
-            stickyHeader {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) { }
-                        .background(bgColor)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                            .padding(start = 20.dp, top = 10.dp, end = 20.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                // ── Hero emoji (like LikedScreen) ──────────────────────────────
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().background(bgColor).padding(bottom = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Spacer(Modifier.height(32.dp))
                         Text(
-                            text = "${playlist.name} (${playlistSongs.size})",
-                            fontFamily = NothingFont,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = textColor
+                            text = if (isPlaylistCaching) "❤️‍🩹" else if (uncachedCount > 0) "💔" else playlist.emoji,
+                            fontSize = 100.sp
                         )
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            vm.shuffleCustomPlaylist(playlist.id)
-                        }) {
-                            Icon(Icons.Default.Shuffle, contentDescription = "Shuffle",
-                                tint = textColor, modifier = Modifier.size(24.dp))
-                        }
+                        Spacer(Modifier.height(24.dp))
                     }
+                }
 
-                    if (uncachedCount > 0) {
+                // ── Sticky header: name + count + shuffle ──────────────────────
+                stickyHeader {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { }
+                            .background(bgColor)
+                    ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                                .padding(start = 20.dp, top = 10.dp, end = 20.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (isPlaylistCaching) "Downloading songs. "
-                                       else if (uncachedCount == playlistSongs.size) "All songs aren't downloaded. "
-                                       else "$uncachedCount songs aren't downloaded. ",
+                                text = "${playlist.name} (${playlistSongs.size})",
                                 fontFamily = NothingFont,
-                                fontSize = 13.sp,
-                                color = Color.Gray
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                color = textColor
                             )
-                            Text(
-                                text = if (isPlaylistCaching) "See progress" else "Download them?",
-                                fontFamily = NothingFont,
-                                fontSize = 13.sp,
-                                color = Color(0xFF1565C0),
-                                textDecoration = TextDecoration.Underline,
-                                modifier = Modifier.clickable {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    onNavigateCacheSettings()
-                                }
-                            )
-                        }
-                    } else {
-                        Spacer(Modifier.height(6.dp))
-                    }
-
-                    DashedDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        isDarkMode = isDarkMode,
-                        scrollProgress = scrollProgress.value
-                    )
-                }
-            }
-
-            // ── Empty state ────────────────────────────────────────────────
-            if (filteredSongs.isEmpty() && searchQuery.isNotBlank()) {
-                item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(top = 60.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No results for \"$searchQuery\"",
-                            fontFamily = NothingFont,
-                            color = Color.Gray,
-                            fontSize = 15.sp
-                        )
-                    }
-                }
-            }
-
-            // ── Songs ──────────────────────────────────────────────────────
-            itemsIndexed(
-                items = if (reorderEnabled) livePlaylistSongs else filteredSongs,
-                key = { _, entity -> entity.songId }
-            ) { index, entity ->
-                val songIsCached = remember(entity.songId, uncachedCount) {
-                    com.rkd.audiobasics.cache.CacheManager.isCached(context, entity.songId)
-                }
-                val song = Song(
-                    id = entity.songId,
-                    title = entity.title,
-                    artist = entity.artist,
-                    thumbnail = entity.thumbnail,
-                    isExplicit = entity.isExplicit,
-                    albumId = entity.albumId,
-                    isCached = songIsCached,
-                    cacheFailed = !songIsCached,
-                    artistNames = Song.decodeArtistNames(entity.artistNames),
-                    artistIds = Song.decodeArtistIds(entity.artistIds)
-                )
-                val armed = reorderEnabled && draggingIndex == index
-
-                ReorderableItem(
-                    state = reorderableState,
-                    key = entity.songId
-                ) { isActivelyDragging ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
-                            .graphicsLayer {
-                                val scale = if (isActivelyDragging) 1.02f else 1f
-                                scaleX = scale
-                                scaleY = scale
-                                alpha = if (isActivelyDragging) 0.9f else 1f
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                vm.shuffleCustomPlaylist(playlist.id)
+                            }) {
+                                Icon(Icons.Default.Shuffle, contentDescription = "Shuffle",
+                                    tint = textColor, modifier = Modifier.size(24.dp))
                             }
-                            .then(
-                                if (armed) {
-                                    Modifier.longPressDraggableHandle(
-                                        onDragStarted = { HapticUtils.performStrongHaptic(context) }
-                                    )
-                                } else Modifier
-                            )
-                            .background(
-                                when {
-                                    isActivelyDragging -> if (isDarkMode) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.06f)
-                                    armed -> if (isDarkMode) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.05f)
-                                    else -> Color.Transparent
-                                }
-                            )
-                    ) {
-                        SongItem(
-                            song = song,
-                            isDarkMode = isDarkMode,
-                            isLiked = likedSongs.any { it.id == song.id },
-                            isPlaying = currentSong?.id == song.id,
-                            hapticsEnabled = hapticsEnabled,
-                            context = context,
-                            showCacheIndicator = true,
-                            removeLabel = "Remove from playlist",
-                            onClick = {
-                                if (draggingIndex == null) {
-                                    val queue = (if (reorderEnabled) livePlaylistSongs else filteredSongs).map {
-                                        Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId, artistNames = Song.decodeArtistNames(it.artistNames), artistIds = Song.decodeArtistIds(it.artistIds))
+                        }
+
+                        if (uncachedCount > 0) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (isPlaylistCaching) "Downloading songs. "
+                                           else if (uncachedCount == playlistSongs.size) "All songs aren't downloaded. "
+                                           else "$uncachedCount songs aren't downloaded. ",
+                                    fontFamily = NothingFont,
+                                    fontSize = 13.sp,
+                                    color = Color.Gray
+                                )
+                                Text(
+                                    text = if (isPlaylistCaching) "See progress" else "Download them?",
+                                    fontFamily = NothingFont,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF1565C0),
+                                    textDecoration = TextDecoration.Underline,
+                                    modifier = Modifier.clickable {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        onNavigateCacheSettings()
                                     }
-                                    vm.playWithQueue(song, queue)
-                                }
-                            },
-                            onLike = { vm.toggleLike(song) },
-                            onShare = {},
-                            onAddToQueue = { vm.addToQueue(song) },
-                            onPlayNext = { vm.playNext(song) },
-                            onReorder = null,
-                            onAddTo = { onAddTo(song) },
-                            onRetryCache = { vm.retryCacheInPlaylist(song) },
-                            onRemoveLike = { removeConfirm = song },
-                            isDragging = armed,
-                            isCaching = song.id in cachingSongIds
+                                )
+                            }
+                        } else {
+                            Spacer(Modifier.height(6.dp))
+                        }
+
+                        DashedDivider(
+                            modifier = Modifier.fillMaxWidth(),
+                            isDarkMode = isDarkMode,
+                            scrollProgress = scrollProgress.value
                         )
                     }
                 }
-            }
-        }
 
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp)
-            .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD)))
-
-        // ── Bottom bar ─────────────────────────────────────────────────────
-        if (isSearching) {
-            Row(
-                modifier = Modifier.fillMaxWidth().floatingPill(barColor)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
-                    placeholder = {
-                        Text("Search in playlist...", fontFamily = NothingFont,
-                            color = Color.Gray, fontSize = 14.sp)
-                    },
-                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 14.sp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Red, unfocusedBorderColor = Color.Red,
-                        focusedContainerColor = surfaceColor, unfocusedContainerColor = surfaceColor
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
-                )
-                Spacer(Modifier.width(4.dp))
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    isSearching = false; searchQuery = ""; focusManager.clearFocus()
-                }) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel",
-                        tint = textColor, modifier = Modifier.size(24.dp))
-                }
-            }
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth().floatingPill(barColor)
-                    .padding(vertical = 4.dp, horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onBack()
-                }) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back",
-                        tint = textColor, modifier = Modifier.size(26.dp))
-                }
-                Row(
-                    modifier = Modifier
-                        .clickable {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            isSearching = true
+                // ── Empty state ────────────────────────────────────────────────
+                if (filteredSongs.isEmpty() && searchQuery.isNotBlank()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(top = 60.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No results for \"$searchQuery\"",
+                                fontFamily = NothingFont,
+                                color = Color.Gray,
+                                fontSize = 15.sp
+                            )
                         }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = "Search",
-                        tint = textColor, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("(PLAYLIST)", fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
+                    }
                 }
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onNavigateQueue()
-                }) {
-                    Icon(Icons.Default.QueueMusic, contentDescription = "Queue",
-                        tint = textColor, modifier = Modifier.size(26.dp))
+
+                // ── Songs ──────────────────────────────────────────────────────
+                itemsIndexed(
+                    items = if (reorderEnabled) livePlaylistSongs else filteredSongs,
+                    key = { _, entity -> entity.songId }
+                ) { index, entity ->
+                    val songIsCached = remember(entity.songId, uncachedCount) {
+                        com.rkd.audiobasics.cache.CacheManager.isCached(context, entity.songId)
+                    }
+                    val song = Song(
+                        id = entity.songId,
+                        title = entity.title,
+                        artist = entity.artist,
+                        thumbnail = entity.thumbnail,
+                        isExplicit = entity.isExplicit,
+                        albumId = entity.albumId,
+                        isCached = songIsCached,
+                        cacheFailed = !songIsCached,
+                        artistNames = Song.decodeArtistNames(entity.artistNames),
+                        artistIds = Song.decodeArtistIds(entity.artistIds)
+                    )
+                    val armed = reorderEnabled && draggingIndex == index
+
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = entity.songId
+                    ) { isActivelyDragging ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
+                                .graphicsLayer {
+                                    val scale = if (isActivelyDragging) 1.02f else 1f
+                                    scaleX = scale
+                                    scaleY = scale
+                                    alpha = if (isActivelyDragging) 0.9f else 1f
+                                }
+                                .then(
+                                    if (armed) {
+                                        Modifier.longPressDraggableHandle(
+                                            onDragStarted = { HapticUtils.performStrongHaptic(context) }
+                                        )
+                                    } else Modifier
+                                )
+                                .background(
+                                    when {
+                                        isActivelyDragging -> if (isDarkMode) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.06f)
+                                        armed -> if (isDarkMode) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.05f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                        ) {
+                            SongItem(
+                                song = song,
+                                isDarkMode = isDarkMode,
+                                isLiked = likedSongs.any { it.id == song.id },
+                                isPlaying = currentSong?.id == song.id,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
+                                showCacheIndicator = true,
+                                removeLabel = "Remove from playlist",
+                                onClick = {
+                                    if (draggingIndex == null) {
+                                        val queue = (if (reorderEnabled) livePlaylistSongs else filteredSongs).map {
+                                            Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail, albumId = it.albumId, artistNames = Song.decodeArtistNames(it.artistNames), artistIds = Song.decodeArtistIds(it.artistIds))
+                                        }
+                                        vm.playWithQueue(song, queue)
+                                    }
+                                },
+                                onLike = { vm.toggleLike(song) },
+                                onShare = {},
+                                onAddToQueue = { vm.addToQueue(song) },
+                                onPlayNext = { vm.playNext(song) },
+                                onReorder = null,
+                                onAddTo = { onAddTo(song) },
+                                onRetryCache = { vm.retryCacheInPlaylist(song) },
+                                onRemoveLike = { removeConfirm = song },
+                                isDragging = armed,
+                                isCaching = song.id in cachingSongIds
+                            )
+                        }
+                    }
                 }
             }
+
+
         }
     }
 

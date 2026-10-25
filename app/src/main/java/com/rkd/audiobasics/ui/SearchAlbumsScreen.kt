@@ -68,73 +68,68 @@ fun SearchAlbumsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bodyColor)
+    FloatingBarHost(
+        bar = {
+            BackQueuePill(
+                isDarkMode = isDarkMode,
+                onBack = onBack,
+                onQueue = onNavigateQueue,
+                hapticsEnabled = hapticsEnabled,
+                context = context
+            )
+        }
     ) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
-        // Header
-        Text(
-            text = "Albums",
-            fontFamily = NothingFont,
-            fontWeight = FontWeight.Bold,
-            fontSize = 24.sp,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp)
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(bodyColor)
+        ) {
+          Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+            // Header
+            Text(
+                text = "Albums",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                color = textColor,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp)
+            )
 
-        HorizontalDivider(
-            modifier = Modifier.padding(horizontal = 0.dp),
-            color = subTextColor.copy(alpha = 0.3f),
-            thickness = 1.dp
-        )
-      }
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 0.dp),
+                color = subTextColor.copy(alpha = 0.3f),
+                thickness = 1.dp
+            )
+          }
 
-        Box(modifier = Modifier.weight(1f)) {
-            when {
-                isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color.Red)
-                }
-                albums.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No albums found", fontFamily = NothingFont, color = Color.Gray)
-                }
-                else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(albums) { album ->
-                            AlbumRowItem(
-                                album = album,
-                                isDarkMode = isDarkMode,
-                                showYear = false,
-                                onClick = { onAlbumClick(album) }
-                            )
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.Red)
+                    }
+                    albums.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No albums found", fontFamily = NothingFont, color = Color.Gray)
+                    }
+                    else -> {
+                        LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = FloatingBarClearance)
+                    ) {
+                            items(albums) { album ->
+                                AlbumRowItem(
+                                    album = album,
+                                    isDarkMode = isDarkMode,
+                                    showYear = false,
+                                    onClick = { onAlbumClick(album) }
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // Bottom bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
-            }
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onNavigateQueue()
-            }) {
-                Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = textColor, modifier = Modifier.size(26.dp))
-            }
+            // Bottom bar
+
         }
     }
 }

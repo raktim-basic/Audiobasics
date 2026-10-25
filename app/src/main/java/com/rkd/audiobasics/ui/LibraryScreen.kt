@@ -158,286 +158,231 @@ fun LibraryScreen(
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().background(bodyColor)
-    ) {
-        // ── List ───────────────────────────────────────────────────────────
-        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState) {
-            stickyHeader {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) { }
-                        .background(bgColor)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 24.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Your Library",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 22.sp,
-                                color = textColor
-                            )
-                            if (draggingIndex != null) {
-                                Text(
-                                    text = "Drag and drop",
-                                    fontFamily = NothingFont,
-                                    fontSize = 14.sp,
-                                    color = Color.Gray
-                                )
-                            } else if (cacheSize.isNotBlank()) {
-                                Text(
-                                    text = cacheSize,
-                                    fontFamily = NothingFont,
-                                    fontSize = 14.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                        // + button in header
-                        IconButton(onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            showCreateDialog = true
-                        }) {
-                            Text(
-                                text = "+",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 28.sp,
-                                color = textColor
-                            )
-                        }
-                    }
-
-                    DashedDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        isDarkMode = isDarkMode,
-                        scrollProgress = scrollProgress.value
-                    )
-                }
-            }
-
-            if (showLiked) {
-                item {
-                    LibraryRow(
-                        emoji = null,
-                        icon = {
-                            Icon(Icons.Default.Favorite, contentDescription = null,
-                                tint = Color.Red, modifier = Modifier.size(40.dp))
-                        },
-                        label = "Liked songs (${likedSongs.size})",
-                        isDarkMode = isDarkMode,
-                        hapticsEnabled = hapticsEnabled,
-                        context = context,
-                        showMenu = false,
-                        onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            onNavigateLiked()
-                        }
-                    )
-                }
-            }
-
-            if (showAlbums) {
-                item {
-                    LibraryRow(
-                        emoji = null,
-                        icon = {
-                            Icon(Icons.Default.Bookmark, contentDescription = null,
-                                tint = textColor, modifier = Modifier.size(40.dp))
-                        },
-                        label = "Saved albums (${savedAlbums.size})",
-                        isDarkMode = isDarkMode,
-                        hapticsEnabled = hapticsEnabled,
-                        context = context,
-                        showMenu = false,
-                        onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            onNavigateAlbums()
-                        }
-                    )
-                }
-            }
-
-            val displayedPlaylists = if (reorderEnabled) livePlaylists else filteredCustom
-            itemsIndexed(
-                items = displayedPlaylists,
-                key = { _, playlist -> playlist.id }
-            ) { index, playlist ->
-                val armed = reorderEnabled && draggingIndex == index
-
-                if (reorderEnabled) {
-                    ReorderableItem(
-                        state = reorderableState,
-                        key = playlist.id
-                    ) { isActivelyDragging ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
-                                .graphicsLayer {
-                                    val s = if (isActivelyDragging) 1.02f else 1f
-                                    scaleX = s
-                                    scaleY = s
-                                    alpha = if (isActivelyDragging) 0.9f else 1f
-                                }
-                                .then(
-                                    if (armed) {
-                                        Modifier.longPressDraggableHandle(
-                                            onDragStarted = {
-                                                HapticUtils.performStrongHaptic(context)
-                                            }
-                                        )
-                                    } else Modifier
-                                )
-                                .background(
-                                    when {
-                                        isActivelyDragging -> if (isDarkMode)
-                                            Color.White.copy(alpha = 0.1f)
-                                        else Color.Black.copy(alpha = 0.06f)
-                                        armed -> if (isDarkMode)
-                                            Color.White.copy(alpha = 0.06f)
-                                        else Color.Black.copy(alpha = 0.05f)
-                                        else -> Color.Transparent
-                                    }
-                                )
-                        ) {
-                            LibraryRow(
-                                emoji = playlist.emoji,
-                                icon = null,
-                                label = playlist.name,
-                                hapticsEnabled = hapticsEnabled,
-                                context = context,
-                                isDarkMode = isDarkMode,
-                                showMenu = true,
-                                onClick = {
-                                    // While any playlist is armed for reorder, taps must not
-                                    // navigate — a press-and-release-without-moving can
-                                    // otherwise race the drag gesture and fire as a normal click.
-                                    if (draggingIndex == null) {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        onNavigatePlaylist(playlist)
-                                    }
-                                },
-                                onRename = { renameTarget = playlist },
-                                onDelete = { deleteTarget = playlist },
-                                isDragging = armed,
-                                onReorder = {
-                                    draggingIndex = if (armed) null else index
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                }
-                            )
-                        }
-                    }
-                } else {
-                    LibraryRow(
-                        emoji = playlist.emoji,
-                        icon = null,
-                        label = playlist.name,
-                        hapticsEnabled = hapticsEnabled,
-                        context = context,
-                        isDarkMode = isDarkMode,
-                        showMenu = true,
-                        onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            onNavigatePlaylist(playlist)
-                        },
-                        onRename = { renameTarget = playlist },
-                        onDelete = { deleteTarget = playlist }
-                    )
-                }
-            }
-        }
-
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp)
-            .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD)))
-
-        // ── Bottom bar ─────────────────────────────────────────────────────
-        if (isSearching) {
-            Row(
-                modifier = Modifier.fillMaxWidth().floatingPill(barColor)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
-                    placeholder = {
-                        Text("Search library...", fontFamily = NothingFont,
-                            color = Color.Gray, fontSize = 14.sp)
-                    },
-                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 14.sp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Red,
-                        unfocusedBorderColor = Color.Red,
-                        focusedContainerColor = surfaceColor,
-                        unfocusedContainerColor = surfaceColor
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        imeAction = ImeAction.Search
-                    ),
-                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() })
-                )
-                Spacer(Modifier.width(4.dp))
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+    FloatingBarHost(
+        lockVisible = isSearching,
+        bar = {
+            ContextNavPill(
+                isDarkMode = isDarkMode,
+                contextLabel = "(LIBRARY)",
+                isSearching = isSearching,
+                searchQuery = searchQuery,
+                onSearchQueryChange = { searchQuery = it },
+                searchPlaceholder = "Search library...",
+                focusRequester = focusRequester,
+                onBack = onBack,
+                onStartSearch = { isSearching = true },
+                onCancelSearch = {
                     isSearching = false
                     searchQuery = ""
                     focusManager.clearFocus()
-                }) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel",
-                        tint = textColor, modifier = Modifier.size(24.dp))
-                }
-            }
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth().floatingPill(barColor)
-                    .padding(vertical = 4.dp, horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onBack()
-                }) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back",
-                        tint = textColor, modifier = Modifier.size(26.dp))
-                }
-                Row(
-                    modifier = Modifier
-                        .clickable {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            isSearching = true
+                },
+                onQueue = onNavigateQueue,
+                hapticsEnabled = hapticsEnabled,
+                context = context
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().background(bodyColor)
+        ) {
+            // ── List ───────────────────────────────────────────────────────────
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(bottom = FloatingBarClearance)) {
+                stickyHeader {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { }
+                            .background(bgColor)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 24.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Your Library",
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 22.sp,
+                                    color = textColor
+                                )
+                                if (draggingIndex != null) {
+                                    Text(
+                                        text = "Drag and drop",
+                                        fontFamily = NothingFont,
+                                        fontSize = 14.sp,
+                                        color = Color.Gray
+                                    )
+                                } else if (cacheSize.isNotBlank()) {
+                                    Text(
+                                        text = cacheSize,
+                                        fontFamily = NothingFont,
+                                        fontSize = 14.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                            // + button in header
+                            IconButton(onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                showCreateDialog = true
+                            }) {
+                                Text(
+                                    text = "+",
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 28.sp,
+                                    color = textColor
+                                )
+                            }
                         }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = "Search",
-                        tint = textColor, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("(LIBRARY)", fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold, fontSize = 13.sp, color = textColor)
+
+                        DashedDivider(
+                            modifier = Modifier.fillMaxWidth(),
+                            isDarkMode = isDarkMode,
+                            scrollProgress = scrollProgress.value
+                        )
+                    }
                 }
-                IconButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onNavigateQueue()
-                }) {
-                    Icon(Icons.Default.QueueMusic, contentDescription = "Queue",
-                        tint = textColor, modifier = Modifier.size(26.dp))
+
+                if (showLiked) {
+                    item {
+                        LibraryRow(
+                            emoji = null,
+                            icon = {
+                                Icon(Icons.Default.Favorite, contentDescription = null,
+                                    tint = Color.Red, modifier = Modifier.size(40.dp))
+                            },
+                            label = "Liked songs (${likedSongs.size})",
+                            isDarkMode = isDarkMode,
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            showMenu = false,
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                onNavigateLiked()
+                            }
+                        )
+                    }
+                }
+
+                if (showAlbums) {
+                    item {
+                        LibraryRow(
+                            emoji = null,
+                            icon = {
+                                Icon(Icons.Default.Bookmark, contentDescription = null,
+                                    tint = textColor, modifier = Modifier.size(40.dp))
+                            },
+                            label = "Saved albums (${savedAlbums.size})",
+                            isDarkMode = isDarkMode,
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            showMenu = false,
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                onNavigateAlbums()
+                            }
+                        )
+                    }
+                }
+
+                val displayedPlaylists = if (reorderEnabled) livePlaylists else filteredCustom
+                itemsIndexed(
+                    items = displayedPlaylists,
+                    key = { _, playlist -> playlist.id }
+                ) { index, playlist ->
+                    val armed = reorderEnabled && draggingIndex == index
+
+                    if (reorderEnabled) {
+                        ReorderableItem(
+                            state = reorderableState,
+                            key = playlist.id
+                        ) { isActivelyDragging ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
+                                    .graphicsLayer {
+                                        val s = if (isActivelyDragging) 1.02f else 1f
+                                        scaleX = s
+                                        scaleY = s
+                                        alpha = if (isActivelyDragging) 0.9f else 1f
+                                    }
+                                    .then(
+                                        if (armed) {
+                                            Modifier.longPressDraggableHandle(
+                                                onDragStarted = {
+                                                    HapticUtils.performStrongHaptic(context)
+                                                }
+                                            )
+                                        } else Modifier
+                                    )
+                                    .background(
+                                        when {
+                                            isActivelyDragging -> if (isDarkMode)
+                                                Color.White.copy(alpha = 0.1f)
+                                            else Color.Black.copy(alpha = 0.06f)
+                                            armed -> if (isDarkMode)
+                                                Color.White.copy(alpha = 0.06f)
+                                            else Color.Black.copy(alpha = 0.05f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                            ) {
+                                LibraryRow(
+                                    emoji = playlist.emoji,
+                                    icon = null,
+                                    label = playlist.name,
+                                    hapticsEnabled = hapticsEnabled,
+                                    context = context,
+                                    isDarkMode = isDarkMode,
+                                    showMenu = true,
+                                    onClick = {
+                                        // While any playlist is armed for reorder, taps must not
+                                        // navigate — a press-and-release-without-moving can
+                                        // otherwise race the drag gesture and fire as a normal click.
+                                        if (draggingIndex == null) {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            onNavigatePlaylist(playlist)
+                                        }
+                                    },
+                                    onRename = { renameTarget = playlist },
+                                    onDelete = { deleteTarget = playlist },
+                                    isDragging = armed,
+                                    onReorder = {
+                                        draggingIndex = if (armed) null else index
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        LibraryRow(
+                            emoji = playlist.emoji,
+                            icon = null,
+                            label = playlist.name,
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            isDarkMode = isDarkMode,
+                            showMenu = true,
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                onNavigatePlaylist(playlist)
+                            },
+                            onRename = { renameTarget = playlist },
+                            onDelete = { deleteTarget = playlist }
+                        )
+                    }
                 }
             }
+
+
         }
     }
 

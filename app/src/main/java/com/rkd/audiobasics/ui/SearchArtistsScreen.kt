@@ -59,66 +59,61 @@ fun SearchArtistsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bodyColor)
+    FloatingBarHost(
+        bar = {
+            BackQueuePill(
+                isDarkMode = isDarkMode,
+                onBack = onBack,
+                onQueue = onNavigateQueue,
+                hapticsEnabled = hapticsEnabled,
+                context = context
+            )
+        }
     ) {
-      Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
-        Text(
-            text = "Artists",
-            fontFamily = NothingFont,
-            fontWeight = FontWeight.Bold,
-            fontSize = 24.sp,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp)
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(bodyColor)
+        ) {
+          Column(modifier = Modifier.fillMaxWidth().background(bgColor)) {
+            Text(
+                text = "Artists",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                color = textColor,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp)
+            )
 
-        HorizontalDivider(color = subTextColor.copy(alpha = 0.3f))
-      }
+            HorizontalDivider(color = subTextColor.copy(alpha = 0.3f))
+          }
 
-        Box(modifier = Modifier.weight(1f)) {
-            when {
-                isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color.Red)
-                }
-                artists.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No artists found", fontFamily = NothingFont, color = Color.Gray)
-                }
-                else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(artists) { artist ->
-                            ArtistRowItem(
-                                artist = artist,
-                                isDarkMode = isDarkMode,
-                                onClick = { onArtistClick(artist) }
-                            )
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.Red)
+                    }
+                    artists.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No artists found", fontFamily = NothingFont, color = Color.Gray)
+                    }
+                    else -> {
+                        LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = FloatingBarClearance)
+                    ) {
+                            items(artists) { artist ->
+                                ArtistRowItem(
+                                    artist = artist,
+                                    isDarkMode = isDarkMode,
+                                    onClick = { onArtistClick(artist) }
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
-            }
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onNavigateQueue()
-            }) {
-                Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = textColor, modifier = Modifier.size(26.dp))
-            }
+
         }
     }
 }

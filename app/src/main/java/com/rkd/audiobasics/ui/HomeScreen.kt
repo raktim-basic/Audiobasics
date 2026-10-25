@@ -61,157 +61,9 @@ fun HomeScreen(
     val subTextColor = if (isDarkMode) Color(0xFF888888) else Color(0xFF999999)
     val cardBg = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bodyColor)
-    ) {
-      // Home is entirely pure black in dark mode, slogan header included (bodyColor == bgColor
-      // in light mode, so light is unchanged).
-      Column(modifier = Modifier.fillMaxWidth().background(bodyColor)) {
-        // ── Header / slogan ────────────────────────────────────────────────
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 32.dp)
-        ) {
-            if (updateAvailable) {
-                Text(
-                    text = "An update is available!",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
-                    color = textColor
-                )
-                Text(
-                    text = "Check in settings",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
-                    color = textColor
-                )
-            } else {
-                // Remote header (ab-configs/header.json, via MigrationMessageProvider)
-                // takes over from the static slogan once fetched; the provider's getters
-                // fall back to their hardcoded defaults automatically if the fetch hasn't
-                // resolved yet or failed, so there's never a blank header. Reading
-                // homeHeaderReady here (even though it's unused beyond that) ties this
-                // block to the StateFlow so it recomposes the instant the fetch resolves,
-                // rather than only showing fresh text on the next screen visit.
-                @Suppress("UNUSED_EXPRESSION") homeHeaderReady
-                Text(
-                    text = MigrationMessageProvider.homeHeaderLine1(),
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
-                    color = textColor
-                )
-                Text(
-                    text = MigrationMessageProvider.homeHeaderLine2(),
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 22.sp,
-                    color = textColor
-                )
-            }
-        }
-
-        StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
-      }
-
-        Spacer(Modifier.weight(1f))
-
-        // ── Discover Music (disabled placeholder) ──────────────────────────
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 6.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(cardBg)
-                .clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    Toast
-                        .makeText(context, "Being developed rn 🔥", Toast.LENGTH_SHORT)
-                        .show()
-                }
-                .padding(horizontal = 16.dp, vertical = 14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = subTextColor,
-                    modifier = Modifier.size(28.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "Discover Music",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = subTextColor
-                    )
-                    Text(
-                        text = "Coming soon",
-                        fontFamily = NothingFont,
-                        fontSize = 12.sp,
-                        color = subTextColor.copy(alpha = 0.6f)
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = ">",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = subTextColor
-                )
-            }
-        }
-
-        // ── Your Library ───────────────────────────────────────────────────
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 6.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFFFF0000))
-                .clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onNavigateLibrary()
-                }
-                .padding(horizontal = 16.dp, vertical = 24.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.LibraryMusic,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(64.dp)
-                )
-                Spacer(Modifier.width(16.dp))
-                Text(
-                    text = "Your Library",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    color = Color.White
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = ">",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = Color.White
-                )
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        HomeBottomBar(
+    FloatingBarHost(
+        bar = {
+            HomeBottomBar(
             isDarkMode = isDarkMode,
             onSettings = onNavigateSettings,
             onSearch = onNavigateSearch,
@@ -219,6 +71,160 @@ fun HomeScreen(
             hapticsEnabled = hapticsEnabled,
             context = context
         )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(bodyColor)
+        ) {
+          // Home is entirely pure black in dark mode, slogan header included (bodyColor == bgColor
+          // in light mode, so light is unchanged).
+          Column(modifier = Modifier.fillMaxWidth().background(bodyColor)) {
+            // ── Header / slogan ────────────────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 32.dp)
+            ) {
+                if (updateAvailable) {
+                    Text(
+                        text = "An update is available!",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = textColor
+                    )
+                    Text(
+                        text = "Check in settings",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = textColor
+                    )
+                } else {
+                    // Remote header (ab-configs/header.json, via MigrationMessageProvider)
+                    // takes over from the static slogan once fetched; the provider's getters
+                    // fall back to their hardcoded defaults automatically if the fetch hasn't
+                    // resolved yet or failed, so there's never a blank header. Reading
+                    // homeHeaderReady here (even though it's unused beyond that) ties this
+                    // block to the StateFlow so it recomposes the instant the fetch resolves,
+                    // rather than only showing fresh text on the next screen visit.
+                    @Suppress("UNUSED_EXPRESSION") homeHeaderReady
+                    Text(
+                        text = MigrationMessageProvider.homeHeaderLine1(),
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = textColor
+                    )
+                    Text(
+                        text = MigrationMessageProvider.homeHeaderLine2(),
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = textColor
+                    )
+                }
+            }
+
+            StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
+          }
+
+            Spacer(Modifier.weight(1f))
+
+            // ── Discover Music (disabled placeholder) ──────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(cardBg)
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        Toast
+                            .makeText(context, "Being developed rn 🔥", Toast.LENGTH_SHORT)
+                            .show()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = subTextColor,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Discover Music",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = subTextColor
+                        )
+                        Text(
+                            text = "Coming soon",
+                            fontFamily = NothingFont,
+                            fontSize = 12.sp,
+                            color = subTextColor.copy(alpha = 0.6f)
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = ">",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = subTextColor
+                    )
+                }
+            }
+
+            // ── Your Library ───────────────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFFF0000))
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onNavigateLibrary()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 24.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.LibraryMusic,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = "Your Library",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = ">",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.White
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+
+        }
     }
 }
 
@@ -231,36 +237,14 @@ fun HomeBottomBar(
     hapticsEnabled: Boolean,
     context: android.content.Context
 ) {
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
-    val iconColor = if (isDarkMode) Color.White else Color.Black
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .floatingPill(bgColor)
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = {
-            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-            onSettings()
-        }) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = iconColor, modifier = Modifier.size(28.dp))
-        }
-        IconButton(onClick = {
-            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-            onSearch()
-        }) {
-            Icon(Icons.Default.Search, contentDescription = "Search", tint = iconColor, modifier = Modifier.size(28.dp))
-        }
-        IconButton(onClick = {
-            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-            onQueue()
-        }) {
-            Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = iconColor, modifier = Modifier.size(28.dp))
-        }
-    }
+    HomeNavPill(
+        isDarkMode = isDarkMode,
+        onSettings = onSettings,
+        onSearch = onSearch,
+        onQueue = onQueue,
+        hapticsEnabled = hapticsEnabled,
+        context = context
+    )
 }
 
 @Composable
