@@ -1,7 +1,13 @@
 package com.rkd.audiobasics.ui
 
 import com.rkd.audiobasics.ui.theme.AmoledBlack
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -49,6 +55,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -62,6 +69,48 @@ private fun formatAlbumDuration(ms: Long): String {
     val s = totalSec % 60
     return if (h > 0) "%02d:%02d:%02d".format(h, m, s)
     else "%02d:%02d".format(m, s)
+}
+
+// Upper bounds for the artist-data lookup below, so a slow or failing search can never keep the
+// album screen on its loading spinner for long (it just falls back to the string-split names).
+private const val MAX_ARTIST_LOOKUPS = 4
+private const val ARTIST_LOOKUP_TIMEOUT_MS = 4000L
+
+/**
+ * Albums normally arrive with every track's artists already structured (real run boundaries +
+ * channel ids), so this does nothing for them — no network calls at all. Tracks that came back
+ * WITHOUT that data (typically a single/EP, whose lone track row carries the header's joined
+ * credit like "The Weeknd & Kendrick Lamar" instead of separate artist runs) get their artist
+ * names/ids from the song's own catalog metadata via refreshSongMetadata.
+ *
+ * Tracks sharing the exact same credit string share one lookup, and the number of lookups is
+ * capped, so even an album full of unresolved tracks costs a handful of calls, not one per track.
+ * Only artistNames/artistIds are applied — the display string and everything else on the song is
+ * left untouched. If a lookup fails or times out the song is returned unchanged.
+ */
+private suspend fun resolveMissingArtistData(songs: List<Song>): List<Song> {
+    fun lacksArtistLinks(s: Song) = s.artistNames.isEmpty() || s.artistIds.none { it != null }
+    fun creditKey(s: Song) = s.artist.trim().lowercase()
+
+    val unresolved = songs.filter { lacksArtistLinks(it) }
+    if (unresolved.isEmpty()) return songs
+
+    val representatives = unresolved.distinctBy { creditKey(it) }.take(MAX_ARTIST_LOOKUPS)
+    val semaphore = Semaphore(3)
+    val resolvedByCredit: Map<String, Song> = withTimeoutOrNull(ARTIST_LOOKUP_TIMEOUT_MS) {
+        coroutineScope {
+            representatives.map { rep ->
+                async { semaphore.withPermit { creditKey(rep) to Innertube.refreshSongMetadata(rep) } }
+            }.awaitAll().toMap()
+        }
+    } ?: emptyMap()
+
+    return songs.map { song ->
+        if (!lacksArtistLinks(song)) return@map song
+        val fresh = resolvedByCredit[creditKey(song)] ?: return@map song
+        if (fresh.artistNames.isEmpty() || fresh.artistIds.none { it != null }) song
+        else song.copy(artistNames = fresh.artistNames, artistIds = fresh.artistIds)
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -152,11 +201,18 @@ fun AlbumScreen(
         // silently ignored in that case since we already have something to show.
         try {
             if (persisted == null) isLoading = true
-            val (meta, songs) = com.rkd.audiobasics.api.Innertube.getAlbumSongs(
+            val (meta, fetchedSongs) = Innertube.getAlbumSongs(
                 browseId = album.id,
                 fallbackArtist = album.artist,
                 caller = "AlbumScreen"
             )
+            // Fill in artist names/ids for any track that came back unstructured (singles/EPs)
+            // BEFORE showing anything, so the loading spinner covers it and the header never
+            // flashes the joined credit. A no-op (no network) for albums that already have it.
+            val songs = resolveMissingArtistData(fetchedSongs)
+            val isVariousArtists = Innertube.isVariousArtists(meta?.artist ?: album.artist)
+            val resolvedArtistNames = if (isVariousArtists) emptyList() else Innertube.commonAlbumArtistNames(songs)
+            val resolvedArtistIds = if (isVariousArtists) emptyMap() else Innertube.commonAlbumArtistIds(songs)
             // Innertube.getAlbumSongs fails silently (returns null/empty) rather than
             // throwing on network errors — don't let a failed live refresh clobber a
             // working persisted tracklist with an empty one.
@@ -181,11 +237,17 @@ fun AlbumScreen(
             if (meta != null) {
                 enrichedAlbum = album.copy(
                     title = meta.title.ifBlank { album.title },
-                    artist = meta.artist.ifBlank { album.artist },
+                    artist = when {
+                        isVariousArtists -> "Various Artists"
+                        resolvedArtistNames.isNotEmpty() -> resolvedArtistNames.joinToString(" & ")
+                        else -> meta.artist.ifBlank { album.artist }
+                    },
                     thumbnail = meta.thumbnail.ifBlank { album.thumbnail },
                     year = meta.year.ifBlank { album.year },
-                    artistNames = meta.artistNames.ifEmpty { album.artistNames },
-                    artistIds = meta.artistIds.ifEmpty { album.artistIds },
+                    artistNames = if (isVariousArtists) emptyList()
+                        else resolvedArtistNames.ifEmpty { meta.artistNames.ifEmpty { album.artistNames } },
+                    artistIds = if (isVariousArtists) emptyMap()
+                        else resolvedArtistIds.ifEmpty { meta.artistIds.ifEmpty { album.artistIds } },
                     // An album is explicit if YTM says so, or if even one of its songs is
                     isExplicit = album.isExplicit || meta.isExplicit || albumSongs.any { it.isExplicit }
                 )
@@ -304,7 +366,16 @@ fun AlbumScreen(
                                 ExplicitBadge(isDarkMode, Modifier.align(Alignment.CenterVertically))
                                 Spacer(Modifier.width(6.dp))
                             }
-                            artistList.forEachIndexed { i, artist ->
+                            if (Innertube.isVariousArtists(enrichedAlbum.artist)) {
+                                // Compilation: plain text, not a link — there's no single
+                                // artist page to open.
+                                Text(
+                                    text = "Various artists",
+                                    fontFamily = NothingFont,
+                                    fontSize = 14.sp,
+                                    color = textColor
+                                )
+                            } else artistList.forEachIndexed { i, artist ->
                                 Text(
                                     text = buildAnnotatedString {
                                         withStyle(SpanStyle(
@@ -422,7 +493,11 @@ fun AlbumScreen(
                             IconButton(
                                 onClick = {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    overlay.show(anchor = playMenuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                                    if (albumSongs.size == 1) {
+                                        // One track (single): nothing to choose between, so just
+                                        // play it — same call as tapping its row.
+                                        vm.playWithQueue(albumSongs.first(), albumSongs)
+                                    } else overlay.show(anchor = playMenuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
                                         MorphMenuColumn {
                                             MorphMenuItem(
                                                 text = "Play all",
