@@ -187,7 +187,7 @@ fun LibraryScreen(
             modifier = Modifier.fillMaxSize().background(bodyColor)
         ) {
             // ── List ───────────────────────────────────────────────────────────
-            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState) {
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)) {
                 stickyHeader {
                     Column(
                         modifier = Modifier

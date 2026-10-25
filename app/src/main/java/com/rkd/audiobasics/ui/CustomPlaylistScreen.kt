@@ -197,7 +197,7 @@ fun CustomPlaylistScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
 
-            LazyColumn(modifier = Modifier.weight(1f), state = listState) {
+            LazyColumn(modifier = Modifier.weight(1f), state = listState, contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)) {
 
                 // ── Hero emoji (like LikedScreen) ──────────────────────────────
                 item {

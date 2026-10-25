@@ -191,7 +191,7 @@ fun ArtistScreen(
                     CircularProgressIndicator(color = Color.Red)
                 }
             } else {
-                LazyColumn(modifier = Modifier.weight(1f), state = listState) {
+                LazyColumn(modifier = Modifier.weight(1f), state = listState, contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)) {
 
                     // ── Hero image ─────────────────────────────────────────────────
                     item {

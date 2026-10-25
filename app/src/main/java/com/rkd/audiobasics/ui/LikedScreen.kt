@@ -205,7 +205,8 @@ fun LikedScreen(
         ) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                state = listState
+                state = listState,
+                contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)
             ) {
                 item {
                     Column(
