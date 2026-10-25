@@ -385,7 +385,7 @@ private fun SettingsMainPage(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 20.dp),
+                            .padding(top = 20.dp, bottom = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -405,11 +405,36 @@ private fun SettingsMainPage(
                         )
                     }
                 }
+
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Discord server",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color(0xFF1565C0),
+                            textDecoration = TextDecoration.Underline,
+                            modifier = Modifier.clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW,
+                                        Uri.parse("https://discord.gg/FaW4jUU5Z"))
+                                )
+                            }
+                        )
+                    }
+                }
             
             // "Made by" credit (used to live in the bottom bar)
             item {
                 Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
         val madeByText = buildAnnotatedString {
