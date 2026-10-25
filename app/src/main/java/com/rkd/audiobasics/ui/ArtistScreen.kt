@@ -404,7 +404,7 @@ fun ArtistScreen(
         // ── Bottom bar ─────────────────────────────────────────────────────
         if (isSearching) {
             Row(
-                modifier = Modifier.fillMaxWidth().background(barColor)
+                modifier = Modifier.fillMaxWidth().floatingPill(barColor)
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -441,7 +441,7 @@ fun ArtistScreen(
             }
         } else {
             Row(
-                modifier = Modifier.fillMaxWidth().background(barColor)
+                modifier = Modifier.fillMaxWidth().floatingPill(barColor)
                     .padding(vertical = 4.dp, horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
