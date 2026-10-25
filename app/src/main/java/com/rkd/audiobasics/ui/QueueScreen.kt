@@ -318,7 +318,7 @@ fun QueueScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(barColor)
+                .floatingPill(barColor)
                 .padding(vertical = 4.dp, horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
