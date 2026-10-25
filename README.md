@@ -10,6 +10,8 @@ A lightweight music client for android
 </a>
 
 #
+[Discord server](https://discord.gg/FaW4jUU5Z) | join our discord server to support development.
+
 Just you and your music, no recommendation bs.
 
 listen what you choose, yes you. because sometimes choosing yourself feels better.
