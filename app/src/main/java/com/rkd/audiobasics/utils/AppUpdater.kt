@@ -9,6 +9,9 @@ import android.os.Build
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -25,6 +28,17 @@ import java.util.concurrent.TimeUnit
  */
 object AppUpdater {
     private const val APK_NAME = "Audiobasics-update.apk"
+
+    private val _installing = MutableStateFlow(false)
+
+    /** True from the moment the APK is handed to Android's installer until it reports back
+     *  (cancelled / failed) — or the app is replaced, which kills the process. The updater shows
+     *  an "Installing update..." dialog while this is set. */
+    val installing: StateFlow<Boolean> = _installing.asStateFlow()
+
+    fun setInstalling(value: Boolean) {
+        _installing.value = value
+    }
 
     /**
      * Downloads [url] into cacheDir/updates/, reporting whole-percent progress through
@@ -85,6 +99,8 @@ object AppUpdater {
     /** Streams [apk] into a PackageInstaller session and commits it. Android then shows its
      *  own install confirmation (via [InstallResultReceiver]). */
     suspend fun installApk(context: Context, apk: File) = withContext(Dispatchers.IO) {
+        _installing.value = true
+        try {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -107,6 +123,10 @@ object AppUpdater {
             )
             session.commit(pi.intentSender)
         }
+            } catch (e: Throwable) {
+            _installing.value = false
+            throw e
+        }
     }
 }
 
@@ -121,14 +141,22 @@ class InstallResultReceiver : BroadcastReceiver() {
                 } else {
                     intent.getParcelableExtra(Intent.EXTRA_INTENT)
                 }
-                confirm?.let {
-                    it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(it)
+                if (confirm != null) {
+                    confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(confirm)
+                } else {
+                    AppUpdater.setInstalling(false)
+                    Toast.makeText(context, "Update failed : no install prompt", Toast.LENGTH_LONG).show()
                 }
             }
-            PackageInstaller.STATUS_SUCCESS -> { /* the app is replaced and restarted by Android */ }
-            PackageInstaller.STATUS_FAILURE_ABORTED -> { /* user cancelled the install */ }
+            PackageInstaller.STATUS_SUCCESS -> AppUpdater.setInstalling(false) // the app is replaced by Android
+            PackageInstaller.STATUS_FAILURE_ABORTED -> {
+                // user cancelled the install
+                AppUpdater.setInstalling(false)
+                Toast.makeText(context, "Update cancelled", Toast.LENGTH_SHORT).show()
+            }
             else -> {
+                AppUpdater.setInstalling(false)
                 val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
                 Toast.makeText(
                     context,
