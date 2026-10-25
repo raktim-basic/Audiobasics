@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -42,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -82,13 +85,14 @@ import com.rkd.audiobasics.utils.HapticUtils
 // player and scrolls underneath), hug their buttons, resize with state, and slide away while the
 // list is scrolled down.
 //
-// Per screen: wrap the screen in [FloatingBarHost], pass the pill as `bar`, and give the list
-// `contentPadding = PaddingValues(bottom = FloatingBarClearance)` so its last row can scroll
-// clear of the pill.
+// Per screen: wrap the screen in [FloatingBarHost], pass the pill as `bar` and the screen's list
+// state as `listState`. Lists need no extra bottom padding: the pill hides as the list scrolls
+// down, so the last row is always fully visible at the end. Screens that don't scroll (Home)
+// reserve [FloatingBarClearance] under their content instead.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Space a scrolling list keeps free at its bottom so its last row can clear the pill. */
-val FloatingBarClearance: Dp = 96.dp
+/** Space a NON-scrolling screen (Home) keeps free at its bottom so content sits above the pill. */
+val FloatingBarClearance: Dp = 84.dp
 
 /** Gap between the pill and the docked mini player underneath it. */
 private val PillGapAboveMiniPlayer: Dp = 12.dp
@@ -163,21 +167,47 @@ class FloatingBarState {
  * player, which lives outside this host). The bar slides down and fades while the content is
  * scrolled down and returns on scroll up; [lockVisible] keeps it on screen (e.g. while the
  * search field is open).
+ *
+ * Passing the screen's [listState] makes hiding smart: the bar may hide when the list can
+ * scroll, or when the list is too short to scroll but its last row sits underneath the bar
+ * (a swipe then tucks the bar away so the row can be reached). If the list is short and nothing
+ * is under the bar, the bar simply stays — and comes back on its own if it was hidden when the
+ * list was longer (e.g. after switching tabs). Without a [listState] the bar never hides.
  */
 @Composable
 fun FloatingBarHost(
     modifier: Modifier = Modifier,
     lockVisible: Boolean = false,
     barAlignment: Alignment = Alignment.BottomCenter,
+    listState: LazyListState? = null,
     bar: @Composable () -> Unit,
     content: @Composable () -> Unit
 ) {
     val state = remember { FloatingBarState() }
+    var barHeightPx by remember { mutableStateOf(0) }
+
+    val hideAllowed by remember(listState) {
+        derivedStateOf {
+            val ls = listState
+            when {
+                ls == null -> false
+                ls.canScrollForward || ls.canScrollBackward -> true
+                else -> {
+                    // Everything fits on screen: only worth hiding if the bar covers some of it.
+                    val info = ls.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull()
+                    val contentBottom = if (last == null) 0 else last.offset + last.size
+                    contentBottom > info.viewportEndOffset - barHeightPx
+                }
+            }
+        }
+    }
+
     LaunchedEffect(lockVisible) {
         if (lockVisible) state.hidden = false
     }
     val hideFraction by animateFloatAsState(
-        targetValue = if (state.hidden && !lockVisible) 1f else 0f,
+        targetValue = if (state.hidden && hideAllowed && !lockVisible) 1f else 0f,
         animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
         label = "floatingBarHide"
     )
@@ -186,6 +216,7 @@ fun FloatingBarHost(
         Box(
             modifier = Modifier
                 .align(barAlignment)
+                .onSizeChanged { barHeightPx = it.height }
                 .graphicsLayer {
                     translationY = hideFraction * (size.height + 32.dp.toPx())
                     alpha = 1f - hideFraction

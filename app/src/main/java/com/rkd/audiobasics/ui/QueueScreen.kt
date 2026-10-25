@@ -157,6 +157,7 @@ fun QueueScreen(
     }
 
     FloatingBarHost(
+        listState = listState,
         bar = {
             QueueNavPill(
                 isDarkMode = isDarkMode,
@@ -241,8 +242,7 @@ fun QueueScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    state = listState,
-                    contentPadding = PaddingValues(bottom = FloatingBarClearance)
+                    state = listState
                 ) {
                     itemsIndexed(
                         items = liveQueue,

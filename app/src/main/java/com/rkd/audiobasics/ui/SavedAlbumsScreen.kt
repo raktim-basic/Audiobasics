@@ -152,6 +152,7 @@ fun SavedAlbumsScreen(
 
     FloatingBarHost(
         lockVisible = isSearching,
+        listState = listState,
         bar = {
             ContextNavPill(
                 isDarkMode = isDarkMode,
@@ -181,8 +182,7 @@ fun SavedAlbumsScreen(
         ) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                state = listState,
-                contentPadding = PaddingValues(bottom = FloatingBarClearance)
+                state = listState
             ) {
                 item {
                     Column(

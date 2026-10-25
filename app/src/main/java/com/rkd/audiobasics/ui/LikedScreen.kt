@@ -175,6 +175,7 @@ fun LikedScreen(
 
     FloatingBarHost(
         lockVisible = isSearching,
+        listState = listState,
         bar = {
             ContextNavPill(
                 isDarkMode = isDarkMode,
@@ -204,8 +205,7 @@ fun LikedScreen(
         ) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                state = listState,
-                contentPadding = PaddingValues(bottom = FloatingBarClearance)
+                state = listState
             ) {
                 item {
                     Column(

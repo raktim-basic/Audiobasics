@@ -172,6 +172,7 @@ fun CustomPlaylistScreen(
 
     FloatingBarHost(
         lockVisible = isSearching,
+        listState = listState,
         bar = {
             ContextNavPill(
                 isDarkMode = isDarkMode,
@@ -196,7 +197,7 @@ fun CustomPlaylistScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize().background(bodyColor)) {
 
-            LazyColumn(modifier = Modifier.weight(1f), state = listState, contentPadding = PaddingValues(bottom = FloatingBarClearance)) {
+            LazyColumn(modifier = Modifier.weight(1f), state = listState) {
 
                 // ── Hero emoji (like LikedScreen) ──────────────────────────────
                 item {

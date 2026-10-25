@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -175,8 +176,11 @@ private fun SettingsMainPage(
     val bodyColor = if (isDarkMode) AmoledBlack else bgColor
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
 
+    val listState = rememberLazyListState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        listState = listState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -249,7 +253,8 @@ private fun SettingsMainPage(
 
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(top = 8.dp, bottom = FloatingBarClearance)
+                state = listState,
+                contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 item {
                     SettingsRow(
@@ -407,7 +412,7 @@ private fun SettingsMainPage(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    val madeByText = buildAnnotatedString {
+        val madeByText = buildAnnotatedString {
                         withStyle(SpanStyle(
                             fontFamily = NothingFont,
                             fontSize = 14.sp,
@@ -1041,8 +1046,11 @@ private fun LibraryPage(
         }
     }
 
+    val listState = rememberLazyListState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        listState = listState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -1074,7 +1082,8 @@ private fun LibraryPage(
 
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(top = 8.dp, bottom = FloatingBarClearance)
+                state = listState,
+                contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 // Downloads (formerly the standalone "Downloads" settings page)
                 item {

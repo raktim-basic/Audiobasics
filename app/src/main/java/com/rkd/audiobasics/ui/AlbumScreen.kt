@@ -308,6 +308,7 @@ fun AlbumScreen(
 
     FloatingBarHost(
         lockVisible = isSearching,
+        listState = listState,
         bar = {
             ContextNavPill(
                 isDarkMode = isDarkMode,
@@ -345,8 +346,7 @@ fun AlbumScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    state = listState,
-                    contentPadding = PaddingValues(bottom = FloatingBarClearance)
+                    state = listState
                 ) {
                     item {
                         Column(

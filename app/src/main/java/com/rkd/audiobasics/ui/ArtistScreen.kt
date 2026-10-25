@@ -156,6 +156,7 @@ fun ArtistScreen(
 
     FloatingBarHost(
         lockVisible = isSearching,
+        listState = listState,
         bar = {
             ContextNavPill(
                 isDarkMode = isDarkMode,
@@ -190,7 +191,7 @@ fun ArtistScreen(
                     CircularProgressIndicator(color = Color.Red)
                 }
             } else {
-                LazyColumn(modifier = Modifier.weight(1f), state = listState, contentPadding = PaddingValues(bottom = FloatingBarClearance)) {
+                LazyColumn(modifier = Modifier.weight(1f), state = listState) {
 
                     // ── Hero image ─────────────────────────────────────────────────
                     item {

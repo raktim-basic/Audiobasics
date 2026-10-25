@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +39,7 @@ fun SearchArtistsScreen(
     onNavigateQueue: () -> Unit
 ) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val bodyColor = if (isDarkMode) AmoledBlack else bgColor
@@ -60,6 +62,7 @@ fun SearchArtistsScreen(
     }
 
     FloatingBarHost(
+        listState = listState,
         bar = {
             BackQueuePill(
                 isDarkMode = isDarkMode,
@@ -97,10 +100,7 @@ fun SearchArtistsScreen(
                         Text("No artists found", fontFamily = NothingFont, color = Color.Gray)
                     }
                     else -> {
-                        LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = FloatingBarClearance)
-                    ) {
+                        LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
                             items(artists) { artist ->
                                 ArtistRowItem(
                                     artist = artist,

@@ -160,6 +160,7 @@ fun LibraryScreen(
 
     FloatingBarHost(
         lockVisible = isSearching,
+        listState = listState,
         bar = {
             ContextNavPill(
                 isDarkMode = isDarkMode,
@@ -186,7 +187,7 @@ fun LibraryScreen(
             modifier = Modifier.fillMaxSize().background(bodyColor)
         ) {
             // ── List ───────────────────────────────────────────────────────────
-            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(bottom = FloatingBarClearance)) {
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState) {
                 stickyHeader {
                     Column(
                         modifier = Modifier
