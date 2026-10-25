@@ -2,6 +2,12 @@ package com.rkd.audiobasics.ui
 
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import androidx.compose.foundation.background
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -211,6 +217,23 @@ fun SearchScreen(
         focusManager.clearFocus()
     }
 
+    // Height of the floating search pill (measured). The results lists are bottom-anchored
+    // (reverseLayout), so their first items would sit underneath it without this much padding.
+    var pillHeightPx by remember { mutableStateOf(0) }
+    val pillHeightDp = with(LocalDensity.current) { pillHeightPx.toDp() }
+
+    // The X in the search field: wipes the text AND the results, so the search history shows
+    // again, and keeps the keyboard up for the next query.
+    fun clearSearch() {
+        suggestionJob?.cancel()
+        suggestions = emptyList()
+        showSuggestions = false
+        committedQuery = ""
+        vm.setSearchQuery("")
+        vm.clearSearchResultsOnly()
+        focusRequester.requestFocus()
+    }
+
     LaunchedEffect(committedQuery, selectedFilter) {
         if (committedQuery.isBlank()) return@LaunchedEffect
         when (selectedFilter) {
@@ -304,272 +327,13 @@ fun SearchScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bodyColor)
-    ) {
-        Box(modifier = Modifier.weight(1f)) {
-            when {
-                isSearching && selectedFilter == SearchResultFilter.SONGS -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color.Red)
-                    }
-                }
-                showSuggestions && suggestions.isNotEmpty() -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        reverseLayout = true,
-                        contentPadding = PaddingValues(vertical = 4.dp)
-                    ) {
-                        items(suggestions) { suggestion ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        suggestionJob?.cancel()
-                                        vm.setSearchQuery(suggestion)
-                                        suggestions = emptyList()
-                                        showSuggestions = false
-                                        submitSearch(suggestion)
-                                    }
-                                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🔍", fontSize = 14.sp)
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    text = suggestion,
-                                    fontFamily = NothingFont,
-                                    fontSize = 14.sp,
-                                    color = textColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-                selectedFilter == SearchResultFilter.ALBUMS -> {
-                    when {
-                        committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
-                        isLoadingAlbums -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = Color.Red)
-                        }
-                        albumResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No albums found", fontFamily = NothingFont, color = Color.Gray)
-                        }
-                        else -> {
-                            LazyColumn(modifier = Modifier.fillMaxSize(), reverseLayout = true) {
-                                itemsIndexed(albumResults, key = { _, album -> album.id }) { index, album ->
-                                    StaggeredFadeInItem(itemKey = album.id, index = index) {
-                                        AlbumRowItem(
-                                            album = album,
-                                            isDarkMode = isDarkMode,
-                                            onClick = {
-                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                                onAlbumClick(album)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                selectedFilter == SearchResultFilter.ARTISTS -> {
-                    when {
-                        committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
-                        isLoadingArtists -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = Color.Red)
-                        }
-                        artistResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No artists found", fontFamily = NothingFont, color = Color.Gray)
-                        }
-                        else -> {
-                            LazyColumn(modifier = Modifier.fillMaxSize(), reverseLayout = true) {
-                                itemsIndexed(artistResults, key = { _, artist -> artist.id }) { index, artist ->
-                                    StaggeredFadeInItem(itemKey = artist.id, index = index) {
-                                        ArtistRowItem(
-                                            artist = artist,
-                                            isDarkMode = isDarkMode,
-                                            onClick = {
-                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                                onArtistClick(artist)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                selectedFilter == SearchResultFilter.YT -> {
-                    when {
-                        committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
-                        isLoadingYT -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = Color.Red)
-                        }
-                        ytResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No videos found", fontFamily = NothingFont, color = Color.Gray)
-                        }
-                        else -> {
-                            SongResultsList(
-                                songs = ytResults,
-                                isDarkMode = isDarkMode,
-                                likedSongs = likedSongs,
-                                currentSong = currentSong,
-                                hapticsEnabled = hapticsEnabled,
-                                context = context,
-                                vm = vm,
-                                onAddTo = onAddTo
-                            )
-                        }
-                    }
-                }
-                selectedFilter == SearchResultFilter.SONGS && query.isBlank() && results.isEmpty() && searchHistory.isNotEmpty() -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        reverseLayout = true,
-                        contentPadding = PaddingValues(vertical = 4.dp)
-                    ) {
-                        items(searchHistory, key = { it }) { pastQuery ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        vm.setSearchQuery(pastQuery)
-                                        submitSearch(pastQuery)
-                                    }
-                                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.History,
-                                    contentDescription = null,
-                                    tint = textColor.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    text = pastQuery,
-                                    fontFamily = NothingFont,
-                                    fontSize = 14.sp,
-                                    color = textColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(
-                                    onClick = {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        vm.removeFromSearchHistory(pastQuery)
-                                    },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Close,
-                                        contentDescription = "Remove from search history",
-                                        tint = textColor.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                else -> {
-                    SongResultsList(
-                        songs = results,
-                        isDarkMode = isDarkMode,
-                        likedSongs = likedSongs,
-                        currentSong = currentSong,
-                        hapticsEnabled = hapticsEnabled,
-                        context = context,
-                        vm = vm,
-                        onAddTo = onAddTo
-                    )
-                }
-            }
-        }
-
-        // Filter tabs — replaces the old "View Albums" / "View Artists" cards. Songs/Albums/
-        // Artists switch which results the box above shows (fetching that type's results the
-        // first time its tab is selected for the current query, see the LaunchedEffect above);
-        // Links isn't a result type, tapping it just opens the play-by-link dialog directly.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(barColor)
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(28.dp)
-        ) {
-            Text(
-                text = "Links",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                maxLines = 1,
-                color = textColor,
-                modifier = Modifier.clickable {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    showLinkDialog = true
-                }
-            )
-            listOf(
-                SearchResultFilter.SONGS to "Songs",
-                SearchResultFilter.ALBUMS to "Albums",
-                SearchResultFilter.ARTISTS to "Artists",
-                SearchResultFilter.YT to "YT"
-            ).forEach { (filter, label) ->
-                Text(
-                    text = label,
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    maxLines = 1,
-                    color = if (selectedFilter == filter) Color.Red else textColor,
-                    modifier = Modifier.clickable {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        selectedFilter = filter
-                        // Selecting a filter with a query already typed (but not yet
-                        // submitted, e.g. suggestions still showing) submits it — matches
-                        // hitting the keyboard's search action, just triggered from a tab tap.
-                        if (query.isNotBlank() && committedQuery != query) {
-                            submitSearch(query)
-                        }
-                    }
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .floatingPill(barColor)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor, modifier = Modifier.size(26.dp))
-            }
-
-            OutlinedTextField(
-                value = query,
-                onValueChange = {
+    FloatingBarHost(
+        lockVisible = true,
+        bar = {
+            SearchPill(
+                isDarkMode = isDarkMode,
+                query = query,
+                onQueryChange = {
                     vm.setSearchQuery(it)
                     if (it.isNotBlank()) {
                         if (results.isNotEmpty()) vm.clearSearchResultsOnly()
@@ -578,30 +342,227 @@ fun SearchScreen(
                         showSuggestions = false
                     }
                 },
-                modifier = Modifier.weight(1f).focusRequester(focusRequester),
-                placeholder = {
-                    Text("Search...", fontFamily = NothingFont, color = Color.Gray, fontSize = 14.sp)
+                onSubmit = { if (query.isNotBlank()) submitSearch(query) },
+                onClear = { clearSearch() },
+                selectedFilterIndex = selectedFilter.ordinal,
+                onSelectFilter = { index ->
+                    selectedFilter = SearchResultFilter.values()[index]
+                    // Selecting a filter with a query already typed (but not yet submitted,
+                    // e.g. suggestions still showing) submits it — same as the keyboard's
+                    // search action, just triggered from a tab tap.
+                    if (query.isNotBlank() && committedQuery != query) {
+                        submitSearch(query)
+                    }
                 },
-                textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 14.sp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Red,
-                    unfocusedBorderColor = Color.Red,
-                    focusedContainerColor = surfaceColor,
-                    unfocusedContainerColor = surfaceColor
-                ),
-                shape = RoundedCornerShape(8.dp),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    if (query.isNotBlank()) submitSearch(query)
-                })
+                onLinks = { showLinkDialog = true },
+                focusRequester = focusRequester,
+                onBack = onBack,
+                onQueue = onNavigateQueue,
+                hapticsEnabled = hapticsEnabled,
+                context = context,
+                onHeightChanged = { pillHeightPx = it }
             )
-
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onNavigateQueue()
-            }) {
-                Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = textColor, modifier = Modifier.size(26.dp))
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(bodyColor)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                when {
+                    isSearching && selectedFilter == SearchResultFilter.SONGS -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color.Red)
+                        }
+                    }
+                    showSuggestions && suggestions.isNotEmpty() -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            reverseLayout = true,
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 4.dp + pillHeightDp)
+                        ) {
+                            items(suggestions) { suggestion ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            suggestionJob?.cancel()
+                                            vm.setSearchQuery(suggestion)
+                                            suggestions = emptyList()
+                                            showSuggestions = false
+                                            submitSearch(suggestion)
+                                        }
+                                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🔍", fontSize = 14.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = suggestion,
+                                        fontFamily = NothingFont,
+                                        fontSize = 14.sp,
+                                        color = textColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    selectedFilter == SearchResultFilter.ALBUMS -> {
+                        when {
+                            committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
+                            isLoadingAlbums -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Color.Red)
+                            }
+                            albumResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("No albums found", fontFamily = NothingFont, color = Color.Gray)
+                            }
+                            else -> {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    reverseLayout = true,
+                                    contentPadding = PaddingValues(bottom = pillHeightDp)
+                                ) {
+                                    itemsIndexed(albumResults, key = { _, album -> album.id }) { index, album ->
+                                        StaggeredFadeInItem(itemKey = album.id, index = index) {
+                                            AlbumRowItem(
+                                                album = album,
+                                                isDarkMode = isDarkMode,
+                                                onClick = {
+                                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                    onAlbumClick(album)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    selectedFilter == SearchResultFilter.ARTISTS -> {
+                        when {
+                            committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
+                            isLoadingArtists -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Color.Red)
+                            }
+                            artistResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("No artists found", fontFamily = NothingFont, color = Color.Gray)
+                            }
+                            else -> {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    reverseLayout = true,
+                                    contentPadding = PaddingValues(bottom = pillHeightDp)
+                                ) {
+                                    itemsIndexed(artistResults, key = { _, artist -> artist.id }) { index, artist ->
+                                        StaggeredFadeInItem(itemKey = artist.id, index = index) {
+                                            ArtistRowItem(
+                                                artist = artist,
+                                                isDarkMode = isDarkMode,
+                                                onClick = {
+                                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                    onArtistClick(artist)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    selectedFilter == SearchResultFilter.YT -> {
+                        when {
+                            committedQuery.isBlank() -> Unit // nothing searched yet — same blank initial state as Songs
+                            isLoadingYT -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Color.Red)
+                            }
+                            ytResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("No videos found", fontFamily = NothingFont, color = Color.Gray)
+                            }
+                            else -> {
+                                SongResultsList(
+                                    songs = ytResults,
+                                    isDarkMode = isDarkMode,
+                                    likedSongs = likedSongs,
+                                    currentSong = currentSong,
+                                    hapticsEnabled = hapticsEnabled,
+                                    context = context,
+                                    vm = vm,
+                                    onAddTo = onAddTo,
+                                    bottomPadding = pillHeightDp
+                                )
+                            }
+                        }
+                    }
+                    selectedFilter == SearchResultFilter.SONGS && query.isBlank() && results.isEmpty() && searchHistory.isNotEmpty() -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            reverseLayout = true,
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 4.dp + pillHeightDp)
+                        ) {
+                            items(searchHistory, key = { it }) { pastQuery ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            vm.setSearchQuery(pastQuery)
+                                            submitSearch(pastQuery)
+                                        }
+                                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.History,
+                                        contentDescription = null,
+                                        tint = textColor.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = pastQuery,
+                                        fontFamily = NothingFont,
+                                        fontSize = 14.sp,
+                                        color = textColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            vm.removeFromSearchHistory(pastQuery)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Remove from search history",
+                                            tint = textColor.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else -> {
+                        SongResultsList(
+                            songs = results,
+                            isDarkMode = isDarkMode,
+                            likedSongs = likedSongs,
+                            currentSong = currentSong,
+                            hapticsEnabled = hapticsEnabled,
+                            context = context,
+                            vm = vm,
+                            onAddTo = onAddTo,
+                            bottomPadding = pillHeightDp
+                        )
+                    }
+                }
             }
         }
     }
@@ -622,11 +583,13 @@ private fun SongResultsList(
     hapticsEnabled: Boolean,
     context: android.content.Context,
     vm: MusicViewModel,
-    onAddTo: (Song) -> Unit
+    onAddTo: (Song) -> Unit,
+    bottomPadding: Dp
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        reverseLayout = true
+        reverseLayout = true,
+        contentPadding = PaddingValues(bottom = bottomPadding)
     ) {
         itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
             val isLiked = likedSongs.any { it.id == song.id }
@@ -755,6 +718,151 @@ fun PlayByLinkDialog(
                         Text("Play", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
+            }
+        }
+    }
+}
+
+
+// One big rounded pill floating over the results: filter tabs on top, then back / search field /
+// queue. It never hides (the field has to stay reachable) and reports its height so the
+// bottom-anchored results lists can keep clear of it.
+@Composable
+private fun SearchPill(
+    isDarkMode: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onClear: () -> Unit,
+    selectedFilterIndex: Int,
+    onSelectFilter: (Int) -> Unit,
+    onLinks: () -> Unit,
+    focusRequester: FocusRequester,
+    onBack: () -> Unit,
+    onQueue: () -> Unit,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
+    onHeightChanged: (Int) -> Unit
+) {
+    val pillColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
+    val fieldColor = if (isDarkMode) Color(0xFF121212) else Color.White
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val fieldShape = RoundedCornerShape(percent = 50)
+
+    Column(
+        modifier = Modifier
+            .onSizeChanged { onHeightChanged(it.height) }
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+            .fillMaxWidth()
+            .pillSurface(pillColor, cornerRadius = 28.dp)
+    ) {
+        // Filter tabs. "Links" isn't a result type, it just opens the play-by-link dialog.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp)
+        ) {
+            Text(
+                text = "Links",
+                fontFamily = NothingFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                maxLines = 1,
+                color = textColor,
+                modifier = Modifier.clickable {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    onLinks()
+                }
+            )
+            listOf(
+                SearchResultFilter.SONGS to "Songs",
+                SearchResultFilter.ALBUMS to "Albums",
+                SearchResultFilter.ARTISTS to "Artists",
+                SearchResultFilter.YT to "YT"
+            ).forEach { (filter, label) ->
+                Text(
+                    text = label,
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    maxLines = 1,
+                    color = if (selectedFilterIndex == filter.ordinal) Color.Red else textColor,
+                    modifier = Modifier.clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onSelectFilter(filter.ordinal)
+                    }
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onBack()
+            }) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor, modifier = Modifier.size(24.dp))
+            }
+
+            // Rounded search field with a clear (X) button once there's text.
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .clip(fieldShape)
+                    .background(fieldColor)
+                    .border(1.dp, Color.Red, fieldShape)
+                    .padding(start = 18.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                    singleLine = true,
+                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 15.sp),
+                    cursorBrush = SolidColor(Color.Red),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+                    decorationBox = { innerTextField ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = "Search...",
+                                    fontFamily = NothingFont,
+                                    color = Color.Gray,
+                                    fontSize = 15.sp,
+                                    maxLines = 1
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
+                if (query.isNotEmpty()) {
+                    IconButton(
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onClear()
+                        },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear search", tint = textColor, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onQueue()
+            }) {
+                Icon(Icons.Default.QueueMusic, contentDescription = "Queue", tint = textColor, modifier = Modifier.size(24.dp))
             }
         }
     }
