@@ -211,13 +211,6 @@ fun HomeScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFDDDDDD))
-        )
-
         HomeBottomBar(
             isDarkMode = isDarkMode,
             onSettings = onNavigateSettings,
@@ -244,8 +237,8 @@ fun HomeBottomBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(bgColor)
-            .padding(vertical = 12.dp),
+            .floatingPill(bgColor)
+            .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
