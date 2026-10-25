@@ -667,7 +667,7 @@ fun AlbumScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(barColor)
+                    .floatingPill(barColor)
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -704,7 +704,7 @@ fun AlbumScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(barColor)
+                    .floatingPill(barColor)
                     .padding(vertical = 4.dp, horizontal = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
