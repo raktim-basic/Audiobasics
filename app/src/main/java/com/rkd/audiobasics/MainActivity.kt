@@ -25,6 +25,7 @@ import androidx.navigation3.runtime.NavKey
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -104,6 +105,7 @@ import com.rkd.audiobasics.ui.UpdaterScreen
 import com.rkd.audiobasics.ui.fetchLatestAppVersion
 import com.rkd.audiobasics.ui.resetCustomPlaylistScroll
 import com.rkd.audiobasics.ui.resetLikedScreenScroll
+import com.rkd.audiobasics.ui.theme.AmoledBlack
 import com.rkd.audiobasics.ui.theme.AppTheme
 import com.rkd.audiobasics.ui.theme.NothingFont
 import kotlinx.coroutines.CoroutineScope
@@ -773,16 +775,26 @@ fun AudiobasicsApp(
             )
         }
 
-        PlayerBar(
-            vm = vm,
-            song = currentSong,
-            isPlaying = isPlaying,
-            isLoading = isLoading,
-            isDarkMode = isDarkMode,
-            onToggle = vm::togglePlayPause,
-            onAddTo = { currentSong?.let { addToSheetSong = it } },
-            onTap = { showPlayerDialog = true }
-        )
+        // The player bar's top corners are rounded, so whatever sits behind them shows through the
+        // cut-outs. That has to be the pages' own body colour (pure black in dark mode) — NOT the
+        // root background above, which is a lighter gray on header screens so the status-bar strip
+        // matches the header, and would show up as a gray wedge in each corner.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(if (isDarkMode) AmoledBlack else Color(0xFFF5F5F5))
+        ) {
+            PlayerBar(
+                vm = vm,
+                song = currentSong,
+                isPlaying = isPlaying,
+                isLoading = isLoading,
+                isDarkMode = isDarkMode,
+                onToggle = vm::togglePlayPause,
+                onAddTo = { currentSong?.let { addToSheetSong = it } },
+                onTap = { showPlayerDialog = true }
+            )
+        }
     }
     }
     MorphOverlayHost(state = morphOverlay)
