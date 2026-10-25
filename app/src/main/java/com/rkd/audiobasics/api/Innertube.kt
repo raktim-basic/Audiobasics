@@ -484,6 +484,41 @@ object Innertube {
             .filter { it.isNotBlank() }
     }
 
+    /** True for YTM's compilation credit ("Various Artists"). A compilation has no real
+     *  album-level artist, so callers show the plain text instead of deriving one from the
+     *  tracks. Tolerates a "•"-joined display string by checking each segment. */
+    fun isVariousArtists(name: String): Boolean {
+        val rx = Regex("^various\\s+artists?$", RegexOption.IGNORE_CASE)
+        return name.split("•").any { rx.matches(it.trim()) }
+    }
+
+    /**
+     * The artists that appear on EVERY track, in the first track's order — the album-level
+     * credit. A song's structured [Song.artistNames] (real run boundaries) is used when it has
+     * them; a song without them falls back to splitting its display string on "&"/"and", so a
+     * joined credit like "The Weeknd & Kendrick Lamar" is never mistaken for ONE artist name.
+     */
+    fun commonAlbumArtistNames(songs: List<Song>): List<String> {
+        if (songs.isEmpty()) return emptyList()
+        val perSong = songs.map { s -> s.artistNames.ifEmpty { splitArtistNames(s.artist) } }
+        val common = perSong.reduce { acc, names -> acc.intersect(names.toSet()).toList() }
+        return perSong.first().filter { it in common }.distinct()
+    }
+
+    /**
+     * browseIds for the album-level artists: a name only earns an id if the same (name, id)
+     * pair is present on every single track, so a name YTM links to different channels across
+     * tracks is left unresolved (callers then fall back to a name search) rather than guessed.
+     */
+    fun commonAlbumArtistIds(songs: List<Song>): Map<String, String> = try {
+        if (songs.isEmpty()) emptyMap()
+        else {
+            val perSongPairs = songs.map { s -> s.artistNames.zip(s.artistIds).toSet() }
+            val commonPairs = perSongPairs.reduce { acc, pairs -> acc.intersect(pairs) }
+            commonPairs.mapNotNull { (name, id) -> if (id != null) name to id else null }.toMap()
+        }
+    } catch (e: Exception) { emptyMap() }
+
     /** Same as [splitArtistNames] but also splits on "feat." — used where a full song credit
      *  string (e.g. "Tyler, The Creator feat. Kali Uchis") needs breaking into individual
      *  artist names for display/linking. Still never splits on a bare, unlisted comma. */
@@ -1146,49 +1181,31 @@ object Innertube {
                 // by name. artistNames has no such ambiguity: it already knows the real
                 // boundary between every name because it reads it from the run structure
                 // itself, not by guessing at punctuation. ──
-                if (songs.isNotEmpty()) {
-                    try {
-                        val perSongNames = songs.map { it.artistNames.ifEmpty { listOf(it.artist) } }
-                        val commonNames = perSongNames.reduce { acc, names -> acc.intersect(names.toSet()).toList() }
-                        if (commonNames.isNotEmpty()) {
-                            // Preserve the order names appear in the first song's artist list.
-                            val firstSongOrder = perSongNames.first()
-                            val ordered = firstSongOrder.filter { it in commonNames }
+                if (isVariousArtists(albumArtist)) {
+                    // Compilation: there is no real album artist, so don't derive one from the
+                    // tracks (that picked an arbitrary track artist). Show the plain credit.
+                    albumArtist = "Various Artists"
+                    albumArtistNames = emptyList()
+                    albumArtistIdByName = emptyMap()
+                } else {
+                    if (songs.isNotEmpty()) {
+                        try {
+                            val ordered = commonAlbumArtistNames(songs)
                             if (ordered.isNotEmpty()) {
                                 albumArtist = ordered.joinToString(" & ")
                                 albumArtistNames = ordered
+                            } else if (albumArtist == fallbackArtist) {
+                                // No name is common to every track and the header gave us
+                                // nothing either — fall back to the most common per-song string.
+                                albumArtist = songs.groupBy { it.artist }
+                                    .maxByOrNull { it.value.size }?.key ?: fallbackArtist
                             }
-                        } else if (albumArtist == fallbackArtist) {
-                            // No name is common to every track (e.g. a various-artists
-                            // compilation) and the header gave us nothing either — fall back
-                            // to the single most common per-song artist string.
-                            albumArtist = songs.groupBy { it.artist }
-                                .maxByOrNull { it.value.size }?.key ?: fallbackArtist
+                        } catch (e: Exception) {
+                            // Best-effort only; keep whatever albumArtist already resolved to.
                         }
-                    } catch (e: Exception) {
-                        // Intersection/ordering best-effort only; fall through with whatever
-                        // albumArtist was already resolved to.
                     }
+                    albumArtistIdByName = commonAlbumArtistIds(songs)
                 }
-                // ── Album artist IDs: same "appears on every track" rule as above, but using
-                // the structured artistNames/artistIds captured directly from each song's
-                // response runs — never re-derived by splitting a display string, since that
-                // can't carry an id. This is what lets tapping an album-artist's name (e.g.
-                // "Kanye West" on Vultures 1, distinct from "¥$") open the exact channel that
-                // name actually links to on YTM, instead of falling back to a name search that
-                // can land on a different, related artist's page. A name only earns an id here
-                // if the same (name, id) pair is present on every single track — this guards
-                // against a rare case where YTM links the same artist name to different browse
-                // ids across tracks; when that happens we simply leave that name's id unknown
-                // rather than guess which one is "right", and it falls back to name search.
-                val albumArtistIdByNameResult: Map<String, String> = try {
-                    if (songs.isNotEmpty()) {
-                        val perSongPairs = songs.map { s -> s.artistNames.zip(s.artistIds).toSet() }
-                        val commonPairs = perSongPairs.reduce { acc, pairs -> acc.intersect(pairs) }
-                        commonPairs.mapNotNull { (name, id) -> if (id != null) name to id else null }.toMap()
-                    } else emptyMap()
-                } catch (e: Exception) { emptyMap() }
-                albumArtistIdByName = albumArtistIdByNameResult
             } catch (e: Exception) { Log.e("Innertube", "getAlbumSongs error: ${e.message}") }
             Timber.tag("Innertube").d(
                 "getAlbumSongs browseId='$browseId' fallbackArtist='$fallbackArtist' caller='$caller' " +
