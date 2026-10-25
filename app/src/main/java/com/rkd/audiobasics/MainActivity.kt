@@ -568,15 +568,20 @@ fun AudiobasicsApp(
     // itself. Reading through a State makes those entries recompose when the theme changes.
     val isDarkModeNow by rememberUpdatedState(isDarkMode)
 
-    // Home is pure black top to bottom in dark mode, so the status bar strip above it (which
-    // shows the root background, or the window status-bar color on Android < 15) goes black
-    // too while Home is on screen.
-    val homeBlackStatus = isDarkMode && backStack.lastOrNull() is HomeKey
-    SideEffect { onBlackStatusBarChange(homeBlackStatus) }
+    // The status bar strip follows the header below it. Screens WITH a header (Library, Liked,
+    // Settings, ...) keep it gray to match the header. Screens whose top is plain body (Home,
+    // Search, Updater, Engine info) have no header, so the strip goes pure black to blend into
+    // the black body instead of looking like a stray gray band. (On Android < 15 the window's
+    // status-bar color is set from this in AppTheme; on 15+ the root background shows through.)
+    val topKey = backStack.lastOrNull()
+    val headerlessScreen = topKey is HomeKey || topKey is SearchKey ||
+        topKey is UpdaterKey || topKey is EngineInfoKey
+    val blackStatus = isDarkMode && headerlessScreen
+    SideEffect { onBlackStatusBarChange(blackStatus) }
 
     val rootBgColor = when {
         !isDarkMode -> Color(0xFFF5F5F5)
-        homeBlackStatus -> Color.Black
+        blackStatus -> Color.Black
         else -> Color(0xFF121212)
     }
 
