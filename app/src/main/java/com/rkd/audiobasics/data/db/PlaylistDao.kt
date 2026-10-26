@@ -74,6 +74,21 @@ interface PlaylistDao {
     @Query("SELECT DISTINCT songId FROM playlist_songs")
     suspend fun getAllPlaylistSongIds(): List<String>
 
+    // Updates resolved metadata on every playlist row for this song while preserving each
+    // row's playlist membership and addedAt ordering.
+    @Query("UPDATE playlist_songs SET title = :title, artist = :artist, thumbnail = :thumbnail, isExplicit = :isExplicit, albumId = :albumId, duration = :duration, artistNames = :artistNames, artistIds = :artistIds WHERE songId = :songId")
+    suspend fun updateSongMetadata(
+        songId: String,
+        title: String,
+        artist: String,
+        thumbnail: String,
+        isExplicit: Boolean,
+        albumId: String,
+        duration: Long,
+        artistNames: String,
+        artistIds: String
+    )
+
     // Writes corrected artist info onto every playlist row for this song (a song can sit in
     // several playlists, each with its own row).
     @Query("UPDATE playlist_songs SET artistNames = :artistNames, artistIds = :artistIds WHERE songId = :songId")
