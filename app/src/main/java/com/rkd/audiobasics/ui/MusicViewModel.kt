@@ -898,9 +898,41 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         smartInputsOriginalUrl = null
     }
 
+    /** Persist resolved playback metadata to any custom-playlist copies of this song.
+     * A link can be added while its temporary "Loading..." Song is on screen; when metadata
+     * resolves, repair those rows without changing playlist membership or ordering. */
+    private suspend fun persistResolvedPlaylistMetadata(song: Song) {
+        if (song.title.isBlank() || song.title.equals("Loading...", ignoreCase = true)) return
+        try {
+            withContext(Dispatchers.IO) {
+                playlistDao.updateSongMetadata(
+                    songId = song.id,
+                    title = song.title,
+                    artist = song.artist,
+                    thumbnail = song.thumbnail,
+                    isExplicit = song.isExplicit,
+                    albumId = song.albumId,
+                    duration = song.duration,
+                    artistNames = Song.encodeArtistNames(song.artistNames),
+                    artistIds = Song.encodeArtistIds(song.artistIds)
+                )
+            }
+            _openPlaylistId.value?.let { playlistId ->
+                _openPlaylistSongs.value = withContext(Dispatchers.IO) {
+                    playlistDao.getPlaylistSongs(playlistId)
+                }
+            }
+        } catch (e: Exception) {
+            // Metadata repair must never prevent the resolved track from playing.
+            Log.e("YTLite", "Failed to update playlist metadata for ${song.id}: ${e.message}", e)
+        }
+    }
+
     fun play(song: Song) {
         viewModelScope.launch {
             fallbackRetryCount = 0
+            // Keep metadata repair off the critical path so starting playback isn't delayed.
+            viewModelScope.launch { persistResolvedPlaylistMetadata(song) }
             _currentSong.value = song
             _isLoading.value = true
             _error.value = null
@@ -986,7 +1018,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             try {
-                val metadata = Innertube.getVideoMetadata(videoId)
+                val rawMetadata = Innertube.getVideoMetadata(videoId)
+                val metadata = rawMetadata?.let { Innertube.refreshSongMetadata(it) }
                 val streamUrl = Innertube.getStreamUrl(getApplication(), videoId)?.first
                 if (streamUrl == null) {
                     Toast.makeText(getApplication(), "Could not load song", Toast.LENGTH_LONG).show()
@@ -994,6 +1027,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
                 val song = metadata ?: placeholder.copy(title = "YouTube Song")
+                viewModelScope.launch { persistResolvedPlaylistMetadata(song) }
                 _currentSong.value = song
                 _queue.value = listOf(song)
                 controller?.run {
@@ -1067,6 +1101,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             putString(SongExtraKeys.ALBUM_TITLE, song.albumTitle)
             putString(SongExtraKeys.YEAR, song.year)
             putBoolean(SongExtraKeys.IS_EXPLICIT, song.isExplicit)
+            // Android System UI reads this standard Media3 session extra to show the
+            // explicit-content badge in media controls. The value is a long, not a boolean.
+            if (song.isExplicit) putLong("android.media.IS_EXPLICIT", 1L)
             putStringArrayList(SongExtraKeys.ARTIST_NAMES, ArrayList(song.artistNames))
             putStringArrayList(
                 SongExtraKeys.ARTIST_IDS,
@@ -1654,21 +1691,26 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
      * sheet closing, exactly like liking a song already does.
      */
     suspend fun toggleSongInPlaylist(song: Song, playlistId: String): Boolean {
+        // The sheet may have captured the initial link placeholder. Prefer the current resolved
+        // song when it represents the same video, so adding after resolution stores real data.
+        val songToSave = _currentSong.value?.takeIf {
+            it.id == song.id && it.title.isNotBlank() && !it.title.equals("Loading...", ignoreCase = true)
+        } ?: song
         return if (playlistId == LIKED_PLAYLIST_ID) {
-            val wasLiked = isLiked(song.id)
-            toggleLike(song)
+            val wasLiked = isLiked(songToSave.id)
+            toggleLike(songToSave)
             !wasLiked
         } else {
             withContext(Dispatchers.IO) {
-                val already = playlistDao.isSongInPlaylist(playlistId, song.id)
+                val already = playlistDao.isSongInPlaylist(playlistId, songToSave.id)
                 val added: Boolean
                 if (already) {
-                    playlistDao.removeSong(playlistId, song.id)
+                    playlistDao.removeSong(playlistId, songToSave.id)
                     // Remove cache if not liked and not in other playlists
-                    val liked = isLiked(song.id)
-                    val inOther = playlistDao.countPlaylistsContainingSong(song.id) > 0
+                    val liked = isLiked(songToSave.id)
+                    val inOther = playlistDao.countPlaylistsContainingSong(songToSave.id) > 0
                     if (!liked && !inOther) {
-                        CacheManager.removeCachedSong(getApplication(), song.id)
+                        CacheManager.removeCachedSong(getApplication(), songToSave.id)
                         refreshCacheSize()
                     }
                     added = false
@@ -1676,15 +1718,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     playlistDao.insertSong(
                         PlaylistSongEntity(
                             playlistId = playlistId,
-                            songId = song.id,
-                            title = song.title,
-                            artist = song.artist,
-                            thumbnail = song.thumbnail,
-                            isExplicit = song.isExplicit,
-                            albumId = song.albumId,
-                            duration = song.duration,
-                            artistNames = Song.encodeArtistNames(song.artistNames),
-                            artistIds = Song.encodeArtistIds(song.artistIds)
+                            songId = songToSave.id,
+                            title = songToSave.title,
+                            artist = songToSave.artist,
+                            thumbnail = songToSave.thumbnail,
+                            isExplicit = songToSave.isExplicit,
+                            albumId = songToSave.albumId,
+                            duration = songToSave.duration,
+                            artistNames = Song.encodeArtistNames(songToSave.artistNames),
+                            artistIds = Song.encodeArtistIds(songToSave.artistIds)
                         )
                     )
                     // Fire caching independently on viewModelScope — do not await it here,
@@ -1692,7 +1734,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     // written, and the download survives even if the caller's own scope
                     // (e.g. the Add to Playlist sheet) gets torn down right after.
                     viewModelScope.launch {
-                        cacheSemaphore.withPermit { cacheSongSilently(song) }
+                        cacheSemaphore.withPermit { cacheSongSilently(songToSave) }
                     }
                     added = true
                 }
