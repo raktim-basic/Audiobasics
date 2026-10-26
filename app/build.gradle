@@ -15,7 +15,7 @@ android {
         applicationId 'com.rkd.audiobasics'
         minSdk 26
         targetSdk 36
-        versionCode 18
+        versionCode 19
         versionName '2.7'
     }
 
