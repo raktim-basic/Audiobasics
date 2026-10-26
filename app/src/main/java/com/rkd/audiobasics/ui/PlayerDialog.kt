@@ -32,6 +32,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -810,11 +812,25 @@ private fun PlayerFrontContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                vm.skipToPrevious()
-            }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = textColor, modifier = Modifier.size(43.dp))
+            // Hit area runs from the screen edge to the Play button (the icon itself is unchanged
+            // and sits where it always did: 48dp button minus 43dp icon = 2.5dp inset).
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(58.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.skipToPrevious()
+                    },
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Previous",
+                    tint = textColor,
+                    modifier = Modifier.padding(start = 2.5.dp).size(43.dp)
+                )
             }
 
             Box(
@@ -851,11 +867,25 @@ private fun PlayerFrontContent(
                 }
             }
 
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                vm.skipToNext()
-            }) {
-                Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = textColor, modifier = Modifier.size(43.dp))
+            // Hit area runs from the screen edge to the Play button (the icon itself is unchanged
+            // and sits where it always did: 48dp button minus 43dp icon = 2.5dp inset).
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(58.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.skipToNext()
+                    },
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    Icons.Default.ArrowForward,
+                    contentDescription = "Next",
+                    tint = textColor,
+                    modifier = Modifier.padding(end = 2.5.dp).size(43.dp)
+                )
             }
         }
 
@@ -1236,21 +1266,35 @@ private fun PlayerFrontContentV2(
                 Spacer(Modifier.weight(1f))
 
                 // ── Title / artist ────────────────────────
-                // Title gets a fixed height sized for 2 lines (regardless of whether this
-                // particular title needs 1 or 2), so switching to a shorter/longer title
-                // doesn't nudge the progress bar/controls/bottom bar below it — those stay
-                // at a fixed position rather than reflowing per-song.
+                // The title area is always exactly two lines tall (measured, not a hard-coded
+                // dp — the old fixed 66dp was too short for two lines of this text, so long
+                // titles were cut to one line), so switching between shorter and longer titles
+                // never nudges the progress bar / controls / bottom bar below it.
+                // The title sits at the BOTTOM of that area: a one-line title hugs the artist
+                // underneath instead of floating above an empty gap, and a two-line title fills
+                // the whole area, so it still starts at the same place.
                 Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                    Text(
-                        text = song?.title ?: "Song Name",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 29.sp,
-                        color = Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth().height(66.dp)
-                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        // Invisible two-line probe: gives the box its two-line height.
+                        Text(
+                            text = "A\nA",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 29.sp,
+                            maxLines = 2,
+                            modifier = Modifier.alpha(0f).clearAndSetSemantics { }
+                        )
+                        Text(
+                            text = song?.title ?: "Song Name",
+                            fontFamily = NothingFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 29.sp,
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().align(Alignment.BottomStart)
+                        )
+                    }
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (song?.isExplicit == true) {
@@ -1343,11 +1387,25 @@ private fun PlayerFrontContentV2(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        vm.skipToPrevious()
-                    }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(43.dp))
+                    // Hit area runs from the screen edge to the Play button (the icon itself is unchanged
+                    // and sits where it always did: 48dp button minus 43dp icon = 2.5dp inset).
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(58.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                vm.skipToPrevious()
+                            },
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = "Previous",
+                            tint = Color.White,
+                            modifier = Modifier.padding(start = 2.5.dp).size(43.dp)
+                        )
                     }
 
                     Box(
@@ -1384,11 +1442,25 @@ private fun PlayerFrontContentV2(
                         }
                     }
 
-                    IconButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        vm.skipToNext()
-                    }) {
-                        Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(43.dp))
+                    // Hit area runs from the screen edge to the Play button (the icon itself is unchanged
+                    // and sits where it always did: 48dp button minus 43dp icon = 2.5dp inset).
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(58.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                vm.skipToNext()
+                            },
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowForward,
+                            contentDescription = "Next",
+                            tint = Color.White,
+                            modifier = Modifier.padding(end = 2.5.dp).size(43.dp)
+                        )
                     }
                 }
 
