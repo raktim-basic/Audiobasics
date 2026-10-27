@@ -17,6 +17,11 @@ interface PlaylistDao {
     @Query("SELECT COALESCE(MAX(sortOrder), -1) FROM playlists")
     suspend fun getMaxSortOrder(): Int
 
+    // Lowest sortOrder in use (null when there are no playlists). A new playlist takes one less
+    // than this so it sorts first under "ORDER BY sortOrder ASC", without touching any existing row.
+    @Query("SELECT MIN(sortOrder) FROM playlists")
+    suspend fun getMinSortOrder(): Int?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: PlaylistEntity)
 
@@ -45,6 +50,11 @@ interface PlaylistDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSong(song: PlaylistSongEntity)
+
+    // Lowest addedAt in a playlist (null when it is empty). A newly added song takes one less than
+    // this so it sorts first under "ORDER BY addedAt ASC", without touching any existing row.
+    @Query("SELECT MIN(addedAt) FROM playlist_songs WHERE playlistId = :playlistId")
+    suspend fun getMinAddedAt(playlistId: String): Long?
 
     @Query("DELETE FROM playlist_songs WHERE playlistId = :playlistId AND songId = :songId")
     suspend fun removeSong(playlistId: String, songId: String)
