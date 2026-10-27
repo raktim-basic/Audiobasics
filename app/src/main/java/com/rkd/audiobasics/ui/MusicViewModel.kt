@@ -1606,7 +1606,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 id = UUID.randomUUID().toString(),
                 name = trimmed,
                 emoji = emoji,
-                sortOrder = playlistDao.getMaxSortOrder() + 1
+                // New playlists go to the TOP of the list (lowest sortOrder sorts first).
+                sortOrder = (playlistDao.getMinSortOrder() ?: 0) - 1
             )
             playlistDao.insertPlaylist(entity)
         }
@@ -1715,6 +1716,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     added = false
                 } else {
+                    // New songs go to the TOP of the playlist: the list is ordered by addedAt
+                    // ascending, so take one less than the current lowest value. This also holds
+                    // after a manual reorder (which rewrites addedAt as 0..n-1) and leaves every
+                    // existing row exactly as it was.
+                    val topAddedAt = (playlistDao.getMinAddedAt(playlistId) ?: System.currentTimeMillis()) - 1
                     playlistDao.insertSong(
                         PlaylistSongEntity(
                             playlistId = playlistId,
@@ -1725,6 +1731,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             isExplicit = songToSave.isExplicit,
                             albumId = songToSave.albumId,
                             duration = songToSave.duration,
+                            addedAt = topAddedAt,
                             artistNames = Song.encodeArtistNames(songToSave.artistNames),
                             artistIds = Song.encodeArtistIds(songToSave.artistIds)
                         )
@@ -2533,6 +2540,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                             )
                             importedPlaylistCount++
                             val songsArr = pObj.getJSONArray("songs")
+                            // Exports list songs top-to-bottom. Stamp strictly increasing addedAt
+                            // values so that order is kept (the default timestamp ties within a ms).
+                            val importBase = System.currentTimeMillis()
                             for (j in 0 until songsArr.length()) {
                                 val sObj = songsArr.getJSONObject(j)
                                 playlistDao.insertSong(
@@ -2545,6 +2555,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                                         isExplicit = sObj.optBoolean("isExplicit", false),
                                         albumId = sObj.optString("albumId", ""),
                                         duration = sObj.optLong("duration", 0L),
+                                        addedAt = importBase + j,
                                         artistNames = Song.encodeArtistNames(sObj.readArtistNames()),
                                         artistIds = Song.encodeArtistIds(sObj.readArtistIds())
                                     )
