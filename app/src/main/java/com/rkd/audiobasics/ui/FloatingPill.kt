@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,6 +67,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -75,6 +78,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import com.rkd.audiobasics.utils.HapticUtils
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -148,6 +153,9 @@ fun Modifier.floatingPill(color: Color): Modifier =
 class FloatingBarState {
     var hidden by mutableStateOf(false)
 
+    /** True while any finger is down anywhere on the screen (observed, never consumed). */
+    var touching by mutableStateOf(false)
+
     /** Standard Android behaviour: hide while scrolling down, come back on any scroll up. */
     val connection = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -161,6 +169,9 @@ class FloatingBarState {
         const val SCROLL_SLOP = 2f
     }
 }
+
+/** How long the screen must sit untouched and still before a hidden bar comes back on its own. */
+private const val AUTO_SHOW_IDLE_MS = 2000L
 
 /**
  * Lays [content] out full-size and floats [bar] over its bottom edge (just above the mini
@@ -206,12 +217,41 @@ fun FloatingBarHost(
     LaunchedEffect(lockVisible) {
         if (lockVisible) state.hidden = false
     }
+
+    // Auto-show: once the bar is hidden, bring it back after AUTO_SHOW_IDLE_MS with no finger on
+    // the screen AND no scroll in progress. isScrollInProgress stays true through the whole fling
+    // / settle animation, so the 2s only starts counting after the list has fully come to rest.
+    // Any touch or new scroll emits a new snapshot, which cancels and restarts the countdown.
+    // (Read through snapshotFlow so touches don't recompose the whole screen.)
+    LaunchedEffect(state, listState) {
+        snapshotFlow {
+            Triple(state.hidden, state.touching, listState?.isScrollInProgress ?: false)
+        }.collectLatest { (hidden, touching, scrolling) ->
+            if (hidden && !touching && !scrolling) {
+                delay(AUTO_SHOW_IDLE_MS)
+                state.hidden = false
+            }
+        }
+    }
     val hideFraction by animateFloatAsState(
         targetValue = if (state.hidden && hideAllowed && !lockVisible) 1f else 0f,
         animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
         label = "floatingBarHide"
     )
-    Box(modifier = modifier.fillMaxSize().nestedScroll(state.connection)) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                // Watch only (Initial pass, nothing consumed) so taps and drags work as before.
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        state.touching = event.changes.any { it.pressed }
+                    }
+                }
+            }
+            .nestedScroll(state.connection)
+    ) {
         content()
         Box(
             modifier = Modifier
