@@ -29,6 +29,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -581,11 +589,30 @@ fun AudiobasicsApp(
     val blackStatus = isDarkMode && headerlessScreen
     SideEffect { onBlackStatusBarChange(blackStatus) }
 
+    // Colour of the status-bar / navigation-bar strips only (see the Column below).
     val rootBgColor = when {
         !isDarkMode -> Color(0xFFF5F5F5)
         blackStatus -> Color.Black
         else -> Color(0xFF121212)
     }
+
+    // The page colour behind the whole nav stack. Every screen's body is pure black in dark mode,
+    // so this must be black too. It used to be rootBgColor, which flips to the lighter gray the
+    // instant you navigate from a headerless screen to a header screen: while the two pages
+    // cross-fade, neither fully covers the other, so the gray root showed through as a flicker.
+    // (Navigating TO Home never flickered because the root turns black there.)
+    val pageBgColor = if (isDarkMode) AmoledBlack else Color(0xFFF5F5F5)
+
+    // The system-bar strips keep following the header colour, but ease over with the page
+    // transition instead of snapping.
+    val stripColor by animateColorAsState(
+        targetValue = rootBgColor,
+        animationSpec = tween(NAV_ANIMATION_DURATION_MS),
+        label = "systemBarStripColor"
+    )
+    val density = LocalDensity.current
+    val statusBarPx = WindowInsets.statusBars.getTop(density).toFloat()
+    val navBarPx = WindowInsets.navigationBars.getBottom(density).toFloat()
 
     // Root box for the nav stack + player bar. MorphOverlayHost (below) draws above both;
     // LocalMorphOverlay is provided further up, around this whole function body, so every
@@ -596,7 +623,16 @@ fun AudiobasicsApp(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(rootBgColor)
+            .background(pageBgColor)
+            .drawBehind {
+                // Drawn before systemBarsPadding, so these land in the inset areas.
+                drawRect(stripColor, topLeft = Offset.Zero, size = Size(size.width, statusBarPx))
+                drawRect(
+                    stripColor,
+                    topLeft = Offset(0f, size.height - navBarPx),
+                    size = Size(size.width, navBarPx)
+                )
+            }
             .systemBarsPadding()
             .imePadding()
     ) {
