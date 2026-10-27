@@ -170,8 +170,8 @@ class FloatingBarState {
     }
 }
 
-/** How long the screen must sit untouched and still before a hidden bar comes back on its own. */
-private const val AUTO_SHOW_IDLE_MS = 2000L
+/** How long the screen must sit untouched and still (after any scroll animation ends) before a hidden bar comes back. */
+private const val AUTO_SHOW_IDLE_MS = 1000L
 
 /**
  * Lays [content] out full-size and floats [bar] over its bottom edge (just above the mini
@@ -218,16 +218,22 @@ fun FloatingBarHost(
         if (lockVisible) state.hidden = false
     }
 
-    // Auto-show: once the bar is hidden, bring it back after AUTO_SHOW_IDLE_MS with no finger on
-    // the screen AND no scroll in progress. isScrollInProgress stays true through the whole fling
-    // / settle animation, so the 2s only starts counting after the list has fully come to rest.
-    // Any touch or new scroll emits a new snapshot, which cancels and restarts the countdown.
+    // Auto-show: once the bar is hidden, bring it back AUTO_SHOW_IDLE_MS after the screen has
+    // gone quiet: no finger down AND no scroll in progress (isScrollInProgress stays true through
+    // the whole fling / settle animation, so the countdown only starts once the list is at rest).
+    // Any touch or new scroll emits a new value, which cancels and restarts the countdown.
+    // It only applies while the list can still scroll forward: at the bottom (or in a short list
+    // whose last row sits under the bar) the bar stays hidden, because showing it would cover
+    // content; it returns on the next scroll up as usual.
     // (Read through snapshotFlow so touches don't recompose the whole screen.)
     LaunchedEffect(state, listState) {
         snapshotFlow {
-            Triple(state.hidden, state.touching, listState?.isScrollInProgress ?: false)
-        }.collectLatest { (hidden, touching, scrolling) ->
-            if (hidden && !touching && !scrolling) {
+            state.hidden &&
+                !state.touching &&
+                listState?.isScrollInProgress == false &&
+                listState.canScrollForward
+        }.collectLatest { ready ->
+            if (ready) {
                 delay(AUTO_SHOW_IDLE_MS)
                 state.hidden = false
             }
