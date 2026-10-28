@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -53,6 +54,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.api.Innertube
+import com.rkd.audiobasics.api.account.AccountManager
+import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -63,6 +66,8 @@ sealed class SettingsPage {
     // Library now also carries what used to be the standalone "Downloads" (Cache) page —
     // renamed "Library management" in the UI. openCache/openLibrary both route here.
     object Library : SettingsPage()
+    object Account : SettingsPage()
+    object Login : SettingsPage()
     object DevTools : SettingsPage()
     object EngineInfo : SettingsPage()
 }
@@ -106,7 +111,13 @@ fun SettingsScreen(
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        goBack(if (currentPage == SettingsPage.EngineInfo) SettingsPage.DevTools else SettingsPage.Main)
+        goBack(
+            when (currentPage) {
+                SettingsPage.EngineInfo -> SettingsPage.DevTools
+                SettingsPage.Login -> SettingsPage.Account
+                else -> SettingsPage.Main
+            }
+        )
     }
 
     AnimatedContent(
@@ -125,7 +136,8 @@ fun SettingsScreen(
                 onNavigateAppearance = { goTo(SettingsPage.Appearance) },
                 onNavigateGeneral = { goTo(SettingsPage.General) },
                 onNavigateLibrary = { goTo(SettingsPage.Library) },
-                onNavigateDevTools = { goTo(SettingsPage.DevTools) }
+                onNavigateDevTools = { goTo(SettingsPage.DevTools) },
+                onNavigateAccount = { goTo(SettingsPage.Account) }
             )
             is SettingsPage.Appearance -> AppearancePage(
                 vm = vm,
@@ -141,6 +153,18 @@ fun SettingsScreen(
                 vm = vm,
                 isDarkMode = isDarkMode,
                 onBack = { goBack(SettingsPage.Main) }
+            )
+            is SettingsPage.Account -> AccountPage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = { goBack(SettingsPage.Main) },
+                onNavigateLogin = { goTo(SettingsPage.Login) }
+            )
+            is SettingsPage.Login -> LoginPage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = { goBack(SettingsPage.Account) },
+                onLoggedIn = { goBack(SettingsPage.Account) }
             )
             is SettingsPage.DevTools -> DevToolsPage(
                 vm = vm,
@@ -165,9 +189,11 @@ private fun SettingsMainPage(
     onNavigateAppearance: () -> Unit,
     onNavigateGeneral: () -> Unit,
     onNavigateLibrary: () -> Unit,
-    onNavigateDevTools: () -> Unit
+    onNavigateDevTools: () -> Unit,
+    onNavigateAccount: () -> Unit
 ) {
     val context = LocalContext.current
+    val accountState by AccountManager.state.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val logsEnabled by vm.logsEnabled.collectAsState()
     val isRefreshingCipherEngine by vm.isRefreshingCipherEngine.collectAsState()
@@ -256,6 +282,30 @@ private fun SettingsMainPage(
                 state = listState,
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Account",
+                        subtitle = when (val acc = accountState) {
+                            is AccountState.LoggedOut -> "Sign in to YouTube Music"
+                            is AccountState.LoggedIn -> acc.profile.name
+                            is AccountState.SessionExpired -> "Session expired. Sign in again"
+                        },
+                        icon = {
+                            Icon(
+                                Icons.Default.AccountCircle,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateAccount()
+                        }
+                    )
+                }
+
                 item {
                     SettingsRow(
                         isDarkMode = isDarkMode,
