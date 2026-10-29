@@ -3,6 +3,8 @@ package com.rkd.audiobasics.api
 import android.content.Context
 import android.util.Log
 import timber.log.Timber
+import com.rkd.audiobasics.api.account.AccountManager
+import com.rkd.audiobasics.api.account.SapisidAuth
 import com.rkd.audiobasics.api.cipher.CipherDeobfuscator
 import com.rkd.audiobasics.api.cipher.FunctionNameExtractor
 import com.rkd.audiobasics.api.cipher.PlayerJsFetcher
@@ -149,6 +151,36 @@ object Innertube {
     // valid 110-128 byte tokens. Random UUIDs can produce short tokens for some videos.
     @Volatile var visitorData: String? = null
 
+    // ─── Signed-in identity ──────────────────────────────────────────────────────
+    // While an account is linked and its session is valid, the whole stream engine runs on
+    // that account's visitor identity (the one its login cookies belong to), and the web
+    // clients also send the session itself. The poToken generator is keyed by this identity,
+    // so using ONE identity for every song keeps it from being rebuilt per lookup.
+    // The native clients (ANDROID_VR, IOS, ANDROID) and NewPipe never get the session, so
+    // the logged-out path stays fully intact as the fallback.
+    @Volatile private var identityFromAccount = false
+
+    /**
+     * Makes [visitorData] match the account state. Cheap and idempotent; call it before
+     * anything reads [visitorData] for a lookup. When the account goes away (logout, or the
+     * session expired) the account identity is dropped and a fresh anonymous one is fetched
+     * the next time one is needed.
+     */
+    private fun syncAccountIdentity() {
+        val session = AccountManager.activeSession()
+        if (session != null) {
+            if (visitorData != session.visitorData) {
+                visitorData = session.visitorData
+                Timber.tag("Innertube").d("Using the signed-in account's visitor identity")
+            }
+            identityFromAccount = true
+        } else if (identityFromAccount) {
+            identityFromAccount = false
+            visitorData = null
+            Timber.tag("Innertube").d("Account no longer active - dropped its visitor identity")
+        }
+    }
+
     // ─── Stale-visitorData 403 mitigation ──────────────────────────────────────────
     // When YouTube's bot detection stops trusting the current visitorData identity,
     // every stream resolution attempt starts returning 403 — previously this meant
@@ -201,6 +233,19 @@ object Innertube {
             }
             lastVisitorRefreshAttemptMs = now
 
+            if (identityFromAccount) {
+                // A signed-in identity can't be re-minted. The likeliest cause of a run of 403s
+                // is a revoked session, so ask YouTube. If it was revoked the account is dropped
+                // and the logged-out identity takes over; if it's fine there's nothing to refresh.
+                Timber.tag("Innertube").w("3+ distinct videos hit 403 while signed in - checking the session")
+                AccountManager.validateSession()
+                resetRecent403s()
+                syncAccountIdentity()
+                if (identityFromAccount) return@withLock false
+                fetchVisitorData()
+                return@withLock visitorData != null
+            }
+
             Timber.tag("Innertube").w(
                 "3+ distinct videos hit 403 — refreshing visitorData identity"
             )
@@ -225,6 +270,7 @@ object Innertube {
     // Call this once from MusicService.onCreate() — fetches visitorData + signatureTimestamp
     // so they're ready before the first song plays.
     suspend fun init() = withContext(Dispatchers.IO) {
+        syncAccountIdentity()
         if (visitorData == null) fetchVisitorData()
         if (signatureTimestamp == null) fetchSignatureTimestamp()
     }
@@ -236,6 +282,7 @@ object Innertube {
      */
     suspend fun warmPoToken() = withContext(Dispatchers.IO) {
         try {
+            syncAccountIdentity()
             if (visitorData == null) fetchVisitorData()
             val sessionId = visitorData?.take(36) ?: return@withContext
             poTokenGenerator.getWebClientPoToken("aaaaaaaaaaa", sessionId)
@@ -1493,18 +1540,35 @@ object Innertube {
                 JSONObject().put("signatureTimestamp", sigTimestamp)))
         }
 
+        // Web clients carry the signed-in session when one is linked; native clients never do.
+        // The Authorization hash is built for the same origin the request announces.
+        val account = if (client.usePoTokenInBody) AccountManager.activeSession() else null
+        val webOrigin = if (account != null && client.clientName == "WEB_REMIX") {
+            "https://music.youtube.com"
+        } else {
+            "https://www.youtube.com"
+        }
+        val authorization = account?.let { SapisidAuth.authorizationHeader(it.cookie, webOrigin) }
+        val signedIn = account != null && authorization != null
+
         val request = Request.Builder()
-            .url("https://www.youtube.com/youtubei/v1/player?key=$YTM_KEY")
+            .url("${if (signedIn) webOrigin else "https://www.youtube.com"}/youtubei/v1/player?key=$YTM_KEY")
             .addHeader("Content-Type", "application/json")
             .addHeader("User-Agent", client.userAgent)
             .addHeader("X-YouTube-Client-Name", client.clientId)
             .addHeader("X-YouTube-Client-Version", client.clientVersion)
             .apply {
                 if (client.usePoTokenInBody) {
-                    addHeader("Origin", "https://www.youtube.com")
-                    addHeader("Referer", "https://www.youtube.com/")
+                    val origin = if (signedIn) webOrigin else "https://www.youtube.com"
+                    addHeader("Origin", origin)
+                    addHeader("Referer", "$origin/")
                 }
                 visitorData?.let { addHeader("X-Visitor-Data", it) }
+                if (signedIn && account != null && authorization != null) {
+                    addHeader("Authorization", authorization)
+                    addHeader("Cookie", account.cookie)
+                    addHeader("X-Goog-AuthUser", account.authUser)
+                }
             }
             .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
@@ -1625,7 +1689,12 @@ object Innertube {
                 val url = when (result) {
                     is StreamAttemptResult.Forbidden -> { sawForbidden = true; continue }
                     is StreamAttemptResult.OtherFailure -> continue
-                    is StreamAttemptResult.SignInRequired -> { sawSignIn = true; lastRoundSawSignIn = true; continue }
+                    is StreamAttemptResult.SignInRequired -> {
+                        sawSignIn = true; lastRoundSawSignIn = true
+                        // A signed-in web client told to sign in may mean the session was revoked.
+                        if (client.usePoTokenInBody) AccountManager.requestSessionCheck()
+                        continue
+                    }
                     is StreamAttemptResult.Success -> result.url
                 }
 
@@ -1646,7 +1715,8 @@ object Innertube {
                     }
                 }
 
-                Timber.d("Stream resolved via ${client.clientName} ✅")
+                val viaAccount = client.usePoTokenInBody && AccountManager.activeSession() != null
+                Timber.d("Stream resolved via ${client.clientName}${if (viaAccount) " (signed in)" else ""} ✅")
                 return url to sawForbidden
             } catch (e: Exception) {
                 Log.w("Innertube", "Client ${client.clientName} failed: ${e.message}")
@@ -1767,6 +1837,7 @@ object Innertube {
         Timber.d("getStreamUrl: quality=$quality (forDownload=$forDownload)")
 
         // Ensure visitorData + signatureTimestamp are ready
+        syncAccountIdentity()
         if (visitorData == null) fetchVisitorData()
         syncSignatureTimestamp()
 
