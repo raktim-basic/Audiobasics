@@ -166,11 +166,26 @@ internal object CloudLibrary {
         var rows = 0
         var skipped = 0
         val songs = ArrayList<CloudSong>()
+        val unknownKinds = LinkedHashSet<String>()
+        var unknown = 0
         for (i in 0 until shelf.contents.length()) {
-            val item = shelf.contents.optJSONObject(i)?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
+            val entry = shelf.contents.optJSONObject(i) ?: continue
+            val item = entry.optJSONObject("musicResponsiveListItemRenderer")
+            if (item == null) {
+                if (!entry.has("continuationItemRenderer")) {
+                    unknown++
+                    for (k in entry.keys()) unknownKinds += k
+                }
+                continue
+            }
             rows++
             val song = parseSongRow(item)
             if (song == null) skipped++ else songs += song
+        }
+        // Entries that are neither songs nor a "load more" marker mean the layout isn't what we
+        // think it is. Reading that as "no songs" would look like an empty library.
+        if (rows == 0 && unknown > 0) {
+            return AccountResult.ParseError("Song list had $unknown entries in an unrecognised format ($unknownKinds)")
         }
         return AccountResult.Success(
             Page(
@@ -316,11 +331,26 @@ internal object CloudLibrary {
             return AccountResult.ParseError("Unrecognised library layout (${shapeOf(json)})")
         }
         var rows = 0
+        var unknown = 0
+        val unknownKinds = LinkedHashSet<String>()
         val out = ArrayList<T>()
         for (i in 0 until shelf.contents.length()) {
-            val renderer = shelf.contents.optJSONObject(i)?.optJSONObject("musicTwoRowItemRenderer") ?: continue
+            val entry = shelf.contents.optJSONObject(i) ?: continue
+            val renderer = entry.optJSONObject("musicTwoRowItemRenderer")
+            if (renderer == null) {
+                if (!entry.has("continuationItemRenderer")) {
+                    unknown++
+                    for (k in entry.keys()) unknownKinds += k
+                }
+                continue
+            }
             rows++
             parseItem(renderer)?.let { out += it }
+        }
+        // The library can be shown as a list instead of a grid. Entries we don't read must never
+        // turn into "this library is empty".
+        if (rows == 0 && unknown > 0) {
+            return AccountResult.ParseError("Library had $unknown entries in an unrecognised format ($unknownKinds)")
         }
         return AccountResult.Success(Page(out, rows, 0, nextToken(shelf), null))
     }
