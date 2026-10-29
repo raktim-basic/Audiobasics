@@ -41,6 +41,7 @@ sealed interface LoginResult {
 object AccountManager {
 
     private const val TAG = "Account"
+    private const val CHECK_COOLDOWN_MS = 5 * 60 * 1000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val opLock = Mutex()
@@ -77,6 +78,22 @@ object AccountManager {
      */
     internal fun activeSession(): AccountSession? =
         if (_state.value is AccountState.LoggedIn) session else null
+
+    @Volatile
+    private var lastCheckRequestMs = 0L
+
+    /**
+     * Fire-and-forget [validateSession] for callers that just saw a sign-in rejection (e.g. the
+     * player endpoint). Throttled, so a run of failing songs triggers at most one check per
+     * few minutes. Does nothing when no account is linked.
+     */
+    internal fun requestSessionCheck() {
+        if (session == null) return
+        val now = System.currentTimeMillis()
+        if (now - lastCheckRequestMs < CHECK_COOLDOWN_MS) return
+        lastCheckRequestMs = now
+        scope.launch { validateSession() }
+    }
 
     /** Called when any request gets an explicit "not signed in" answer from YouTube. */
     internal fun reportSessionRejected() {
