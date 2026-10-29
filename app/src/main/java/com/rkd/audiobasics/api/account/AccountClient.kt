@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.api.account
 
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -67,16 +68,18 @@ internal object AccountClient {
     fun post(
         session: AccountSession,
         endpoint: String,
-        body: JSONObject = JSONObject()
+        body: JSONObject = JSONObject(),
+        continuation: String? = null
     ): AccountResult<JSONObject> =
-        postRaw(session.cookie, session.visitorData, session.authUser, endpoint, body)
+        postRaw(session.cookie, session.visitorData, session.authUser, endpoint, body, continuation)
 
     fun postRaw(
         cookie: String,
         visitorData: String,
         authUser: String,
         endpoint: String,
-        body: JSONObject = JSONObject()
+        body: JSONObject = JSONObject(),
+        continuation: String? = null
     ): AccountResult<JSONObject> {
         val authorization = SapisidAuth.authorizationHeader(cookie)
             ?: return AccountResult.SessionExpired
@@ -96,8 +99,21 @@ internal object AccountClient {
                 .put("user", JSONObject().put("lockedSafetyMode", false))
         )
 
+        // A continuation token rides in the query string (as the web client does); the body
+        // stays a plain context-only request.
+        val url = "$BASE/$endpoint".toHttpUrl().newBuilder()
+            .addQueryParameter("key", API_KEY)
+            .apply {
+                if (continuation != null) {
+                    addQueryParameter("ctoken", continuation)
+                    addQueryParameter("continuation", continuation)
+                    addQueryParameter("type", "next")
+                }
+            }
+            .build()
+
         val request = Request.Builder()
-            .url("$BASE/$endpoint?key=$API_KEY")
+            .url(url)
             .addHeader("Content-Type", "application/json")
             .addHeader("User-Agent", USER_AGENT)
             .addHeader("Origin", SapisidAuth.ORIGIN)
