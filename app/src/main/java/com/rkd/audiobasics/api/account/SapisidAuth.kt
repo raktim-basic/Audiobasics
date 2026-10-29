@@ -8,7 +8,8 @@ import java.security.MessageDigest
  * For each of the three PAPISID cookies the header carries
  *   <SCHEME> <unixSeconds>_<sha1Hex("<unixSeconds> <cookieValue> <origin>")>
  * where the schemes are SAPISIDHASH, SAPISID1PHASH and SAPISID3PHASH. The hash is time-based,
- * so it has to be rebuilt for every request, never cached.
+ * so it has to be rebuilt for every request, never cached. The origin in the hash has to be
+ * the same as the Origin header sent with the request.
  */
 internal object SapisidAuth {
 
@@ -31,6 +32,7 @@ internal object SapisidAuth {
     /** Null when the cookie has no usable PAPISID value. */
     fun authorizationHeader(
         cookie: String,
+        origin: String = ORIGIN,
         nowSeconds: Long = System.currentTimeMillis() / 1000
     ): String? {
         val cookies = parseCookies(cookie)
@@ -45,7 +47,7 @@ internal object SapisidAuth {
         value("__Secure-3PAPISID")?.let { parts += "SAPISID3PHASH" to it }
 
         return parts.joinToString(" ") { (scheme, secret) ->
-            "$scheme ${nowSeconds}_${sha1Hex("$nowSeconds $secret $ORIGIN")}"
+            "$scheme ${nowSeconds}_${sha1Hex("$nowSeconds $secret $origin")}"
         }
     }
 
