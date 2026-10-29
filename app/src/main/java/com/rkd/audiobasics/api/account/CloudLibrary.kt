@@ -19,9 +19,13 @@ internal data class CloudPlaylist(
 
 /**
  * A list that arrived COMPLETE. A [CloudList] is only ever produced when every page was
- * fetched without error and, where the page advertises a size, the numbers add up. Anything
- * less comes back as an [AccountResult] failure instead, so a half-fetched library can never
- * be mistaken for "the cloud holds exactly this".
+ * fetched without error and the paging ended where YouTube said it ends. Anything less comes
+ * back as an [AccountResult] failure instead, so a half-fetched library can never be mistaken
+ * for "the cloud holds exactly this".
+ *
+ * The header's "N songs" is NOT required to match: YouTube counts videos that were taken down
+ * or made unavailable, but doesn't return them as rows (e.g. header 242, rows 239). The
+ * difference is kept in [advertisedCount] / [rowCount] so it can be shown, not treated as failure.
  */
 internal data class CloudList<T>(
     val items: List<T>,
@@ -41,12 +45,16 @@ internal data class CloudList<T>(
  * The rules that make this safe to build a mirror on:
  *  - every page is followed to the end; any page failing fails the whole fetch
  *  - a response whose layout isn't recognised is a ParseError, never an empty list
- *  - if the header says "N songs" and N rows didn't arrive, the fetch fails
+ *  - a list that stops on a full page while the header says more is treated as cut short
+ *    (a smaller shortfall is normal: removed videos are counted by the header but not returned)
  */
 internal object CloudLibrary {
 
     private const val TAG = "Sync"
     private const val MAX_PAGES = 100
+
+    /** YouTube returns up to 100 rows per page; a final page this full may have been cut off. */
+    private const val FULL_PAGE_ROWS = 100
     private const val PAGE_PAUSE_MS = 250L
 
     fun fetchLikedSongs(session: AccountSession): AccountResult<CloudList<CloudSong>> =
@@ -100,6 +108,7 @@ internal object CloudLibrary {
         var advertised: Int? = null
         var token: String? = null
         var pages = 0
+        var lastPageRows = 0
         val seenTokens = HashSet<String>()
 
         while (true) {
@@ -135,6 +144,7 @@ internal object CloudLibrary {
             }
 
             pages++
+            lastPageRows = page.rows
             items += page.items
             rows += page.rows
             skipped += page.skipped
@@ -149,9 +159,12 @@ internal object CloudLibrary {
             token = next
         }
 
-        if (advertised != null && advertised != rows) {
-            Timber.tag(TAG).w("$label: header says $advertised but $rows rows arrived (not applying anything)")
-            return AccountResult.ParseError("$label: expected $advertised entries but got $rows")
+        if (advertised != null && rows < advertised && lastPageRows >= FULL_PAGE_ROWS) {
+            Timber.tag(TAG).w("$label: ended on a full page ($lastPageRows rows) but the header says $advertised and only $rows arrived (not applying anything)")
+            return AccountResult.ParseError("$label ended on a full page of $lastPageRows, but the header says $advertised and only $rows arrived")
+        }
+        if (advertised != null && rows != advertised) {
+            Timber.tag(TAG).d("$label: header says $advertised, $rows rows arrived (removed or unavailable videos are counted by the header but not returned)")
         }
         return AccountResult.Success(CloudList(items, pages, advertised, rows, skipped))
     }

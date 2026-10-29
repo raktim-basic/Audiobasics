@@ -50,6 +50,7 @@ internal object SyncPreview {
                     val extra = buildList {
                         if (ids.size != cloud.size) add("${ids.size - cloud.size} repeated")
                         if (list.skippedRows > 0) add("${list.skippedRows} unreadable rows")
+                        list.advertisedCount?.let { if (it > list.rowCount) add("${it - list.rowCount} counted by YouTube but unavailable") }
                         if (list.items.any { it.setVideoId == null }) add("some rows had no entry ID")
                     }
                     if (extra.isNotEmpty()) log("  Note: ${extra.joinToString(", ")}.")
@@ -109,6 +110,7 @@ internal object SyncPreview {
                                 val notes = buildList {
                                     if (l.items.size != unique) add("${l.items.size - unique} repeated")
                                     if (l.skippedRows > 0) add("${l.skippedRows} unreadable")
+                                    l.advertisedCount?.let { if (it > l.rowCount) add("${it - l.rowCount} counted by YouTube but unavailable") }
                                     if (l.advertisedCount == null) add("no header count")
                                 }
                                 log("  ${p.title}: ${l.items.size} songs, complete" +
