@@ -1403,6 +1403,8 @@ private fun DevToolsPage(
                 }
             )
 
+            SyncPreviewRow(vm = vm, isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled)
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
