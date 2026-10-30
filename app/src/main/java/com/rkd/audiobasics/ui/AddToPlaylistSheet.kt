@@ -157,16 +157,6 @@ fun AddToPlaylistSheet(
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
-                        enabled = !saving,
-                        onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            close()
-                        }
-                    ) {
-                        Text("Cancel", fontFamily = NothingFont, color = textColor, fontSize = 14.sp)
-                    }
-                    Spacer(Modifier.width(4.dp))
                     Button(
                         enabled = loaded && !saving,
                         onClick = {
