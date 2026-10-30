@@ -106,4 +106,55 @@ interface PlaylistDao {
 
     @Query("SELECT * FROM playlist_songs GROUP BY songId")
     suspend fun getAllPlaylistSongs(): List<PlaylistSongEntity>
+
+    // ── Cloud linking (v5) ─────────────────────────────────────
+
+    @Query("SELECT COUNT(*) FROM playlist_songs")
+    suspend fun countAllPlaylistSongs(): Int
+
+    @Query("DELETE FROM playlist_songs")
+    suspend fun deleteAllPlaylistSongs()
+
+    @Query("DELETE FROM playlists")
+    suspend fun deleteAllPlaylists()
+
+    @Query("UPDATE playlists SET cloudId = NULL")
+    suspend fun clearPlaylistCloudIds()
+
+    @Query("UPDATE playlist_songs SET setVideoId = NULL")
+    suspend fun clearSongSetVideoIds()
+
+    // Everything below runs as ONE database transaction: either all of it happens or none of it.
+
+    @Transaction
+    suspend fun clearAllLocalPlaylists() {
+        deleteAllPlaylistSongs()
+        deleteAllPlaylists()
+    }
+
+    // Turns every linked playlist into a plain local one.
+    @Transaction
+    suspend fun detachAllFromCloud() {
+        clearPlaylistCloudIds()
+        clearSongSetVideoIds()
+    }
+
+    // Applies a cloud library: removes [deleteIds], then (re)writes each playlist in [playlists]
+    // together with its [songs]. A playlist's old songs are cleared before its new ones go in.
+    @Transaction
+    suspend fun applyCloudPlaylists(
+        deleteIds: List<String>,
+        playlists: List<PlaylistEntity>,
+        songs: List<PlaylistSongEntity>
+    ) {
+        deleteIds.forEach { id ->
+            clearPlaylist(id)
+            deletePlaylist(id)
+        }
+        playlists.forEach { p ->
+            clearPlaylist(p.id)
+            insertPlaylist(p)
+        }
+        songs.forEach { insertSong(it) }
+    }
 }
