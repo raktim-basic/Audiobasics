@@ -564,10 +564,7 @@ fun AudiobasicsApp(
             isDarkMode = isDarkMode,
             hapticsEnabled = hapticsEnabled,
             onDismiss = { showCreatePlaylistFromSheet = false },
-            onCreate = { name, emoji ->
-                vm.createPlaylist(name, emoji)
-                showCreatePlaylistFromSheet = false
-            }
+            onCreate = { name, emoji -> vm.createPlaylistAwait(name, emoji) }
         )
     }
 
