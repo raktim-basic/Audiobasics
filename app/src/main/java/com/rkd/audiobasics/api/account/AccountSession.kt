@@ -28,8 +28,12 @@ sealed interface AccountState {
      */
     data class LoggedIn(val profile: AccountProfile, val libraryLinked: Boolean = false) : AccountState
 
-    /** YouTube stopped accepting the stored session. The user has to sign in again. */
-    data class SessionExpired(val profile: AccountProfile) : AccountState
+    /**
+     * YouTube stopped accepting the stored session. The user has to sign in again.
+     * [libraryLinked] says whether this device's library was linked, which decides whether
+     * changes to it are refused until then.
+     */
+    data class SessionExpired(val profile: AccountProfile, val libraryLinked: Boolean = false) : AccountState
 }
 
 /**
