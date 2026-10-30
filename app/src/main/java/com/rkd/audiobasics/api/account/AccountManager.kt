@@ -100,7 +100,7 @@ object AccountManager {
         val current = session ?: return
         if (_state.value is AccountState.LoggedIn) {
             Timber.tag(TAG).w("A request was rejected as unauthenticated; marking the session expired")
-            _state.value = AccountState.SessionExpired(current.profile)
+            _state.value = AccountState.SessionExpired(current.profile, current.libraryLinked)
         }
     }
 
@@ -133,7 +133,7 @@ object AccountManager {
                 }
                 is AccountResult.SessionExpired -> {
                     Timber.tag(TAG).w("Session check: YouTube no longer accepts this session")
-                    _state.value = AccountState.SessionExpired(current.profile)
+                    _state.value = AccountState.SessionExpired(current.profile, current.libraryLinked)
                 }
                 is AccountResult.NetworkError ->
                     Timber.tag(TAG).d("Session check skipped: no connection (state unchanged)")
