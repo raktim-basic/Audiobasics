@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import com.rkd.audiobasics.api.account.AccountManager
 import com.rkd.audiobasics.api.account.AccountProfile
 import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.api.account.CapturedLogin
+import com.rkd.audiobasics.api.account.LibraryFlow
 import com.rkd.audiobasics.api.account.LoginResult
 import com.rkd.audiobasics.api.account.SapisidAuth
 import com.rkd.audiobasics.ui.theme.AmoledBlack
@@ -70,6 +72,12 @@ internal fun AccountPage(
     val surfaceColor = if (isDarkMode) AmoledBlack else Color.White
 
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    val store = remember(vm) { VmLibraryStore(vm) }
+
+    // When the library is (or may be) linked to the account, logging out asks what happens to
+    // the copy on this device. With nothing linked there is nothing to decide.
+    val askAboutLibrary = state is AccountState.SessionExpired ||
+        (state as? AccountState.LoggedIn)?.libraryLinked == true
 
     // Cheap check each time the page opens; does nothing when no account is linked, and
     // only an explicit rejection from YouTube ever changes the state.
@@ -129,6 +137,28 @@ internal fun AccountPage(
                 is AccountState.LoggedIn -> {
                     ProfileRow(current.profile, surfaceColor, textColor, subTextColor)
                     SettingsDivider(isDarkMode)
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = if (current.libraryLinked) "Sync now" else "Finish setting up your library",
+                        subtitle = if (current.libraryLinked) {
+                            "Update this device from your account"
+                        } else {
+                            "Choose how this device's library and your account fit together"
+                        },
+                        icon = {
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            if (current.libraryLinked) LibraryFlow.syncNow(store) else LibraryFlow.begin(store)
+                        }
+                    )
+                    SettingsDivider(isDarkMode)
                     LogoutRow(isDarkMode, textColor) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         showLogoutConfirm = true
@@ -174,34 +204,73 @@ internal fun AccountPage(
         }
     }
 
+    LibraryFlowHost(vm = vm, isDarkMode = isDarkMode)
+
     if (showLogoutConfirm) {
-        AlertDialog(
-            onDismissRequest = { showLogoutConfirm = false },
-            containerColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White,
-            title = {
-                Text("Log out?", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = textColor)
-            },
-            text = {
-                Text(
-                    "This removes your account from this device. Nothing in your library on this device is changed.",
-                    fontFamily = NothingFont,
-                    color = subTextColor
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showLogoutConfirm = false
-                    scope.launch { AccountManager.logout() }
-                }) {
-                    Text("Log out", fontFamily = NothingFont, color = Color(0xFFE57373))
+        val dialogColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+        if (askAboutLibrary) {
+            AlertDialog(
+                onDismissRequest = { showLogoutConfirm = false },
+                containerColor = dialogColor,
+                title = {
+                    Text("Log out?", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = textColor)
+                },
+                text = {
+                    Column {
+                        Text(
+                            "What should happen to the library on this device?",
+                            fontFamily = NothingFont,
+                            color = subTextColor
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        TextButton(onClick = {
+                            showLogoutConfirm = false
+                            LibraryFlow.logout(store, clearLocal = false)
+                        }) {
+                            Text("Keep library on this device", fontFamily = NothingFont, color = textColor)
+                        }
+                        TextButton(onClick = {
+                            showLogoutConfirm = false
+                            LibraryFlow.logout(store, clearLocal = true)
+                        }) {
+                            Text("Clear library from this device", fontFamily = NothingFont, color = Color(0xFFE57373))
+                        }
+                        TextButton(onClick = { showLogoutConfirm = false }) {
+                            Text("Cancel", fontFamily = NothingFont, color = subTextColor)
+                        }
+                    }
+                },
+                confirmButton = {}
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showLogoutConfirm = false },
+                containerColor = dialogColor,
+                title = {
+                    Text("Log out?", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = textColor)
+                },
+                text = {
+                    Text(
+                        "This removes your account from this device. Nothing in your library on this device is changed.",
+                        fontFamily = NothingFont,
+                        color = subTextColor
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showLogoutConfirm = false
+                        scope.launch { AccountManager.logout() }
+                    }) {
+                        Text("Log out", fontFamily = NothingFont, color = Color(0xFFE57373))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLogoutConfirm = false }) {
+                        Text("Cancel", fontFamily = NothingFont, color = textColor)
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutConfirm = false }) {
-                    Text("Cancel", fontFamily = NothingFont, color = textColor)
-                }
-            }
-        )
+            )
+        }
     }
 }
 
@@ -341,6 +410,9 @@ internal fun LoginPage(
                             // copy (and a still-rotating browser session) behind in the WebView.
                             AccountManager.clearWebSession()
                             checking = false
+                            // Compare the account with this device's library; the questions (if
+                            // any) appear on the Account page we're about to show.
+                            LibraryFlow.begin(VmLibraryStore(vm))
                             onLoggedIn()
                         }
                         is LoginResult.Failed -> {

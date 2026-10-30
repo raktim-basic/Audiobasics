@@ -23,6 +23,11 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.rkd.audiobasics.api.Innertube
+import com.rkd.audiobasics.api.account.AccountManager
+import com.rkd.audiobasics.api.account.AccountState
+import com.rkd.audiobasics.api.account.CloudSnapshot
+import com.rkd.audiobasics.api.account.LibraryCounts
+import com.rkd.audiobasics.api.account.PlaylistNameCodec
 import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.lyrics.LyricsCache
 import com.rkd.audiobasics.lyrics.LyricsRepository
@@ -1594,6 +1599,136 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissStorageLow() { _showStorageLow.value = false }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Account library (v2.8): applying a signed-in account's library to this device.
+    // Called only through the library flow, which has already read the whole account
+    // successfully; nothing here talks to the network.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    internal suspend fun libraryCounts(): LibraryCounts = withContext(Dispatchers.IO) {
+        LibraryCounts(
+            liked = _likedSongs.value.size,
+            albums = _savedAlbums.value.size,
+            playlists = playlistDao.getPlaylists().size,
+            playlistSongs = playlistDao.countAllPlaylistSongs()
+        )
+    }
+
+    /** Every song ID this device still needs audio for: liked songs plus all playlist songs. */
+    private suspend fun libraryAudioIds(): Set<String> =
+        _likedSongs.value.map { it.id }.toSet() + playlistDao.getAllPlaylistSongIds()
+
+    /**
+     * Makes this device's library match [snapshot]. Playlists are written in one database
+     * transaction (all or nothing); liked songs and saved albums are replaced afterwards.
+     * Songs are NOT downloaded here: they show as not cached, exactly like an imported library.
+     */
+    internal suspend fun replaceLibraryWithCloud(snapshot: CloudSnapshot, wipeLocalOnly: Boolean) {
+        withContext(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val before = libraryAudioIds()
+
+            // ── Playlists ──
+            val existing = playlistDao.getPlaylists()
+            val existingByCloudId = existing.filter { it.cloudId != null }.associateBy { it.cloudId!! }
+            val cloudIds = snapshot.playlists.map { it.playlist.id }.toSet()
+
+            val deleteIds = existing.filter {
+                (it.cloudId != null && it.cloudId !in cloudIds) || (wipeLocalOnly && it.cloudId == null)
+            }.map { it.id }
+
+            val keptSortOrders = existing
+                .filter { it.id !in deleteIds && it.cloudId != null && it.cloudId in cloudIds }
+                .map { it.sortOrder }
+            val newPlaylistCount = snapshot.playlists.count { existingByCloudId[it.playlist.id] == null }
+            // New playlists go above everything already there, keeping the account's own order.
+            var nextNewSortOrder = (keptSortOrders.minOrNull() ?: 0) - newPlaylistCount
+
+            val playlistEntities = ArrayList<PlaylistEntity>()
+            val songEntities = ArrayList<PlaylistSongEntity>()
+            for (cloud in snapshot.playlists) {
+                val parsed = PlaylistNameCodec.parse(cloud.playlist.title)
+                val emoji = parsed.emoji ?: "\uD83C\uDFB5"   // the app's default playlist icon
+                val local = existingByCloudId[cloud.playlist.id]
+                val localId = local?.id ?: cloud.playlist.id
+                playlistEntities += PlaylistEntity(
+                    id = localId,
+                    name = parsed.name.ifBlank { cloud.playlist.title },
+                    emoji = emoji,
+                    createdAt = local?.createdAt ?: System.currentTimeMillis(),
+                    sortOrder = local?.sortOrder ?: nextNewSortOrder++,
+                    cloudId = cloud.playlist.id
+                )
+                // The account's order is kept: first song in the account = first in the app
+                // (the app lists songs by ascending addedAt).
+                cloud.songs.forEachIndexed { index, c ->
+                    val song = c.song
+                    songEntities += PlaylistSongEntity(
+                        playlistId = localId,
+                        songId = song.id,
+                        title = song.title,
+                        artist = song.artist,
+                        thumbnail = song.thumbnail,
+                        isExplicit = song.isExplicit,
+                        albumId = song.albumId,
+                        duration = song.duration,
+                        addedAt = index.toLong(),
+                        artistNames = Song.encodeArtistNames(song.artistNames),
+                        artistIds = Song.encodeArtistIds(song.artistIds),
+                        setVideoId = c.setVideoId
+                    )
+                }
+            }
+            playlistDao.applyCloudPlaylists(deleteIds, playlistEntities, songEntities)
+
+            // ── Liked songs ──
+            _likedSongs.value = snapshot.liked.map { c ->
+                val cached = CacheManager.isCached(app, c.song.id)
+                c.song.copy(isCached = cached, cacheFailed = !cached)
+            }
+            saveLikedSongs()
+
+            // ── Saved albums (keep details the account's list doesn't carry) ──
+            val oldAlbums = _savedAlbums.value.associateBy { it.id }
+            _savedAlbums.value = snapshot.albums.map { a ->
+                val old = oldAlbums[a.id]
+                if (old == null) a else a.copy(
+                    duration = old.duration,
+                    songCount = old.songCount,
+                    youtubeUrl = old.youtubeUrl
+                )
+            }
+            saveSavedAlbums()
+
+            // ── Audio no longer referenced by anything ──
+            val after = libraryAudioIds()
+            (before - after).forEach { CacheManager.removeCachedSong(app, it) }
+            refreshCacheSize()
+            _openPlaylistId.value?.let { _openPlaylistSongs.value = playlistDao.getPlaylistSongs(it) }
+        }
+    }
+
+    /** Empties liked songs, saved albums and playlists on this device, and their cached audio. */
+    internal suspend fun clearLocalLibrary() {
+        withContext(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val before = libraryAudioIds()
+            playlistDao.clearAllLocalPlaylists()
+            _likedSongs.value = emptyList()
+            saveLikedSongs()
+            _savedAlbums.value = emptyList()
+            saveSavedAlbums()
+            before.forEach { CacheManager.removeCachedSong(app, it) }
+            refreshCacheSize()
+            _openPlaylistSongs.value = emptyList()
+        }
+    }
+
+    /** Turns every account-linked playlist into a plain local one. Nothing is removed. */
+    internal suspend fun detachLocalLibraryFromCloud() {
+        withContext(Dispatchers.IO) { playlistDao.detachAllFromCloud() }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Custom Playlists (Room)
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -2491,6 +2626,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun importData(context: Context, uri: Uri) {
+        // A backup import would silently diverge from the account, so it is only allowed
+        // while signed out (the Settings row is disabled too; this is the backstop).
+        if (AccountManager.state.value !is AccountState.LoggedOut) return
         viewModelScope.launch {
             try {
                 val text = context.contentResolver

@@ -1044,6 +1044,9 @@ private fun LibraryPage(
 
     var showImportWarning by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    // Restoring a backup while an account is linked would silently diverge from it, so it is
+    // only available when signed out. Export always works.
+    val signedIn = AccountManager.state.collectAsState().value !is AccountState.LoggedOut
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -1262,7 +1265,7 @@ private fun LibraryPage(
                     SettingsRow(
                         isDarkMode = isDarkMode,
                         title = "Import Library",
-                        subtitle = "Import a backup file of your library",
+                        subtitle = if (signedIn) "Log out to import a backup" else "Import a backup file of your library",
                         icon = {
                             Icon(
                                 Icons.Default.Download,
@@ -1272,8 +1275,10 @@ private fun LibraryPage(
                             )
                         },
                         onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            importLauncher.launch(arrayOf("application/json"))
+                            if (!signedIn) {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                importLauncher.launch(arrayOf("application/json"))
+                            }
                         }
                     )
                 }
