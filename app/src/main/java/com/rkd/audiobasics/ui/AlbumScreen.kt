@@ -141,6 +141,8 @@ fun AlbumScreen(
         derivedStateOf { vm.findSavedAlbumId(album.id, enrichedAlbum.title) }
     }
     val isSaved = savedAlbumId != null
+    // True while a save/unsave of this album is waiting on the account.
+    val albumSaveBusy = "album:${enrichedAlbum.id}" in vm.cloudBusy.collectAsState().value
 
     var albumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -501,16 +503,27 @@ fun AlbumScreen(
                                     }
 
                                 // Save/unsave
-                                IconButton(onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    if (isSaved) vm.unsaveAlbum(enrichedAlbum) else vm.saveAlbum(enrichedAlbum)
-                                }) {
-                                    Icon(
-                                        imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                        contentDescription = "Save",
-                                        tint = textColor,
-                                        modifier = Modifier.size(22.dp)
-                                    )
+                                IconButton(
+                                    enabled = !albumSaveBusy,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        if (isSaved) vm.unsaveAlbum(enrichedAlbum) else vm.saveAlbum(enrichedAlbum)
+                                    }
+                                ) {
+                                    if (albumSaveBusy) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp,
+                                            color = textColor
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                            contentDescription = "Save",
+                                            tint = textColor,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
                                 }
 
                                 // Play dropdown

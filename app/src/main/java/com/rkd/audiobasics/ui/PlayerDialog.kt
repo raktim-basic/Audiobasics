@@ -521,10 +521,7 @@ fun PlayerDialog(
                 hapticsEnabled = hapticsEnabled,
                 existingNames = customPlaylists.map { it.name },
                 onDismiss = { showCreatePlaylist = false },
-                onCreate = { name, emoji ->
-                    vm.createPlaylist(name, emoji)
-                    showCreatePlaylist = false
-                }
+                onCreate = { name, emoji -> vm.createPlaylistAwait(name, emoji) }
             )
         }
 

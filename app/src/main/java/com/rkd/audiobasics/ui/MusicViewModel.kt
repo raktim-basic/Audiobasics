@@ -1875,32 +1875,39 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // ─────────────────────────────────────────────────────────────────────────
 
     fun createPlaylist(name: String, emoji: String) {
+        viewModelScope.launch { createPlaylistAwait(name, emoji) }
+    }
+
+    /**
+     * Creates a playlist and returns true once it exists. With an account linked it is created
+     * there first (private) and its ID becomes the local ID; any failure returns false and
+     * nothing is created. Finishes even if the caller goes away.
+     */
+    suspend fun createPlaylistAwait(name: String, emoji: String): Boolean = inVmScope {
         val trimmed = name.trim()
         val isDuplicate = customPlaylists.value.any { it.name.equals(trimmed, ignoreCase = true) }
-        if (isDuplicate) return
+        if (isDuplicate) return@inVmScope false
         val mode = writeMode()
         if (mode == WriteMode.REFUSED) {
             refuseExpired()
-            return
+            return@inVmScope false
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            // Linked: the account creates it first (private), and its ID becomes ours.
-            var cloudId: String? = null
-            if (mode == WriteMode.CLOUD) {
-                cloudId = cloudCall("create:$trimmed") { s ->
-                    CloudWriter.createPlaylist(s, PlaylistNameCodec.compose(emoji, trimmed))
-                } ?: return@launch
-            }
-            val entity = PlaylistEntity(
-                id = cloudId ?: UUID.randomUUID().toString(),
-                name = trimmed,
-                emoji = emoji,
-                // New playlists go to the TOP of the list (lowest sortOrder sorts first).
-                sortOrder = (playlistDao.getMinSortOrder() ?: 0) - 1,
-                cloudId = cloudId
-            )
-            playlistDao.insertPlaylist(entity)
+        var cloudId: String? = null
+        if (mode == WriteMode.CLOUD) {
+            cloudId = cloudCall("create:$trimmed") { s ->
+                CloudWriter.createPlaylist(s, PlaylistNameCodec.compose(emoji, trimmed))
+            } ?: return@inVmScope false
         }
+        val entity = PlaylistEntity(
+            id = cloudId ?: UUID.randomUUID().toString(),
+            name = trimmed,
+            emoji = emoji,
+            // New playlists go to the TOP of the list (lowest sortOrder sorts first).
+            sortOrder = (playlistDao.getMinSortOrder() ?: 0) - 1,
+            cloudId = cloudId
+        )
+        playlistDao.insertPlaylist(entity)
+        true
     }
 
     fun reorderPlaylists(fromIndex: Int, toIndex: Int) {
@@ -1947,30 +1954,34 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun renamePlaylist(playlistId: String, name: String, emoji: String) {
+        viewModelScope.launch { renamePlaylistAwait(playlistId, name, emoji) }
+    }
+
+    /** Renames / re-icons a playlist and returns true once done. Account first when linked. */
+    suspend fun renamePlaylistAwait(playlistId: String, name: String, emoji: String): Boolean = inVmScope {
         val trimmed = name.trim()
         val isDuplicate = customPlaylists.value.any {
             it.id != playlistId && it.name.equals(trimmed, ignoreCase = true)
         }
-        if (isDuplicate) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
-            if (cloudId != null) {
-                when (writeMode()) {
-                    WriteMode.REFUSED -> {
-                        refuseExpired()
-                        return@launch
-                    }
-                    WriteMode.CLOUD -> {
-                        // The icon lives in the account's playlist name, so changing it renames the playlist there.
-                        cloudCall("pl:$playlistId") { s ->
-                            CloudWriter.renamePlaylist(s, cloudId, PlaylistNameCodec.compose(emoji, trimmed))
-                        } ?: return@launch
-                    }
-                    WriteMode.LOCAL -> Unit
+        if (isDuplicate) return@inVmScope false
+        val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (cloudId != null) {
+            when (writeMode()) {
+                WriteMode.REFUSED -> {
+                    refuseExpired()
+                    return@inVmScope false
                 }
+                WriteMode.CLOUD -> {
+                    // The icon lives in the account's playlist name, so changing it renames the playlist there.
+                    cloudCall("pl:$playlistId") { s ->
+                        CloudWriter.renamePlaylist(s, cloudId, PlaylistNameCodec.compose(emoji, trimmed))
+                    } ?: return@inVmScope false
+                }
+                WriteMode.LOCAL -> Unit
             }
-            playlistDao.renamePlaylist(playlistId, trimmed, emoji)
         }
+        playlistDao.renamePlaylist(playlistId, trimmed, emoji)
+        true
     }
 
     fun loadPlaylistSongs(playlistId: String) {

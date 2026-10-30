@@ -11,6 +11,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,9 +40,13 @@ fun CreatePlaylistDialog(
     confirmLabel: String = "Create",
     existingNames: List<String> = emptyList(),
     onDismiss: () -> Unit,
-    onCreate: (name: String, emoji: String) -> Unit
+    // Returns true when the change was made. The dialog stays open, with a spinner on its
+    // button, until this finishes, and only closes itself on success.
+    onCreate: suspend (name: String, emoji: String) -> Boolean
 ) {
     var name by remember { mutableStateOf(initialName) }
+    var saving by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     var selectedEmoji by remember { mutableStateOf(initialEmoji) }
     var showReservedWarning by remember { mutableStateOf(false) }
 
@@ -57,9 +62,11 @@ fun CreatePlaylistDialog(
     }
 
     MorphPopup(
-        onDismissRequest = onDismiss,
+        // Back can close it when idle, never while saving; tapping outside never closes it.
+        onDismissRequest = { if (!saving) onDismiss() },
         placement = MorphPlacement.Center,
-        containerColor = bgColor
+        containerColor = bgColor,
+        dismissOnOutsideTap = false
     ) { close ->
         Column(
             modifier = Modifier
@@ -184,6 +191,7 @@ fun CreatePlaylistDialog(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                enabled = !saving,
                 isError = isDuplicate,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color.Red,
@@ -215,23 +223,47 @@ fun CreatePlaylistDialog(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    close()
-                }) {
+                TextButton(
+                    enabled = !saving,
+                    onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        close()
+                    }
+                ) {
                     Text("Cancel", fontFamily = NothingFont, color = textColor)
                 }
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        if (name.isNotBlank() && !isDuplicate) onCreate(name.trim(), selectedEmoji)
+                        if (name.isNotBlank() && !isDuplicate && !saving) {
+                            val finalName = name.trim()
+                            val finalEmoji = selectedEmoji
+                            scope.launch {
+                                saving = true
+                                val done = onCreate(finalName, finalEmoji)
+                                saving = false
+                                // A refused change keeps the dialog open so nothing typed is lost.
+                                if (done) close()
+                            }
+                        }
                     },
-                    enabled = name.isNotBlank() && !isDuplicate,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                    enabled = name.isNotBlank() && !isDuplicate && !saving,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red,
+                        disabledContainerColor = if (saving) Color.Red.copy(alpha = 0.6f) else Color.Red.copy(alpha = 0.3f)
+                    ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(confirmLabel, fontFamily = NothingFont, color = Color.White, fontWeight = FontWeight.Bold)
+                    if (saving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                    } else {
+                        Text(confirmLabel, fontFamily = NothingFont, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

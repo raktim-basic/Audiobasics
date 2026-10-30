@@ -391,14 +391,14 @@ fun LibraryScreen(
         CreatePlaylistDialog(isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled,
             existingNames = customPlaylists.map { it.name },
             onDismiss = { showCreateDialog = false },
-            onCreate = { name, emoji -> vm.createPlaylist(name, emoji); showCreateDialog = false })
+            onCreate = { name, emoji -> vm.createPlaylistAwait(name, emoji) })
     }
     renameTarget?.let { target ->
         CreatePlaylistDialog(isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled, initialName = target.name,
             initialEmoji = target.emoji, title = "Rename playlist", confirmLabel = "Save",
             existingNames = customPlaylists.filter { it.id != target.id }.map { it.name },
             onDismiss = { renameTarget = null },
-            onCreate = { name, emoji -> vm.renamePlaylist(target.id, name, emoji); renameTarget = null })
+            onCreate = { name, emoji -> vm.renamePlaylistAwait(target.id, name, emoji) })
     }
     deleteTarget?.let { target ->
         AlertDialog(onDismissRequest = { deleteTarget = null },
