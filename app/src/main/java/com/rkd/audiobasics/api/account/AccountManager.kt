@@ -67,7 +67,7 @@ object AccountManager {
             return
         }
         session = loaded
-        _state.value = AccountState.LoggedIn(loaded.profile)
+        _state.value = AccountState.LoggedIn(loaded.profile, loaded.libraryLinked)
         Timber.tag(TAG).d("Restored a stored account session; checking it with YouTube")
         scope.launch { validateSession() }
     }
@@ -128,7 +128,7 @@ object AccountManager {
                         Timber.tag(TAG).w("Session is valid but the refreshed profile couldn't be saved")
                     }
                     session = updated
-                    _state.value = AccountState.LoggedIn(profile)
+                    _state.value = AccountState.LoggedIn(profile, updated.libraryLinked)
                     Timber.tag(TAG).d("Session check: valid")
                 }
                 is AccountResult.SessionExpired -> {
@@ -177,6 +177,10 @@ object AccountManager {
 
         val accountId = captured.dataSyncId.substringBefore("||")
             .ifBlank { info.email ?: info.name }
+        // Signing back in to the SAME account after an expired session keeps the library link:
+        // that library already belongs to this account, so the login questions don't repeat.
+        // A different account, or any login after a logout, always starts unlinked.
+        val keepLink = session?.let { it.profile.accountId == accountId && it.libraryLinked } == true
         val newSession = AccountSession(
             cookie = captured.cookie,
             visitorData = captured.visitorData,
@@ -188,7 +192,8 @@ object AccountManager {
                 email = info.email,
                 handle = info.handle,
                 photoUrl = info.photoUrl
-            )
+            ),
+            libraryLinked = keepLink
         )
 
         val saved = store?.save(newSession) == true
@@ -197,9 +202,27 @@ object AccountManager {
         }
 
         session = newSession
-        _state.value = AccountState.LoggedIn(newSession.profile)
-        Timber.tag(TAG).d("Login complete (account id length ${accountId.length})")
+        _state.value = AccountState.LoggedIn(newSession.profile, keepLink)
+        Timber.tag(TAG).d("Login complete (library linked: $keepLink)")
         LoginResult.Success
+    }
+
+    /**
+     * Records that this device's library has (or no longer has) been reconciled with the account.
+     * Persisted, so an app restart doesn't ask the login questions again or skip them.
+     */
+    internal suspend fun markLibraryLinked(linked: Boolean): Boolean = opLock.withLock {
+        val current = session ?: return@withLock false
+        val updated = current.copy(libraryLinked = linked)
+        if (store?.save(updated) != true) {
+            Timber.tag(TAG).w("Couldn't persist the library link state")
+            return@withLock false
+        }
+        session = updated
+        if (_state.value is AccountState.LoggedIn) {
+            _state.value = AccountState.LoggedIn(updated.profile, linked)
+        }
+        true
     }
 
     /**

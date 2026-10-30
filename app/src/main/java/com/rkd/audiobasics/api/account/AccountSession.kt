@@ -21,8 +21,12 @@ sealed interface AccountState {
     /** No account linked. The app behaves exactly as it did before v2.8. */
     data object LoggedOut : AccountState
 
-    /** Signed in. The session was accepted the last time it was checked. */
-    data class LoggedIn(val profile: AccountProfile) : AccountState
+    /**
+     * Signed in. The session was accepted the last time it was checked.
+     * [libraryLinked] is true once this device's library has been reconciled with the account
+     * (the login rules have run and been answered); until then nothing syncs.
+     */
+    data class LoggedIn(val profile: AccountProfile, val libraryLinked: Boolean = false) : AccountState
 
     /** YouTube stopped accepting the stored session. The user has to sign in again. */
     data class SessionExpired(val profile: AccountProfile) : AccountState
@@ -40,7 +44,8 @@ internal data class AccountSession(
     val dataSyncId: String,
     /** SESSION_INDEX from the page, sent as X-Goog-AuthUser. */
     val authUser: String,
-    val profile: AccountProfile
+    val profile: AccountProfile,
+    val libraryLinked: Boolean = false
 ) {
     fun toJson(): String = JSONObject()
         .put("v", 1)
@@ -53,6 +58,7 @@ internal data class AccountSession(
         .put("email", profile.email)
         .put("handle", profile.handle)
         .put("photoUrl", profile.photoUrl)
+        .put("linked", libraryLinked)
         .toString()
 
     companion object {
@@ -69,7 +75,8 @@ internal data class AccountSession(
                     email = o.optString("email").ifBlank { null },
                     handle = o.optString("handle").ifBlank { null },
                     photoUrl = o.optString("photoUrl").ifBlank { null }
-                )
+                ),
+                libraryLinked = o.optBoolean("linked", false)
             )
         }
     }
