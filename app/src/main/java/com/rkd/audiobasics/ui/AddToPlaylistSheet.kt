@@ -34,6 +34,8 @@ fun AddToPlaylistSheet(
 ) {
     val likedSongs by vm.likedSongs.collectAsState()
     val customPlaylists by vm.customPlaylists.collectAsState()
+    // Changes currently waiting on the account; their rows show a spinner instead of guessing.
+    val cloudBusy by vm.cloudBusy.collectAsState()
     val scope = rememberCoroutineScope()
 
     // Track which playlists already contain the song
@@ -90,13 +92,18 @@ fun AddToPlaylistSheet(
                         label = "Liked songs",
                         isSelected = isIn,
                         isDarkMode = isDarkMode,
+                        busy = "song:${song.id}" in cloudBusy,
                         onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             if (isIn) {
                                 removeConfirm = Pair(MusicViewModel.LIKED_PLAYLIST_ID, "Liked songs")
                             } else {
-                                vm.toggleLike(song)
-                                containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = true
+                                // Shows the real outcome: with an account linked the change goes
+                                // there first, and a refused change leaves the row as it was.
+                                scope.launch {
+                                    containsMap[MusicViewModel.LIKED_PLAYLIST_ID] =
+                                        vm.toggleSongInPlaylist(song, MusicViewModel.LIKED_PLAYLIST_ID)
+                                }
                             }
                         }
                     )
@@ -111,6 +118,7 @@ fun AddToPlaylistSheet(
                         label = pl.name,
                         isSelected = isIn,
                         isDarkMode = isDarkMode,
+                        busy = "pl:${pl.id}:${song.id}" in cloudBusy,
                         onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             if (isIn) {
@@ -197,14 +205,9 @@ fun AddToPlaylistSheet(
                     }
                     TextButton(onClick = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        if (playlistId == MusicViewModel.LIKED_PLAYLIST_ID) {
-                            vm.toggleLike(song)
-                            containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = false
-                        } else {
-                            scope.launch {
-                                vm.toggleSongInPlaylist(song, playlistId)
-                                containsMap[playlistId] = false
-                            }
+                        // The ViewModel finishes the change even though this dialog closes right away.
+                        scope.launch {
+                            containsMap[playlistId] = vm.toggleSongInPlaylist(song, playlistId)
                         }
                         close()
                     }) {
@@ -223,6 +226,7 @@ private fun PlaylistPickerRow(
     label: String,
     isSelected: Boolean,
     isDarkMode: Boolean,
+    busy: Boolean = false,
     onClick: () -> Unit
 ) {
     val textColor = if (isSelected) Color.Red else (if (isDarkMode) Color.White else Color.Black)
@@ -254,7 +258,16 @@ private fun PlaylistPickerRow(
             fontFamily = NothingFont,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
-            color = textColor
+            color = textColor,
+            modifier = Modifier.weight(1f)
         )
+
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = textColor
+            )
+        }
     }
 }

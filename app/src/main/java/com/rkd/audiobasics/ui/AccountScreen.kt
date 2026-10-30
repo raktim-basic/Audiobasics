@@ -76,7 +76,7 @@ internal fun AccountPage(
 
     // When the library is (or may be) linked to the account, logging out asks what happens to
     // the copy on this device. With nothing linked there is nothing to decide.
-    val askAboutLibrary = state is AccountState.SessionExpired ||
+    val askAboutLibrary = (state as? AccountState.SessionExpired)?.libraryLinked == true ||
         (state as? AccountState.LoggedIn)?.libraryLinked == true
 
     // Cheap check each time the page opens; does nothing when no account is linked, and
