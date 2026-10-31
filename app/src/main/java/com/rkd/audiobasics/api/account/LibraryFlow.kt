@@ -47,6 +47,9 @@ internal interface LocalLibraryStore {
 
     suspend fun clearAll()
 
+    /** Everything this device has, as the upload needs it (newest first, like the app shows it). */
+    suspend fun readForUpload(): LocalLibraryForUpload
+
     /** Turns linked playlists into plain local ones. */
     suspend fun detachFromCloud()
 }
@@ -137,8 +140,8 @@ internal sealed interface LibraryFlowState {
  */
 internal object LibraryFlow {
 
-    /** Uploading a local library to an empty account is not built yet. */
-    const val UPLOAD_AVAILABLE = false
+    /** Uploading a local library to an empty account (see [LibraryUpload]). */
+    const val UPLOAD_AVAILABLE = true
 
     private const val TAG = "Sync"
 
@@ -158,6 +161,13 @@ internal object LibraryFlow {
     /** First contact with an account: read it, compare it with this device, ask if needed. */
     fun begin(store: LocalLibraryStore) = launchExclusive {
         val session = AccountManager.activeSession() ?: return@launchExclusive
+        if (LibraryUpload.hasUnfinishedFor(session.profile.accountId)) {
+            // This account already holds part of an upload that was started from this device.
+            // Asking "replace your library with the account's?" now would wipe the rest of it.
+            Timber.tag(TAG).i("An unfinished upload exists for this account; not asking the login questions")
+            _state.value = LibraryFlowState.Idle
+            return@launchExclusive
+        }
         _state.value = LibraryFlowState.Working("Reading your account...")
         val snapshot = fetchOrFail(session) ?: return@launchExclusive
 
@@ -202,6 +212,37 @@ internal object LibraryFlow {
     fun declineAndLogout() = launchExclusive {
         AccountManager.logout()
         _state.value = LibraryFlowState.Idle
+    }
+
+    /**
+     * "Upload library to cloud and sync": the user chose to copy this device's library into the
+     * (empty) account. The account is read again first; if it isn't empty any more, the user is
+     * asked the right question instead. The upload itself runs in [LibraryUpload].
+     */
+    fun beginUpload(store: LocalLibraryStore) = launchExclusive {
+        val session = AccountManager.activeSession() ?: return@launchExclusive
+        _state.value = LibraryFlowState.Working("Reading your account...")
+        val snapshot = fetchOrFail(session) ?: return@launchExclusive
+
+        val local = store.counts()
+        if (!snapshot.isEmpty) {
+            Timber.tag(TAG).w("Account is no longer empty; asking again")
+            _state.value = LibraryFlowState.ConfirmOverride(local, snapshot.counts)
+            return@launchExclusive
+        }
+        _state.value = LibraryFlowState.Working("Preparing the upload...")
+        val prepared = try {
+            LibraryUpload.prepare(session, store.readForUpload())
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Couldn't prepare the upload")
+            false
+        }
+        if (!prepared) {
+            _state.value = LibraryFlowState.Failed("Couldn't prepare the upload. Nothing was changed.")
+            return@launchExclusive
+        }
+        _state.value = LibraryFlowState.Idle
+        LibraryUpload.resume()
     }
 
     /** Pull the account's current library onto this device (cloud wins). */

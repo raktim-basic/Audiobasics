@@ -114,6 +114,23 @@ internal object CloudWriter {
     }
 
     /**
+     * Adds several songs in ONE edit (used by the library upload to cut the request count).
+     * Confirmed only when YouTube says the whole edit succeeded; songs already there are skipped.
+     */
+    fun addSongs(session: AccountSession, playlistId: String, videoIds: List<String>): AccountResult<Unit> {
+        val actions = JSONArray()
+        videoIds.forEach { videoId ->
+            actions.put(
+                JSONObject()
+                    .put("action", "ACTION_ADD_VIDEO")
+                    .put("addedVideoId", videoId)
+                    .put("dedupeOption", "DEDUPE_OPTION_SKIP")
+            )
+        }
+        return editPlaylist(session, playlistId, actions).flatMap { AccountResult.Success(Unit) }
+    }
+
+    /**
      * Removes [videoId] from the playlist. [knownEntryId] is used when the app has it; otherwise
      * the playlist is read to find the entry. A song that is already gone from the cloud counts
      * as removed, because the goal is "not in the playlist".
