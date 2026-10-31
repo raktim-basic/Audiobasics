@@ -30,6 +30,7 @@ import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.api.account.CloudSnapshot
 import com.rkd.audiobasics.api.account.CloudWriter
 import com.rkd.audiobasics.api.account.LibraryCounts
+import com.rkd.audiobasics.api.account.LibraryUpload
 import com.rkd.audiobasics.api.account.PlaylistNameCodec
 import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.lyrics.LyricsCache
@@ -1617,8 +1618,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun writeMode(): WriteMode = when (val st = AccountManager.state.value) {
         is AccountState.LoggedOut -> WriteMode.LOCAL
-        is AccountState.LoggedIn -> if (st.libraryLinked) WriteMode.CLOUD else WriteMode.LOCAL
-        is AccountState.SessionExpired -> if (st.libraryLinked) WriteMode.REFUSED else WriteMode.LOCAL
+        // While an upload is unfinished the account holds only part of the library, so changing
+        // the local library now would leave the two out of step. Refused until it's finished.
+        is AccountState.LoggedIn ->
+            if (st.libraryLinked) WriteMode.CLOUD
+            else if (LibraryUpload.isActive()) WriteMode.REFUSED
+            else WriteMode.LOCAL
+        is AccountState.SessionExpired ->
+            if (st.libraryLinked || LibraryUpload.isActive()) WriteMode.REFUSED else WriteMode.LOCAL
     }
 
     private val _cloudBusy = MutableStateFlow<Set<String>>(emptySet())
@@ -1633,7 +1640,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun refuseExpired() =
-        toast("Your session expired. Sign in again to change your library.")
+        if (LibraryUpload.isActive()) {
+            toast("Your library is being uploaded. Finish the upload before changing it.")
+        } else {
+            toast("Your session expired. Sign in again to change your library.")
+        }
 
     /**
      * Runs one account change. Returns its result on a confirmed success, or null when the change

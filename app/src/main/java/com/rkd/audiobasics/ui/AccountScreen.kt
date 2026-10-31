@@ -34,6 +34,8 @@ import com.rkd.audiobasics.api.account.AccountProfile
 import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.api.account.CapturedLogin
 import com.rkd.audiobasics.api.account.LibraryFlow
+import com.rkd.audiobasics.api.account.LibraryUpload
+import com.rkd.audiobasics.api.account.UploadState
 import com.rkd.audiobasics.api.account.LoginResult
 import com.rkd.audiobasics.api.account.SapisidAuth
 import com.rkd.audiobasics.ui.theme.AmoledBlack
@@ -73,6 +75,9 @@ internal fun AccountPage(
 
     var showLogoutConfirm by remember { mutableStateOf(false) }
     val store = remember(vm) { VmLibraryStore(vm) }
+    // An upload that is running or waiting to be resumed (not one that is finished).
+    val uploadState by LibraryUpload.state.collectAsState()
+    val uploadUnfinished = uploadState is UploadState.Running || uploadState is UploadState.Paused
 
     // When the library is (or may be) linked to the account, logging out asks what happens to
     // the copy on this device. With nothing linked there is nothing to decide.
@@ -137,7 +142,9 @@ internal fun AccountPage(
                 is AccountState.LoggedIn -> {
                     ProfileRow(current.profile, surfaceColor, textColor, subTextColor)
                     SettingsDivider(isDarkMode)
-                    SettingsRow(
+                    UploadCard(isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled)
+                    if (uploadState !is UploadState.Idle) SettingsDivider(isDarkMode)
+                    if (!uploadUnfinished) SettingsRow(
                         isDarkMode = isDarkMode,
                         title = if (current.libraryLinked) "Sync now" else "Finish setting up your library",
                         subtitle = if (current.libraryLinked) {
@@ -158,15 +165,20 @@ internal fun AccountPage(
                             if (current.libraryLinked) LibraryFlow.syncNow(store) else LibraryFlow.begin(store)
                         }
                     )
-                    SettingsDivider(isDarkMode)
+                    if (!uploadUnfinished) SettingsDivider(isDarkMode)
                     LogoutRow(isDarkMode, textColor) {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        showLogoutConfirm = true
+                        if (uploadState is UploadState.Running) {
+                            android.widget.Toast.makeText(context, "Pause the upload first.", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            showLogoutConfirm = true
+                        }
                     }
                 }
 
                 is AccountState.SessionExpired -> {
                     ProfileRow(current.profile, surfaceColor, textColor, subTextColor)
+                    UploadCard(isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled)
                     Text(
                         text = "Your session expired. Sign in again to keep using your account.",
                         fontFamily = NothingFont,
@@ -251,7 +263,11 @@ internal fun AccountPage(
                 },
                 text = {
                     Text(
-                        "This removes your account from this device. Nothing in your library on this device is changed.",
+                        if (uploadUnfinished) {
+                            "This removes your account from this device and discards the unfinished upload. What was already uploaded stays in your account. Nothing in your library on this device is changed."
+                        } else {
+                            "This removes your account from this device. Nothing in your library on this device is changed."
+                        },
                         fontFamily = NothingFont,
                         color = subTextColor
                     )
@@ -259,6 +275,7 @@ internal fun AccountPage(
                 confirmButton = {
                     TextButton(onClick = {
                         showLogoutConfirm = false
+                        if (uploadUnfinished) LibraryUpload.discard()
                         scope.launch { AccountManager.logout() }
                     }) {
                         Text("Log out", fontFamily = NothingFont, color = Color(0xFFE57373))

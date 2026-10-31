@@ -6,6 +6,7 @@ import android.widget.Toast
 import com.rkd.audiobasics.api.account.AccountManager
 import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.api.account.LibraryFlow
+import com.rkd.audiobasics.api.account.LibraryUpload
 import com.rkd.audiobasics.api.account.RefreshResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -96,7 +97,8 @@ object LibraryRefresh {
             is AccountState.SessionExpired ->
                 Outcome("Your session expired. Sign in again.")
             is AccountState.LoggedIn ->
-                if (!st.libraryLinked) Outcome("Finish setting up your library in Account first.")
+                if (!st.libraryLinked && LibraryUpload.isActive()) Outcome("Your library is still uploading. Refresh works once it's finished.")
+                else if (!st.libraryLinked) Outcome("Finish setting up your library in Account first.")
                 else syncLinkedLibrary(vm)
         }
 

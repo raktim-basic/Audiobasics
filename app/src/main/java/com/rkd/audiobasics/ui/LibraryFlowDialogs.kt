@@ -1,5 +1,6 @@
 package com.rkd.audiobasics.ui
 
+import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,7 +26,13 @@ import com.rkd.audiobasics.api.account.CloudSnapshot
 import com.rkd.audiobasics.api.account.LibraryCounts
 import com.rkd.audiobasics.api.account.LibraryFlow
 import com.rkd.audiobasics.api.account.LibraryFlowState
+import com.rkd.audiobasics.api.account.LocalLibraryForUpload
 import com.rkd.audiobasics.api.account.LocalLibraryStore
+import com.rkd.audiobasics.api.account.LocalPlaylistForUpload
+import com.rkd.audiobasics.data.Song
+import com.rkd.audiobasics.data.db.AppDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.rkd.audiobasics.ui.theme.NothingFont
 
 /** Connects the library flow to this device's library, which lives in the ViewModel. */
@@ -38,6 +45,22 @@ internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStor
 
     override suspend fun clearAll() {
         vm.clearLocalLibrary()
+    }
+
+    override suspend fun readForUpload(): LocalLibraryForUpload = withContext(Dispatchers.IO) {
+        val dao = AppDatabase.getInstance(vm.getApplication<Application>()).playlistDao()
+        // Only playlists that aren't linked to an account (all of them, on an account's first upload).
+        val playlists = dao.getPlaylists().filter { it.cloudId == null }.map { p ->
+            LocalPlaylistForUpload(
+                localId = p.id,
+                name = p.name,
+                emoji = p.emoji,
+                songs = dao.getPlaylistSongs(p.id).map {
+                    Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail)
+                }
+            )
+        }
+        LocalLibraryForUpload(vm.likedSongs.value, vm.savedAlbums.value, playlists)
     }
 
     override suspend fun detachFromCloud() {
@@ -128,20 +151,23 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Body("This device has ${s.local.describe()}. What should happen to them?")
+                    Body("Upload library to cloud and sync: copies them into the account slowly, so it isn't flagged for bulk activity. It can take a while, can be paused, and keeps going where it left off. Songs YouTube refuses are listed at the end.")
                     Body("Empty local library: removes them from this device and starts from the empty account.")
-                    if (!LibraryFlow.UPLOAD_AVAILABLE) {
-                        Body("Upload library to cloud and sync: coming in a later update.")
-                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { LibraryFlow.replaceLocalWithCloud(store, expectAccountEmpty = true) }) {
-                    Text("Empty local library", fontFamily = NothingFont, color = danger)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { LibraryFlow.declineAndLogout() }) {
-                    Text("Log out instead", fontFamily = NothingFont, color = textColor)
+                Column(horizontalAlignment = Alignment.End) {
+                    if (LibraryFlow.UPLOAD_AVAILABLE) {
+                        TextButton(onClick = { LibraryFlow.beginUpload(store) }) {
+                            Text("Upload library to cloud and sync", fontFamily = NothingFont, color = textColor)
+                        }
+                    }
+                    TextButton(onClick = { LibraryFlow.replaceLocalWithCloud(store, expectAccountEmpty = true) }) {
+                        Text("Empty local library", fontFamily = NothingFont, color = danger)
+                    }
+                    TextButton(onClick = { LibraryFlow.declineAndLogout() }) {
+                        Text("Log out instead", fontFamily = NothingFont, color = textColor)
+                    }
                 }
             }
         )
