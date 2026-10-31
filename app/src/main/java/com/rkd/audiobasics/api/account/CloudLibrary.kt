@@ -174,6 +174,17 @@ internal object CloudLibrary {
     private fun parseSongPage(json: JSONObject, first: Boolean): AccountResult<Page<CloudSong>> {
         val shelf = (if (first) playlistShelf(json) else continuationShelf(json))
         if (shelf == null) {
+            // An empty playlist arrives as a song-list shelf that has no "contents" at all. That
+            // is only believed when the page header doesn't contradict it; a header that claims
+            // songs while the list is missing stays an error (never "empty" by guesswork).
+            if (first && hasEmptyPlaylistShelf(json)) {
+                val advertised = advertisedSongCount(json)
+                if (advertised == null || advertised == 0) {
+                    Timber.tag(TAG).d("Empty playlist (song list without contents; header says ${advertised ?: "nothing"})")
+                    return AccountResult.Success(Page(emptyList(), 0, 0, null, advertised ?: 0))
+                }
+                return AccountResult.ParseError("The header says $advertised songs, but the song list came back empty")
+            }
             return AccountResult.ParseError("Unrecognised song list layout (${shapeOf(json)})")
         }
         var rows = 0
@@ -480,6 +491,15 @@ internal object CloudLibrary {
             shelfIn(sections.optJSONObject(0))?.let { return it }
         }
         return null
+    }
+
+    /** The first section is a playlist song-list shelf that carries no songs and no "load more". */
+    private fun hasEmptyPlaylistShelf(json: JSONObject): Boolean {
+        val section = twoColumnSecondarySections(json)?.optJSONObject(0)
+            ?: singleColumnSections(json)?.optJSONObject(0)
+            ?: return false
+        val shelf = section.optJSONObject("musicPlaylistShelfRenderer") ?: return false
+        return !shelf.has("contents") && !shelf.has("continuations")
     }
 
     /** Library pages can lead with other sections (chips, headers), so scan for the grid. */
