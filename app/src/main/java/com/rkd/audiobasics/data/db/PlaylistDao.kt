@@ -139,6 +139,21 @@ interface PlaylistDao {
         clearSongSetVideoIds()
     }
 
+    @Query("UPDATE playlists SET cloudId = :cloudId WHERE id = :playlistId")
+    suspend fun setPlaylistCloudId(playlistId: String, cloudId: String)
+
+    @Query("UPDATE playlist_songs SET setVideoId = :setVideoId WHERE playlistId = :playlistId AND songId = :songId")
+    suspend fun setSongSetVideoId(playlistId: String, songId: String, setVideoId: String)
+
+    // After a library upload: the local playlist keeps its own ID and gets the cloud playlist's ID,
+    // and each song that is in the cloud copy gets that entry's ID ([entries]: songId -> setVideoId).
+    // One transaction: either the whole playlist is linked or none of it.
+    @Transaction
+    suspend fun linkUploadedPlaylist(playlistId: String, cloudId: String, entries: Map<String, String>) {
+        setPlaylistCloudId(playlistId, cloudId)
+        entries.forEach { (songId, setVideoId) -> setSongSetVideoId(playlistId, songId, setVideoId) }
+    }
+
     // Applies a cloud library: removes [deleteIds], then (re)writes each playlist in [playlists]
     // together with its [songs]. A playlist's old songs are cleared before its new ones go in.
     @Transaction
