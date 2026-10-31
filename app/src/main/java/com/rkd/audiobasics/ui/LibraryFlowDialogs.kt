@@ -24,11 +24,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.api.account.CloudSnapshot
 import com.rkd.audiobasics.api.account.LibraryCounts
+import com.rkd.audiobasics.api.account.CloudPlaylist
 import com.rkd.audiobasics.api.account.LibraryFlow
 import com.rkd.audiobasics.api.account.LibraryFlowState
 import com.rkd.audiobasics.api.account.LocalLibraryForUpload
 import com.rkd.audiobasics.api.account.LocalLibraryStore
 import com.rkd.audiobasics.api.account.LocalPlaylistForUpload
+import com.rkd.audiobasics.api.account.PlaylistNameCodec
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.AppDatabase
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +47,34 @@ internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStor
 
     override suspend fun clearAll() {
         vm.clearLocalLibrary()
+    }
+
+    override suspend fun adoptUnlinkedPlaylists(cloud: List<CloudPlaylist>): Int = withContext(Dispatchers.IO) {
+        val dao = AppDatabase.getInstance(vm.getApplication<Application>()).playlistDao()
+        val all = dao.getPlaylists()
+        val unlinked = all.filter { it.cloudId == null }
+        if (unlinked.isEmpty()) return@withContext 0
+        val linkedCloudIds = all.mapNotNull { it.cloudId }.toSet()
+        val localsByTitle = unlinked.groupBy { PlaylistNameCodec.compose(it.emoji, it.name) }
+        val cloudByTitle = cloud.filter { it.owned }.groupBy { it.title }
+        var changed = 0
+        for ((title, locals) in localsByTitle) {
+            val twins = cloudByTitle[title] ?: continue
+            // Only a clear one-to-one match; anything ambiguous is left alone.
+            if (locals.size != 1 || twins.size != 1) continue
+            val local = locals[0]
+            val twin = twins[0]
+            if (twin.id in linkedCloudIds) {
+                // The account copy is already on this device (a refresh imported it); this one is
+                // the leftover duplicate from the upload.
+                dao.clearPlaylist(local.id)
+                dao.deletePlaylist(local.id)
+            } else {
+                dao.setPlaylistCloudId(local.id, twin.id)
+            }
+            changed++
+        }
+        changed
     }
 
     override suspend fun readForUpload(): LocalLibraryForUpload = withContext(Dispatchers.IO) {
