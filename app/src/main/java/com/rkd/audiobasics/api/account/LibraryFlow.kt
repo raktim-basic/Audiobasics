@@ -1,6 +1,7 @@
 package com.rkd.audiobasics.api.account
 
 import com.rkd.audiobasics.data.Album
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -90,6 +92,20 @@ internal object CloudSnapshotFetcher {
         }
         return AccountResult.Success(CloudSnapshot(liked, albums, playlists))
     }
+}
+
+/** How a silent refresh ([LibraryFlow.refresh]) ended. A refusal always means nothing was changed. */
+internal sealed interface RefreshResult {
+    data object Updated : RefreshResult
+
+    /** Another library operation is already running; this one did nothing. */
+    data object Busy : RefreshResult
+
+    data class Refused(
+        val message: String,
+        val offline: Boolean = false,
+        val expired: Boolean = false
+    ) : RefreshResult
 }
 
 // ─── Flow state ──────────────────────────────────────────────────────────────
@@ -215,6 +231,66 @@ internal object LibraryFlow {
     }
 
     /**
+     * The silent version of [syncNow] for pull-to-refresh and the launch refresh: same complete
+     * read, same mass-removal double check, same apply, but it reports through its return value
+     * instead of the dialog state (so no stale "Done" dialog is left for the Account screen).
+     *
+     * [safeToApply] is asked right before anything is written; if it says no (the user changed
+     * something while the account was being read), the read is thrown away.
+     * Only call this for an account whose library is already linked.
+     */
+    suspend fun refresh(store: LocalLibraryStore, safeToApply: () -> Boolean): RefreshResult {
+        if (!busy.compareAndSet(false, true)) return RefreshResult.Busy
+        try {
+            val session = AccountManager.activeSession()
+                ?: return RefreshResult.Refused("Your session expired. Sign in again.", expired = true)
+
+            val first = readForRefresh(session)
+            var snapshot = first.first
+                ?: return first.second ?: RefreshResult.Refused("Something went wrong. Nothing was changed.")
+
+            val local = store.counts()
+            if (looksLikeMassRemoval(local, snapshot.counts)) {
+                Timber.tag(TAG).w("Large change ($local -> ${snapshot.counts}); reading again before applying")
+                delay(1500)
+                val again = readForRefresh(session)
+                val second = again.first
+                    ?: return again.second ?: RefreshResult.Refused("Something went wrong. Nothing was changed.")
+                if (!sameLibrary(snapshot, second)) {
+                    Timber.tag(TAG).w("Two reads disagreed; nothing applied")
+                    return RefreshResult.Refused(
+                        "Your account's library looked different between two reads, so nothing was changed. Try again in a moment."
+                    )
+                }
+                snapshot = second
+            }
+
+            if (!safeToApply()) {
+                Timber.tag(TAG).w("Library changed during the refresh; read discarded")
+                return RefreshResult.Refused("Your library changed while refreshing, so nothing was applied. Pull to refresh again.")
+            }
+
+            try {
+                store.replaceWithCloud(snapshot, wipeLocalOnly = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.tag(TAG).e(e, "Applying the refreshed library failed")
+                return RefreshResult.Refused("Couldn't update this device's library. Nothing was changed.")
+            }
+            Timber.tag(TAG).i("Refreshed: ${snapshot.counts}")
+            return RefreshResult.Updated
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Library refresh failed")
+            return RefreshResult.Refused("Something went wrong. Nothing was changed.")
+        } finally {
+            busy.set(false)
+        }
+    }
+
+    /**
      * Logs out, after the user chose what happens to the library on this device. The local step
      * runs first; if it fails the user stays signed in and nothing has changed.
      */
@@ -260,6 +336,24 @@ internal object LibraryFlow {
             is AccountResult.NetworkError -> failed("No connection. Nothing was changed.")
             is AccountResult.ServerError -> failed("YouTube is having trouble right now (${result.code}). Nothing was changed.")
             is AccountResult.ParseError -> failed("YouTube sent something unexpected (${result.message}). Nothing was changed.")
+        }
+    }
+
+    /** The snapshot, or why it couldn't be read (never both). */
+    private suspend fun readForRefresh(session: AccountSession): Pair<CloudSnapshot?, RefreshResult.Refused?> {
+        val result = withContext(Dispatchers.IO) { CloudSnapshotFetcher.fetch(session) }
+        return when (result) {
+            is AccountResult.Success -> result.value to null
+            is AccountResult.SessionExpired -> {
+                AccountManager.reportSessionRejected()
+                null to RefreshResult.Refused("Your session expired. Sign in again.", expired = true)
+            }
+            is AccountResult.NetworkError ->
+                null to RefreshResult.Refused("No connection. Nothing was changed.", offline = true)
+            is AccountResult.ServerError ->
+                null to RefreshResult.Refused("YouTube is having trouble right now (${result.code}). Nothing was changed.")
+            is AccountResult.ParseError ->
+                null to RefreshResult.Refused("YouTube sent something unexpected (${result.message}). Nothing was changed.")
         }
     }
 
