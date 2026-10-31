@@ -146,6 +146,9 @@ fun AlbumScreen(
 
     var albumSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    // Pull-down refresh: bumping the tick re-runs the loads below; the flag drives the indicator.
+    var albumRefreshTick by remember { mutableStateOf(0) }
+    var isPullRefreshing by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
     var cacheRefreshTick by remember { mutableStateOf(0) }
@@ -179,7 +182,7 @@ fun AlbumScreen(
     // Other editions of this album (deluxe etc.). Always a live lookup, never cached or
     // persisted — so it simply doesn't appear when offline, even on a saved album.
     var otherVersions by remember { mutableStateOf<List<Album>>(emptyList()) }
-    LaunchedEffect(album.id) {
+    LaunchedEffect(album.id, albumRefreshTick) {
         otherVersions = try {
             com.rkd.audiobasics.api.Innertube.getOtherAlbumVersions(album.id)
         } catch (e: Exception) {
@@ -188,7 +191,8 @@ fun AlbumScreen(
         }
     }
 
-    LaunchedEffect(album.id, savedAlbumId, persistedForThisAlbum != null) {
+    LaunchedEffect(album.id, savedAlbumId, persistedForThisAlbum != null, albumRefreshTick) {
+        val refreshBegan = System.currentTimeMillis()
         // If this album has a persisted offline tracklist — looked up via the resolved saved
         // id, not necessarily the id we were opened with — show it immediately. This is what
         // lets a saved album open fully offline, from any entry point.
@@ -202,7 +206,7 @@ fun AlbumScreen(
         // unless we already have a persisted copy and there's no network — errors are
         // silently ignored in that case since we already have something to show.
         try {
-            if (persisted == null) isLoading = true
+            if (persisted == null && !isPullRefreshing) isLoading = true
             val (meta, fetchedSongs) = Innertube.getAlbumSongs(
                 browseId = album.id,
                 fallbackArtist = album.artist,
@@ -227,7 +231,7 @@ fun AlbumScreen(
             // than letting the live fetch's uncached variant clobber it; live metadata (title
             // etc.) below still applies normally.
             val fetchWasForSavedVariant = savedAlbumId == null || savedAlbumId == album.id
-            if (fetchWasForSavedVariant && (songs.isNotEmpty() || persisted == null)) {
+            if (fetchWasForSavedVariant && (songs.isNotEmpty() || (persisted == null && albumSongs.isEmpty()))) {
                 // Stamp the album's own title directly onto each song — this is what Song
                 // Info reads immediately, with no separate browse-id lookup needed.
                 albumSongs = songs.map { it.copy(albumTitle = resolvedTitle) }
@@ -262,6 +266,14 @@ fun AlbumScreen(
                     if (isSaved) vm.refreshSavedAlbumMetadata(enrichedAlbum)
                 }
             }
+            if (isPullRefreshing) {
+                if (songs.isEmpty() && meta == null) {
+                    android.widget.Toast.makeText(context, "Couldn't refresh. Nothing was changed.", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                // An instant (e.g. offline) answer would flash the indicator; let it play.
+                val left = 600L - (System.currentTimeMillis() - refreshBegan)
+                if (left > 0) kotlinx.coroutines.delay(left)
+            }
         } catch (e: Exception) {
             android.util.Log.e("AlbumScreen", "Failed to load: ${e.message}")
             // Network failed — fall back to whatever we have persisted, if anything.
@@ -270,6 +282,7 @@ fun AlbumScreen(
             }
         } finally {
             isLoading = false
+            isPullRefreshing = false
         }
     }
 
@@ -346,347 +359,357 @@ fun AlbumScreen(
                     CircularProgressIndicator(color = Color.Red)
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    state = listState,
-                    contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)
+                RefreshBox(
+                    isRefreshing = isPullRefreshing,
+                    onRefresh = {
+                        isPullRefreshing = true
+                        albumRefreshTick++
+                    },
+                    isDarkMode = isDarkMode,
+                    modifier = Modifier.weight(1f).fillMaxWidth()
                 ) {
-                    item {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().background(bgColor),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Spacer(Modifier.height(24.dp))
-                            AsyncImage(
-                                model = enrichedAlbum.thumbnail.ifBlank { album.thumbnail },
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxWidth(0.75f)
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(Modifier.height(12.dp))
-
-                            // Clickable artists (red, underlined) — use the album's own structured
-                            // artistNames (real run boundaries from the response) rather than
-                            // re-splitting the joined display string, which can't tell a genuine
-                            // "Name A, Name B" separator comma apart from a comma that's part of a
-                            // single artist's own name (e.g. "¥$, Kanye West" vs "Tyler, The
-                            // Creator") and would silently re-merge names that are already correct.
-                            val artistList = enrichedAlbum.artistNames.ifEmpty {
-                                val displayedArtist = enrichedAlbum.artist.substringBeforeLast("•").trim()
-                                com.rkd.audiobasics.api.Innertube.splitArtistNames(displayedArtist)
-                            }
-
-                            // FlowRow (not Row) so that when there are many artists, extra names
-                            // wrap onto new lines instead of each getting squeezed into whatever
-                            // horizontal space is left by earlier siblings — a plain Row shrinks
-                            // later children's available width instead of wrapping the whole
-                            // group, which on a long artist list forced individual names into a
-                            // near-zero-width column, wrapping letter-by-letter down the screen.
-                            val albumIsExplicit = enrichedAlbum.isExplicit || albumSongs.any { it.isExplicit }
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                                horizontalArrangement = Arrangement.Center
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)
+                    ) {
+                        item {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().background(bgColor),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                if (albumIsExplicit) {
-                                    ExplicitBadge(isDarkMode, Modifier.align(Alignment.CenterVertically))
-                                    Spacer(Modifier.width(6.dp))
-                                }
-                                if (Innertube.isVariousArtists(enrichedAlbum.artist)) {
-                                    // Compilation: plain text, not a link — there's no single
-                                    // artist page to open.
-                                    Text(
-                                        text = "Various artists",
-                                        fontFamily = NothingFont,
-                                        fontSize = 14.sp,
-                                        color = textColor
-                                    )
-                                } else artistList.forEachIndexed { i, artist ->
-                                    Text(
-                                        text = buildAnnotatedString {
-                                            withStyle(SpanStyle(
-                                                color = Color.Red,
-                                                textDecoration = TextDecoration.Underline
-                                            )) { append(artist) }
-                                        },
-                                        fontFamily = NothingFont,
-                                        fontSize = 14.sp,
-                                        modifier = Modifier.clickable { onNavigateArtist(artist, enrichedAlbum.artistIds[artist]) }
-                                    )
-                                    if (i < artistList.lastIndex) {
-                                        Text(", ", fontFamily = NothingFont, fontSize = 14.sp, color = subTextColor)
-                                    }
-                                }
-                            }
-
-                            if (albumSongs.isNotEmpty()) {
-                                val totalDuration = albumSongs.sumOf { it.duration }
-                                val durationText = formatAlbumDuration(totalDuration)
-                                val yearStr = enrichedAlbum.year.ifBlank { "" }
-                                val detailsText = buildString {
-                                    if (durationText.isNotBlank()) append("$durationText • ")
-                                    append("${albumSongs.size} tracks")
-                                    if (yearStr.isNotBlank()) append(" • $yearStr")
-                                }
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = detailsText,
-                                    fontFamily = NothingFont,
-                                    fontSize = 13.sp,
-                                    color = subTextColor,
-                                    textAlign = TextAlign.Center
+                                Spacer(Modifier.height(24.dp))
+                                AsyncImage(
+                                    model = enrichedAlbum.thumbnail.ifBlank { album.thumbnail },
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.75f)
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
                                 )
-                            }
+                                Spacer(Modifier.height(12.dp))
 
-                            Spacer(Modifier.height(16.dp))
-                        }
-                    }
+                                // Clickable artists (red, underlined) — use the album's own structured
+                                // artistNames (real run boundaries from the response) rather than
+                                // re-splitting the joined display string, which can't tell a genuine
+                                // "Name A, Name B" separator comma apart from a comma that's part of a
+                                // single artist's own name (e.g. "¥$, Kanye West" vs "Tyler, The
+                                // Creator") and would silently re-merge names that are already correct.
+                                val artistList = enrichedAlbum.artistNames.ifEmpty {
+                                    val displayedArtist = enrichedAlbum.artist.substringBeforeLast("•").trim()
+                                    com.rkd.audiobasics.api.Innertube.splitArtistNames(displayedArtist)
+                                }
 
-                    stickyHeader {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() }
-                                ) { }
-                                .background(bgColor)
-                        ) {
-                            var titleOverflowed by remember { mutableStateOf(false) }
-                            var titleExpanded by remember { mutableStateOf(false) }
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 20.dp, vertical = 8.dp)
-                                    .clickable(enabled = titleOverflowed || titleExpanded) {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        titleExpanded = !titleExpanded
-                                    },
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = enrichedAlbum.title.ifBlank { album.title },
-                                    fontFamily = NothingFont,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                    color = textColor,
-                                    maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    onTextLayout = { result ->
-                                        if (!titleExpanded && result.hasVisualOverflow) titleOverflowed = true
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                if (!titleExpanded) {
-                                    Spacer(Modifier.width(8.dp))
-
-                                    // Share
-                                    IconButton(onClick = {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
-                                            showShareChoice = true
-                                        } else {
-                                            com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
-                                                context,
-                                                com.rkd.audiobasics.utils.AudiobasicsLinks.albumLink(
-                                                    album.id, enrichedAlbum.title, enrichedAlbum.thumbnail, enrichedAlbum.year
-                                                ),
-                                                "Share album"
-                                            )
-                                        }
-                                    }) {
-                                        Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor, modifier = Modifier.size(22.dp))
-                                    }
-
-                                // Save/unsave
-                                IconButton(
-                                    enabled = !albumSaveBusy,
-                                    onClick = {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        if (isSaved) vm.unsaveAlbum(enrichedAlbum) else vm.saveAlbum(enrichedAlbum)
-                                    }
+                                // FlowRow (not Row) so that when there are many artists, extra names
+                                // wrap onto new lines instead of each getting squeezed into whatever
+                                // horizontal space is left by earlier siblings — a plain Row shrinks
+                                // later children's available width instead of wrapping the whole
+                                // group, which on a long artist list forced individual names into a
+                                // near-zero-width column, wrapping letter-by-letter down the screen.
+                                val albumIsExplicit = enrichedAlbum.isExplicit || albumSongs.any { it.isExplicit }
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                                    horizontalArrangement = Arrangement.Center
                                 ) {
-                                    if (albumSaveBusy) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            strokeWidth = 2.dp,
+                                    if (albumIsExplicit) {
+                                        ExplicitBadge(isDarkMode, Modifier.align(Alignment.CenterVertically))
+                                        Spacer(Modifier.width(6.dp))
+                                    }
+                                    if (Innertube.isVariousArtists(enrichedAlbum.artist)) {
+                                        // Compilation: plain text, not a link — there's no single
+                                        // artist page to open.
+                                        Text(
+                                            text = "Various artists",
+                                            fontFamily = NothingFont,
+                                            fontSize = 14.sp,
                                             color = textColor
                                         )
-                                    } else {
-                                        Icon(
-                                            imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                            contentDescription = "Save",
-                                            tint = textColor,
-                                            modifier = Modifier.size(22.dp)
+                                    } else artistList.forEachIndexed { i, artist ->
+                                        Text(
+                                            text = buildAnnotatedString {
+                                                withStyle(SpanStyle(
+                                                    color = Color.Red,
+                                                    textDecoration = TextDecoration.Underline
+                                                )) { append(artist) }
+                                            },
+                                            fontFamily = NothingFont,
+                                            fontSize = 14.sp,
+                                            modifier = Modifier.clickable { onNavigateArtist(artist, enrichedAlbum.artistIds[artist]) }
                                         )
+                                        if (i < artistList.lastIndex) {
+                                            Text(", ", fontFamily = NothingFont, fontSize = 14.sp, color = subTextColor)
+                                        }
                                     }
                                 }
 
-                                // Play dropdown
-                                val overlay = LocalMorphOverlay.current
-                                val playMenuAnchor = rememberMorphAnchor()
-                                IconButton(
-                                    onClick = {
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        if (albumSongs.size == 1) {
-                                            // One track (single): nothing to choose between, so just
-                                            // play it — same call as tapping its row.
-                                            vm.playWithQueue(albumSongs.first(), albumSongs)
-                                        } else overlay.show(anchor = playMenuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
-                                            MorphMenuColumn {
-                                                MorphMenuItem(
-                                                    text = "Play all",
-                                                    onClick = {
-                                                        close()
-                                                        if (albumSongs.isNotEmpty()) vm.playWithQueue(albumSongs.first(), albumSongs)
-                                                    }
-                                                )
-                                                MorphMenuItem(
-                                                    text = "Shuffle",
-                                                    onClick = {
-                                                        close()
-                                                        if (albumSongs.isNotEmpty()) {
-                                                            val shuffled = albumSongs.shuffled()
-                                                            vm.playWithQueue(shuffled.first(), shuffled)
-                                                        }
-                                                    }
-                                                )
-                                                MorphMenuItem(
-                                                    text = "Play next",
-                                                    onClick = {
-                                                        close()
-                                                        albumSongs.forEach { vm.playNext(it) }
-                                                    }
-                                                )
-                                                MorphMenuItem(
-                                                    text = "Add to queue",
-                                                    onClick = {
-                                                        close()
-                                                        albumSongs.forEach { vm.addToQueue(it) }
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.morphAnchor(playMenuAnchor)
-                                ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = textColor, modifier = Modifier.size(26.dp))
+                                if (albumSongs.isNotEmpty()) {
+                                    val totalDuration = albumSongs.sumOf { it.duration }
+                                    val durationText = formatAlbumDuration(totalDuration)
+                                    val yearStr = enrichedAlbum.year.ifBlank { "" }
+                                    val detailsText = buildString {
+                                        if (durationText.isNotBlank()) append("$durationText • ")
+                                        append("${albumSongs.size} tracks")
+                                        if (yearStr.isNotBlank()) append(" • $yearStr")
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = detailsText,
+                                        fontFamily = NothingFont,
+                                        fontSize = 13.sp,
+                                        color = subTextColor,
+                                        textAlign = TextAlign.Center
+                                    )
                                 }
-                                } // end if (!titleExpanded)
-                            }
 
-                            if (uncachedInAlbumCount > 0) {
+                                Spacer(Modifier.height(16.dp))
+                            }
+                        }
+
+                        stickyHeader {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() }
+                                    ) { }
+                                    .background(bgColor)
+                            ) {
+                                var titleOverflowed by remember { mutableStateOf(false) }
+                                var titleExpanded by remember { mutableStateOf(false) }
+
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                                        .clickable(enabled = titleOverflowed || titleExpanded) {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            titleExpanded = !titleExpanded
+                                        },
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = if (isAlbumCaching) "Downloading songs. "
-                                               else "This album isn't available offline. ",
+                                        text = enrichedAlbum.title.ifBlank { album.title },
                                         fontFamily = NothingFont,
-                                        fontSize = 13.sp,
-                                        color = Color.Gray
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp,
+                                        color = textColor,
+                                        maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        onTextLayout = { result ->
+                                            if (!titleExpanded && result.hasVisualOverflow) titleOverflowed = true
+                                        },
+                                        modifier = Modifier.weight(1f)
                                     )
-                                    Text(
-                                        text = if (isAlbumCaching) "See progress" else "Download now?",
-                                        fontFamily = NothingFont,
-                                        fontSize = 13.sp,
-                                        color = Color(0xFF1565C0),
-                                        textDecoration = TextDecoration.Underline,
-                                        modifier = Modifier.clickable {
+
+                                    if (!titleExpanded) {
+                                        Spacer(Modifier.width(8.dp))
+
+                                        // Share
+                                        IconButton(onClick = {
                                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                            onNavigateCacheSettings()
+                                            if (com.rkd.audiobasics.utils.AudiobasicsLinks.isYoutubeShareOptionEnabled(context)) {
+                                                showShareChoice = true
+                                            } else {
+                                                com.rkd.audiobasics.utils.AudiobasicsLinks.shareText(
+                                                    context,
+                                                    com.rkd.audiobasics.utils.AudiobasicsLinks.albumLink(
+                                                        album.id, enrichedAlbum.title, enrichedAlbum.thumbnail, enrichedAlbum.year
+                                                    ),
+                                                    "Share album"
+                                                )
+                                            }
+                                        }) {
+                                            Icon(Icons.Default.Share, contentDescription = "Share", tint = textColor, modifier = Modifier.size(22.dp))
                                         }
+
+                                    // Save/unsave
+                                    IconButton(
+                                        enabled = !albumSaveBusy,
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            if (isSaved) vm.unsaveAlbum(enrichedAlbum) else vm.saveAlbum(enrichedAlbum)
+                                        }
+                                    ) {
+                                        if (albumSaveBusy) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp,
+                                                color = textColor
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                                contentDescription = "Save",
+                                                tint = textColor,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+                                    }
+
+                                    // Play dropdown
+                                    val overlay = LocalMorphOverlay.current
+                                    val playMenuAnchor = rememberMorphAnchor()
+                                    IconButton(
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            if (albumSongs.size == 1) {
+                                                // One track (single): nothing to choose between, so just
+                                                // play it — same call as tapping its row.
+                                                vm.playWithQueue(albumSongs.first(), albumSongs)
+                                            } else overlay.show(anchor = playMenuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                                                MorphMenuColumn {
+                                                    MorphMenuItem(
+                                                        text = "Play all",
+                                                        onClick = {
+                                                            close()
+                                                            if (albumSongs.isNotEmpty()) vm.playWithQueue(albumSongs.first(), albumSongs)
+                                                        }
+                                                    )
+                                                    MorphMenuItem(
+                                                        text = "Shuffle",
+                                                        onClick = {
+                                                            close()
+                                                            if (albumSongs.isNotEmpty()) {
+                                                                val shuffled = albumSongs.shuffled()
+                                                                vm.playWithQueue(shuffled.first(), shuffled)
+                                                            }
+                                                        }
+                                                    )
+                                                    MorphMenuItem(
+                                                        text = "Play next",
+                                                        onClick = {
+                                                            close()
+                                                            albumSongs.forEach { vm.playNext(it) }
+                                                        }
+                                                    )
+                                                    MorphMenuItem(
+                                                        text = "Add to queue",
+                                                        onClick = {
+                                                            close()
+                                                            albumSongs.forEach { vm.addToQueue(it) }
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.morphAnchor(playMenuAnchor)
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = textColor, modifier = Modifier.size(26.dp))
+                                    }
+                                    } // end if (!titleExpanded)
+                                }
+
+                                if (uncachedInAlbumCount > 0) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (isAlbumCaching) "Downloading songs. "
+                                                   else "This album isn't available offline. ",
+                                            fontFamily = NothingFont,
+                                            fontSize = 13.sp,
+                                            color = Color.Gray
+                                        )
+                                        Text(
+                                            text = if (isAlbumCaching) "See progress" else "Download now?",
+                                            fontFamily = NothingFont,
+                                            fontSize = 13.sp,
+                                            color = Color(0xFF1565C0),
+                                            textDecoration = TextDecoration.Underline,
+                                            modifier = Modifier.clickable {
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                onNavigateCacheSettings()
+                                            }
+                                        )
+                                    }
+                                }
+
+                                DashedDivider(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    isDarkMode = isDarkMode,
+                                    scrollProgress = scrollProgress.value
+                                )
+                            }
+                        }
+
+                        if (filteredSongs.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (searchQuery.isBlank()) "No songs found" else "No results",
+                                        fontFamily = NothingFont,
+                                        color = Color.Gray,
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             }
-
-                            DashedDivider(
-                                modifier = Modifier.fillMaxWidth(),
-                                isDarkMode = isDarkMode,
-                                scrollProgress = scrollProgress.value
-                            )
-                        }
-                    }
-
-                    if (filteredSongs.isEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (searchQuery.isBlank()) "No songs found" else "No results",
-                                    fontFamily = NothingFont,
-                                    color = Color.Gray,
-                                    textAlign = TextAlign.Center
+                        } else {
+                            itemsIndexed(filteredSongs) { index, song ->
+                                val isLiked = likedSongs.any { it.id == song.id }
+                                val isPlaying = currentSong?.id == song.id
+                                val thisSongCaching = song.id in cachingSongIds
+                                val songIsCached = remember(song.id, cacheRefreshTick, isSaved, thisSongCaching) {
+                                    !isSaved || com.rkd.audiobasics.cache.CacheManager.isCached(context, song.id)
+                                }
+                                AlbumSongRow(
+                                    trackNumber = index + 1,
+                                    song = song,
+                                    isDarkMode = isDarkMode,
+                                    isLiked = isLiked,
+                                    isPlaying = isPlaying,
+                                    isCached = songIsCached,
+                                    hapticsEnabled = hapticsEnabled,
+                                    context = context,
+                                    onClick = { vm.playWithQueue(song, albumSongs) },
+                                    onAddToQueue = { vm.addToQueue(song) },
+                                    onPlayNext = { vm.playNext(song) },
+                                    onLike = { vm.toggleLike(song) },
+                                    onAddTo = { onAddTo(song) },
+                                    onRetryCache = {
+                                        vm.retryCacheStandalone(song)
+                                        cacheRefreshTick++
+                                    },
+                                    isCaching = thisSongCaching
                                 )
                             }
                         }
-                    } else {
-                        itemsIndexed(filteredSongs) { index, song ->
-                            val isLiked = likedSongs.any { it.id == song.id }
-                            val isPlaying = currentSong?.id == song.id
-                            val thisSongCaching = song.id in cachingSongIds
-                            val songIsCached = remember(song.id, cacheRefreshTick, isSaved, thisSongCaching) {
-                                !isSaved || com.rkd.audiobasics.cache.CacheManager.isCached(context, song.id)
-                            }
-                            AlbumSongRow(
-                                trackNumber = index + 1,
-                                song = song,
-                                isDarkMode = isDarkMode,
-                                isLiked = isLiked,
-                                isPlaying = isPlaying,
-                                isCached = songIsCached,
-                                hapticsEnabled = hapticsEnabled,
-                                context = context,
-                                onClick = { vm.playWithQueue(song, albumSongs) },
-                                onAddToQueue = { vm.addToQueue(song) },
-                                onPlayNext = { vm.playNext(song) },
-                                onLike = { vm.toggleLike(song) },
-                                onAddTo = { onAddTo(song) },
-                                onRetryCache = {
-                                    vm.retryCacheStandalone(song)
-                                    cacheRefreshTick++
-                                },
-                                isCaching = thisSongCaching
-                            )
-                        }
-                    }
 
-                    if (otherVersions.isNotEmpty() && searchQuery.isBlank()) {
-                        item {
-                            Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 20.dp)) {
-                                Text(
-                                    text = "Other versions",
-                                    fontFamily = NothingFont,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    color = Color.Red,
-                                    modifier = Modifier.padding(horizontal = 20.dp)
-                                )
-                                Spacer(Modifier.height(12.dp))
-                                LazyRow(
-                                    contentPadding = PaddingValues(horizontal = 20.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                                ) {
-                                    items(otherVersions, key = { it.id }) { version ->
-                                        OtherVersionCard(
-                                            album = version,
-                                            isDarkMode = isDarkMode,
-                                            textColor = textColor,
-                                            subTextColor = subTextColor,
-                                            onClick = {
-                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                                onNavigateAlbum(version)
-                                            }
-                                        )
+                        if (otherVersions.isNotEmpty() && searchQuery.isBlank()) {
+                            item {
+                                Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 20.dp)) {
+                                    Text(
+                                        text = "Other versions",
+                                        fontFamily = NothingFont,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = Color.Red,
+                                        modifier = Modifier.padding(horizontal = 20.dp)
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    LazyRow(
+                                        contentPadding = PaddingValues(horizontal = 20.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                    ) {
+                                        items(otherVersions, key = { it.id }) { version ->
+                                            OtherVersionCard(
+                                                album = version,
+                                                isDarkMode = isDarkMode,
+                                                textColor = textColor,
+                                                subTextColor = subTextColor,
+                                                onClick = {
+                                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                    onNavigateAlbum(version)
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }

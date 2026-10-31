@@ -192,6 +192,8 @@ fun SearchScreen(
     var albumsFetchedFor by remember { mutableStateOf<String?>(null) }
     var artistsFetchedFor by remember { mutableStateOf<String?>(null) }
     var ytFetchedFor by remember { mutableStateOf<String?>(null) }
+    // Drives the swipe-up indicator for the Albums/Artists/YT tabs (Songs shows its own spinner).
+    var searchRefreshing by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
@@ -232,6 +234,48 @@ fun SearchScreen(
         vm.setSearchQuery("")
         vm.clearSearchResultsOnly()
         focusRequester.requestFocus()
+    }
+
+    // Swipe up at the end of the results re-runs the current search. The lists are bottom-anchored
+    // (reverseLayout), so the "pull" edge is the bottom. With nothing to redo (no submitted
+    // query, or suggestions showing) the indicator still plays and leaves.
+    fun refreshSearch() {
+        if (searchRefreshing) return
+        val q = committedQuery
+        val canRefresh = q.isNotBlank() && !showSuggestions && q == query
+        if (canRefresh && selectedFilter == SearchResultFilter.SONGS) {
+            vm.search(q)   // shows the full-screen spinner itself
+            return
+        }
+        scope.launch {
+            searchRefreshing = true
+            val began = System.currentTimeMillis()
+            if (canRefresh) {
+                // A failed or empty re-read keeps the results that are already showing.
+                try {
+                    when (selectedFilter) {
+                        SearchResultFilter.ALBUMS -> Innertube.searchAlbums(q).takeIf { it.isNotEmpty() }?.let {
+                            albumResults = it
+                            albumsFetchedFor = q
+                        }
+                        SearchResultFilter.ARTISTS -> Innertube.searchArtists(q).takeIf { it.isNotEmpty() }?.let {
+                            artistResults = it
+                            artistsFetchedFor = q
+                        }
+                        SearchResultFilter.YT -> Innertube.searchYoutubeVideos(q).takeIf { it.isNotEmpty() }?.let {
+                            ytResults = it
+                            ytFetchedFor = q
+                        }
+                        SearchResultFilter.SONGS -> Unit
+                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                }
+            }
+            val left = 600L - (System.currentTimeMillis() - began)
+            if (left > 0) delay(left)
+            searchRefreshing = false
+        }
     }
 
     LaunchedEffect(committedQuery, selectedFilter) {
@@ -369,7 +413,13 @@ fun SearchScreen(
                 .fillMaxSize()
                 .background(bodyColor)
         ) {
-            Box(modifier = Modifier.weight(1f)) {
+            BottomRefreshBox(
+                isRefreshing = searchRefreshing,
+                onRefresh = { refreshSearch() },
+                isDarkMode = isDarkMode,
+                bottomInset = pillHeightDp,
+                modifier = Modifier.weight(1f)
+            ) {
                 when {
                     isSearching && selectedFilter == SearchResultFilter.SONGS -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
