@@ -50,6 +50,13 @@ internal interface LocalLibraryStore {
     /** Everything this device has, as the upload needs it (newest first, like the app shows it). */
     suspend fun readForUpload(): LocalLibraryForUpload
 
+    /**
+     * Local playlists that were never linked to an account copy (left over from an upload) but have
+     * an exact-name twin in [cloud]: links them, or drops the leftover if its twin is already
+     * linked, so that applying the account library makes them mirror it 1:1. Returns how many.
+     */
+    suspend fun adoptUnlinkedPlaylists(cloud: List<CloudPlaylist>): Int
+
     /** Turns linked playlists into plain local ones. */
     suspend fun detachFromCloud()
 }
@@ -268,7 +275,20 @@ internal object LibraryFlow {
             }
             snapshot = second
         }
+        adoptLeftovers(store, snapshot)
         applyAndLink(store, snapshot, wipeLocalOnly = false)
+    }
+
+    /** See [LocalLibraryStore.adoptUnlinkedPlaylists]. A failure here never blocks the sync itself. */
+    private suspend fun adoptLeftovers(store: LocalLibraryStore, snapshot: CloudSnapshot) {
+        try {
+            val n = store.adoptUnlinkedPlaylists(snapshot.playlists.map { it.playlist })
+            if (n > 0) Timber.tag(TAG).i("Matched $n leftover local playlist(s) to their account copies")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Matching leftover playlists failed (continuing)")
+        }
     }
 
     /**
@@ -311,6 +331,7 @@ internal object LibraryFlow {
                 return RefreshResult.Refused("Your library changed while refreshing, so nothing was applied. Pull to refresh again.")
             }
 
+            adoptLeftovers(store, snapshot)
             try {
                 store.replaceWithCloud(snapshot, wipeLocalOnly = false)
             } catch (e: CancellationException) {

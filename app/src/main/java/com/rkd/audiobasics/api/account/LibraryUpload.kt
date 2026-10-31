@@ -579,7 +579,7 @@ internal object LibraryUpload {
         val p = progress!!
         val pl = plan!!
         publish("Checking your account")
-        val snapshot = when (val o = attempt { s -> CloudSnapshotFetcher.fetch(s) }) {
+        var snapshot = when (val o = attempt { s -> CloudSnapshotFetcher.fetch(s) }) {
             is Outcome.Ok -> o.value
             is Outcome.Refused -> {
                 halt(PauseReason.ERROR, "Couldn't read your account back (${o.message}). Resume to try again.")
@@ -588,6 +588,29 @@ internal object LibraryUpload {
             is Outcome.Halt -> {
                 halt(o.reason, o.message)
                 return
+            }
+        }
+
+        // YouTube can be slow to list playlists that were only just made. If some of ours aren't
+        // listed yet, wait and look again (twice at most) before calling them missing.
+        var lagChecks = 0
+        while (lagChecks < 2 && p.cloudIds.values.any { id -> snapshot.playlists.none { it.playlist.id == id } }) {
+            lagChecks++
+            publish("Waiting for YouTube to list your playlists")
+            if (!nap(20_000L)) {
+                halt(PauseReason.USER, "Paused.")
+                return
+            }
+            snapshot = when (val o = attempt { s -> CloudSnapshotFetcher.fetch(s) }) {
+                is Outcome.Ok -> o.value
+                is Outcome.Refused -> {
+                    halt(PauseReason.ERROR, "Couldn't read your account back (${o.message}). Resume to try again.")
+                    return
+                }
+                is Outcome.Halt -> {
+                    halt(o.reason, o.message)
+                    return
+                }
             }
         }
 
