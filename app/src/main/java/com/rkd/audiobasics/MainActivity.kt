@@ -48,6 +48,7 @@ import com.rkd.audiobasics.ui.MorphOverlayHost
 import com.rkd.audiobasics.ui.MorphOverlayState
 import com.rkd.audiobasics.ui.MorphPlacement
 import com.rkd.audiobasics.ui.MorphPopup
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -96,6 +97,8 @@ import com.rkd.audiobasics.ui.EngineInfoScreen
 import com.rkd.audiobasics.ui.HomeScreen
 import com.rkd.audiobasics.ui.LibraryScreen
 import com.rkd.audiobasics.ui.LikedScreen
+import com.rkd.audiobasics.ui.LibraryRefresh
+import com.rkd.audiobasics.ui.LibraryRefreshOverlay
 import com.rkd.audiobasics.ui.MusicViewModel
 import com.rkd.audiobasics.ui.PlayerBar
 import com.rkd.audiobasics.ui.PlayerDialog
@@ -227,6 +230,9 @@ class MainActivity : ComponentActivity() {
                 // One-time nudge toward manually enabling Audiobasics Link handling in
                 // Settings, in case automatic verification didn't take effect.
                 vm.checkAppLinksNudge(this@MainActivity)
+                // Pull the account library once per app start (only if an account is linked);
+                // shows the same indicator as pull-to-refresh.
+                LibraryRefresh.refreshOnLaunch(vm, this@MainActivity)
             }
 
             val lifecycleOwner = LocalLifecycleOwner.current
@@ -805,6 +811,15 @@ fun AudiobasicsApp(
                         else -> error("Unknown nav key: $key")
                     }
                 }
+            )
+            // Launch refresh on a screen that has no pull gesture of its own (Home, Queue, ...).
+            val libraryRefreshing by LibraryRefresh.refreshing.collectAsState()
+            val screenHasLibraryPull = topKey is LikedKey || topKey is AlbumsKey ||
+                topKey is LibraryKey || topKey is CustomPlaylistKey
+            LibraryRefreshOverlay(
+                visible = libraryRefreshing && !screenHasLibraryPull,
+                isDarkMode = isDarkMode,
+                modifier = Modifier.align(Alignment.TopCenter)
             )
         }
 
