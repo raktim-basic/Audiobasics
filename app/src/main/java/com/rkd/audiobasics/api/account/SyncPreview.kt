@@ -101,6 +101,7 @@ internal object SyncPreview {
                     val all = r.value.items
                     val owned = all.filter { it.owned }
                     log("Playlists: ${owned.size} created by you, ${all.size - owned.size} saved from others (those are not synced).")
+                    all.filter { !it.owned }.forEach { log("  not synced: ${it.title}") }
                     for (p in owned) {
                         Thread.sleep(STEP_PAUSE_MS)
                         when (val pr = CloudLibrary.fetchPlaylistSongs(session, p.id)) {

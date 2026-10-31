@@ -441,13 +441,16 @@ internal object CloudLibrary {
 
         val items = r.optJSONObject("menu")?.optJSONObject("menuRenderer")?.optJSONArray("items")
         var owned = false
+        val icons = ArrayList<String>()
         if (items != null) {
             for (i in 0 until items.length()) {
                 val icon = items.optJSONObject(i)?.optJSONObject("menuNavigationItemRenderer")
                     ?.optJSONObject("icon")?.optString("iconType")
-                if (icon == "EDIT") { owned = true; break }
+                if (icon != null) icons += icon
+                if (icon == "EDIT") owned = true
             }
         }
+        if (!owned) Timber.tag(TAG).i("Not treated as yours: \"$title\" (menu icons: ${icons.joinToString(",")})")
         return CloudPlaylist(id = id, title = title, owned = owned)
     }
 

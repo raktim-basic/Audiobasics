@@ -57,6 +57,9 @@ internal interface LocalLibraryStore {
      */
     suspend fun adoptUnlinkedPlaylists(cloud: List<CloudPlaylist>): Int
 
+    /** What applying [snapshot] would change on this device (nothing is written). */
+    suspend fun diffAgainst(snapshot: CloudSnapshot): LibraryDiff
+
     /** Turns linked playlists into plain local ones. */
     suspend fun detachFromCloud()
 }
@@ -104,9 +107,25 @@ internal object CloudSnapshotFetcher {
     }
 }
 
+/** What applying a snapshot changed (or would change) on this device. */
+internal class LibraryDiff(
+    val likedChanged: Int,
+    val albumsChanged: Int,
+    val playlistsChanged: Int,
+    val playlistsAdded: Int,
+    val playlistsRemoved: Int,
+    /** One line per playlist that differs, for the log. */
+    val details: List<String>
+) {
+    val isEmpty: Boolean
+        get() = likedChanged == 0 && albumsChanged == 0 && playlistsChanged == 0 &&
+            playlistsAdded == 0 && playlistsRemoved == 0
+}
+
 /** How a silent refresh ([LibraryFlow.refresh]) ended. A refusal always means nothing was changed. */
 internal sealed interface RefreshResult {
-    data object Updated : RefreshResult
+    /** [diff] is what the refresh changed here, or null if that couldn't be worked out. */
+    data class Updated(val diff: LibraryDiff?) : RefreshResult
 
     /** Another library operation is already running; this one did nothing. */
     data object Busy : RefreshResult
@@ -332,6 +351,20 @@ internal object LibraryFlow {
             }
 
             adoptLeftovers(store, snapshot)
+            val diff = try {
+                store.diffAgainst(snapshot).also { d ->
+                    Timber.tag(TAG).i(
+                        "Refresh compared: liked ${d.likedChanged}, albums ${d.albumsChanged}, " +
+                            "playlists changed ${d.playlistsChanged}, new ${d.playlistsAdded}, gone ${d.playlistsRemoved}"
+                    )
+                    d.details.forEach { Timber.tag(TAG).i("  $it") }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.tag(TAG).w(e, "Couldn't compare before applying")
+                null
+            }
             try {
                 store.replaceWithCloud(snapshot, wipeLocalOnly = false)
             } catch (e: CancellationException) {
@@ -341,7 +374,7 @@ internal object LibraryFlow {
                 return RefreshResult.Refused("Couldn't update this device's library. Nothing was changed.")
             }
             Timber.tag(TAG).i("Refreshed: ${snapshot.counts}")
-            return RefreshResult.Updated
+            return RefreshResult.Updated(diff)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
