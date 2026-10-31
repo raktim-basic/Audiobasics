@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.widget.Toast
 import com.rkd.audiobasics.api.account.AccountManager
 import com.rkd.audiobasics.api.account.AccountState
+import com.rkd.audiobasics.api.account.LibraryDiff
 import com.rkd.audiobasics.api.account.LibraryFlow
 import com.rkd.audiobasics.api.account.LibraryUpload
 import com.rkd.audiobasics.api.account.RefreshResult
@@ -56,6 +57,7 @@ object LibraryRefresh {
         if (!launchRefreshDone.compareAndSet(false, true)) return
         val st = AccountManager.state.value
         if (st !is AccountState.LoggedIn || !st.libraryLinked) return
+        Timber.tag(TAG).i("Launch refresh starting")
         start(vm, context, automatic = true)
     }
 
@@ -102,6 +104,19 @@ object LibraryRefresh {
                 else syncLinkedLibrary(vm)
         }
 
+    /** "Library up to date", or what actually changed on this device. */
+    private fun describe(diff: LibraryDiff?): String {
+        if (diff == null || diff.isEmpty) return "Library up to date"
+        fun n(count: Int, one: String, many: String) = "$count ${if (count == 1) one else many}"
+        val parts = buildList {
+            if (diff.likedChanged > 0) add(n(diff.likedChanged, "liked song", "liked songs"))
+            if (diff.albumsChanged > 0) add(n(diff.albumsChanged, "album", "albums"))
+            val playlists = diff.playlistsChanged + diff.playlistsAdded + diff.playlistsRemoved
+            if (playlists > 0) add(n(playlists, "playlist", "playlists"))
+        }
+        return "Library updated: ${parts.joinToString(", ")}"
+    }
+
     private suspend fun syncLinkedLibrary(vm: MusicViewModel): Outcome {
         // A change still on its way to the account would be undone by a read that started
         // before it finished. Wait for the user to try again instead.
@@ -119,7 +134,11 @@ object LibraryRefresh {
         }
         Timber.tag(TAG).i("Library refresh: $result")
         return when (result) {
-            RefreshResult.Updated -> Outcome("Library up to date")
+            is RefreshResult.Updated -> {
+                // Shown for the launch refresh too, so it's clear that it ran.
+                val text = describe(result.diff)
+                Outcome(text, text)
+            }
             // Another sync (Account screen) is already running and shows its own progress.
             RefreshResult.Busy -> Outcome(null)
             is RefreshResult.Refused -> {

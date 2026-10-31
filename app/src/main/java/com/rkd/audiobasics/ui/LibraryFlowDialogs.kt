@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.api.account.CloudSnapshot
 import com.rkd.audiobasics.api.account.LibraryCounts
 import com.rkd.audiobasics.api.account.CloudPlaylist
+import com.rkd.audiobasics.api.account.CloudSnapshot
+import com.rkd.audiobasics.api.account.LibraryDiff
 import com.rkd.audiobasics.api.account.LibraryFlow
 import com.rkd.audiobasics.api.account.LibraryFlowState
 import com.rkd.audiobasics.api.account.LocalLibraryForUpload
@@ -75,6 +77,45 @@ internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStor
             changed++
         }
         changed
+    }
+
+    override suspend fun diffAgainst(snapshot: CloudSnapshot): LibraryDiff = withContext(Dispatchers.IO) {
+        val dao = AppDatabase.getInstance(vm.getApplication<Application>()).playlistDao()
+        val details = ArrayList<String>()
+
+        val localLiked = vm.likedSongs.value.map { it.id }.toSet()
+        val cloudLiked = snapshot.liked.map { it.song.id }.toSet()
+        val likedChanged = (localLiked - cloudLiked).size + (cloudLiked - localLiked).size
+
+        val localAlbums = vm.savedAlbums.value.map { it.id }.toSet()
+        val cloudAlbums = snapshot.albums.map { it.id }.toSet()
+        val albumsChanged = (localAlbums - cloudAlbums).size + (cloudAlbums - localAlbums).size
+
+        val locals = dao.getPlaylists()
+        val byCloudId = locals.filter { it.cloudId != null }.associateBy { it.cloudId!! }
+        var changed = 0
+        var added = 0
+        for (c in snapshot.playlists) {
+            val l = byCloudId[c.playlist.id]
+            if (l == null) {
+                added++
+                details += "new on this device: ${c.playlist.title} (${c.songs.size} songs)"
+                continue
+            }
+            val localIds = dao.getPlaylistSongs(l.id).map { it.songId }
+            val cloudIds = c.songs.map { it.song.id }
+            if (localIds != cloudIds) {
+                changed++
+                val orderOnly = localIds.toSet() == cloudIds.toSet() && localIds.size == cloudIds.size
+                details += "${c.playlist.title}: ${localIds.size} here, ${cloudIds.size} in the account" +
+                    if (orderOnly) " (same songs, different order)" else ""
+            }
+        }
+        val cloudPlaylistIds = snapshot.playlists.map { it.playlist.id }.toSet()
+        val removed = byCloudId.keys.count { it !in cloudPlaylistIds }
+        byCloudId.filterKeys { it !in cloudPlaylistIds }.values.forEach { details += "gone from the account: ${it.name}" }
+
+        LibraryDiff(likedChanged, albumsChanged, changed, added, removed, details)
     }
 
     override suspend fun readForUpload(): LocalLibraryForUpload = withContext(Dispatchers.IO) {
