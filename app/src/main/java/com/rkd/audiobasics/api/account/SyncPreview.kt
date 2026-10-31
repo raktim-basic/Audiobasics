@@ -99,14 +99,17 @@ internal object SyncPreview {
             when (val r = CloudLibrary.fetchPlaylists(session)) {
                 is AccountResult.Success -> {
                     val all = r.value.items
-                    val owned = all.filter { it.owned }
-                    log("Playlists: ${owned.size} created by you, ${all.size - owned.size} saved from others (those are not synced).")
-                    all.filter { !it.owned }.forEach { log("  not synced: ${it.title}") }
-                    for (p in owned) {
+                    val candidates = all.filter { !(it.saved && !it.owned) }
+                    log("Playlists: ${all.size} in the library; ${all.size - candidates.size} are clearly saved from others and aren't synced.")
+                    for (p in candidates) {
                         Thread.sleep(STEP_PAUSE_MS)
                         when (val pr = CloudLibrary.fetchPlaylistSongs(session, p.id)) {
                             is AccountResult.Success -> {
                                 val l = pr.value
+                                if (!p.owned && l.editable != true) {
+                                    log("  not synced: ${p.title} (not editable by this account)")
+                                    continue
+                                }
                                 val unique = l.items.map { it.song.id }.toSet().size
                                 val notes = buildList {
                                     if (l.items.size != unique) add("${l.items.size - unique} repeated")

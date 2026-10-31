@@ -89,22 +89,42 @@ internal object CloudSnapshotFetcher {
         }
         Thread.sleep(STEP_PAUSE_MS)
 
-        val owned = when (val r = CloudLibrary.fetchPlaylists(session)) {
-            is AccountResult.Success -> r.value.items.filter { it.owned }.distinctBy { it.id }
+        val tiles = when (val r = CloudLibrary.fetchPlaylists(session)) {
+            is AccountResult.Success -> r.value.items.distinctBy { it.id }
             else -> return r.asFailure()
         }
 
-        val playlists = ArrayList<CloudPlaylistData>(owned.size)
-        for (p in owned) {
+        // Which tiles are the user's own playlists? The tile menu only hints (and varies), so every
+        // tile that isn't clearly someone else's is read, and the playlist page decides: editable
+        // playlists are mirrored, the rest are left alone.
+        val playlists = ArrayList<CloudPlaylistData>()
+        for (p in tiles) {
+            if (p.saved && !p.owned) continue
+            if (!p.owned && p.id in notEditable) continue
             Thread.sleep(STEP_PAUSE_MS)
-            val songs = when (val r = CloudLibrary.fetchPlaylistSongs(session, p.id)) {
-                is AccountResult.Success -> r.value.items.distinctBy { it.song.id }
-                else -> return r.asFailure()
+            val list = when (val r = CloudLibrary.fetchPlaylistSongs(session, p.id)) {
+                is AccountResult.Success -> r.value
+                is AccountResult.SessionExpired, is AccountResult.NetworkError -> return r.asFailure()
+                else -> {
+                    // A playlist that is clearly the user's own must read, or nothing is applied. One that
+                    // only might be someone else's (and can't be read) is just left out.
+                    if (p.owned) return r.asFailure()
+                    Timber.tag("Sync").w("Couldn't read \"${p.title}\" to check whether it's yours; leaving it out")
+                    continue
+                }
             }
-            playlists += CloudPlaylistData(p, songs)
+            if (!p.owned && list.editable != true) {
+                notEditable += p.id
+                Timber.tag("Sync").i("\"${p.title}\" isn't editable by this account, so it isn't synced")
+                continue
+            }
+            playlists += CloudPlaylistData(p.copy(owned = true), list.items.distinctBy { it.song.id })
         }
         return AccountResult.Success(CloudSnapshot(liked, albums, playlists))
     }
+
+    /** Playlists found (this run of the app) not to be editable, so they aren't re-read every refresh. */
+    private val notEditable = HashSet<String>()
 }
 
 /** What applying a snapshot changed (or would change) on this device. */

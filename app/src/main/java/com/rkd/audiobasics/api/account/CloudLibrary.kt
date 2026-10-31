@@ -13,8 +13,13 @@ internal data class CloudSong(val song: Song, val setVideoId: String?)
 internal data class CloudPlaylist(
     val id: String,
     val title: String,
-    /** True for playlists this account created (editable); false for ones it only saved. */
-    val owned: Boolean
+    /**
+     * True when this is known to be the account's own, editable playlist. A library tile alone can't
+     * always say (its menu varies), so the snapshot fetcher confirms from the playlist page itself.
+     */
+    val owned: Boolean,
+    /** The tile's menu offered "save / remove from library", so it's someone else's playlist. */
+    val saved: Boolean = false
 )
 
 /**
@@ -35,7 +40,9 @@ internal data class CloudList<T>(
     /** Rows the page returned (before any were dropped as unparseable). */
     val rowCount: Int,
     /** Rows that were present but couldn't be turned into items. Never hidden. */
-    val skippedRows: Int
+    val skippedRows: Int,
+    /** For a playlist page: whether the page says the account can edit it (null if not a playlist page). */
+    val editable: Boolean? = null
 )
 
 /**
@@ -92,7 +99,8 @@ internal object CloudLibrary {
         val rows: Int,
         val skipped: Int,
         val continuation: String?,
-        val advertised: Int?
+        val advertised: Int?,
+        val editable: Boolean? = null
     )
 
     private fun <T> fetchPaged(
@@ -106,6 +114,7 @@ internal object CloudLibrary {
         var rows = 0
         var skipped = 0
         var advertised: Int? = null
+        var editable: Boolean? = null
         var token: String? = null
         var pages = 0
         var lastPageRows = 0
@@ -148,7 +157,10 @@ internal object CloudLibrary {
             items += page.items
             rows += page.rows
             skipped += page.skipped
-            if (pages == 1) advertised = page.advertised
+            if (pages == 1) {
+                advertised = page.advertised
+                editable = page.editable
+            }
             Timber.tag(TAG).d("$label: page $pages rows=${page.rows} more=${page.continuation != null}")
 
             val next = page.continuation ?: break
@@ -166,7 +178,7 @@ internal object CloudLibrary {
         if (advertised != null && rows != advertised) {
             Timber.tag(TAG).d("$label: header says $advertised, $rows rows arrived (removed or unavailable videos are counted by the header but not returned)")
         }
-        return AccountResult.Success(CloudList(items, pages, advertised, rows, skipped))
+        return AccountResult.Success(CloudList(items, pages, advertised, rows, skipped, editable))
     }
 
     // ─── Song pages (liked songs, playlists) ─────────────────────────────────
@@ -181,7 +193,9 @@ internal object CloudLibrary {
                 val advertised = advertisedSongCount(json)
                 if (advertised == null || advertised == 0) {
                     Timber.tag(TAG).d("Empty playlist (song list without contents; header says ${advertised ?: "nothing"})")
-                    return AccountResult.Success(Page(emptyList(), 0, 0, null, advertised ?: 0))
+                    return AccountResult.Success(
+                        Page(emptyList(), 0, 0, null, advertised ?: 0, editable = editableSignal(json))
+                    )
                 }
                 return AccountResult.ParseError("The header says $advertised songs, but the song list came back empty")
             }
@@ -217,9 +231,23 @@ internal object CloudLibrary {
                 rows = rows,
                 skipped = skipped,
                 continuation = nextToken(shelf),
-                advertised = if (first) advertisedSongCount(json) else null
+                advertised = if (first) advertisedSongCount(json) else null,
+                editable = if (first) editableSignal(json) else null
             )
         )
+    }
+
+    /**
+     * Does this playlist page say the account can edit the playlist? Editable playlists carry an
+     * "editable playlist header" and their rows carry "remove from playlist" actions; playlists
+     * that are only saved have neither. Either is enough, and which one matched is logged.
+     */
+    private fun editableSignal(json: JSONObject): Boolean {
+        val raw = json.toString()
+        val header = raw.contains("musicEditablePlaylistDetailHeaderRenderer")
+        val remove = raw.contains("ACTION_REMOVE_VIDEO")
+        Timber.tag(TAG).d("Playlist page editable? header=$header, remove-actions=$remove")
+        return header || remove
     }
 
     private fun parseSongRow(item: JSONObject): CloudSong? {
@@ -439,19 +467,28 @@ internal object CloudLibrary {
             ?.optString("text").orEmpty()
         if (title.isBlank()) return null
 
+        // The tile's menu varies, so it only gives hints: an edit/delete item means it's yours, a
+        // save/remove-from-library toggle means it's someone else's. Anything else is settled from
+        // the playlist page itself (see CloudSnapshotFetcher).
         val items = r.optJSONObject("menu")?.optJSONObject("menuRenderer")?.optJSONArray("items")
-        var owned = false
         val icons = ArrayList<String>()
         if (items != null) {
             for (i in 0 until items.length()) {
-                val icon = items.optJSONObject(i)?.optJSONObject("menuNavigationItemRenderer")
-                    ?.optJSONObject("icon")?.optString("iconType")
-                if (icon != null) icons += icon
-                if (icon == "EDIT") owned = true
+                val item = items.optJSONObject(i) ?: continue
+                item.optJSONObject("menuNavigationItemRenderer")?.optJSONObject("icon")
+                    ?.optString("iconType")?.let { icons += it }
+                item.optJSONObject("menuServiceItemRenderer")?.optJSONObject("icon")
+                    ?.optString("iconType")?.let { icons += it }
+                item.optJSONObject("toggleMenuServiceItemRenderer")?.let { t ->
+                    t.optJSONObject("defaultIcon")?.optString("iconType")?.let { icons += "toggle:$it" }
+                    t.optJSONObject("toggledIcon")?.optString("iconType")?.let { icons += "toggle:$it" }
+                }
             }
         }
-        if (!owned) Timber.tag(TAG).i("Not treated as yours: \"$title\" (menu icons: ${icons.joinToString(",")})")
-        return CloudPlaylist(id = id, title = title, owned = owned)
+        val owned = icons.any { it == "EDIT" || it == "DELETE" }
+        val saved = icons.any { it.startsWith("toggle:LIBRARY") || it.startsWith("toggle:KEEP") }
+        Timber.tag(TAG).d("Playlist tile \"$title\": owned-hint=$owned, saved-hint=$saved, menu=${icons.joinToString(",")}")
+        return CloudPlaylist(id = id, title = title, owned = owned, saved = saved)
     }
 
     // ─── Layout helpers ──────────────────────────────────────────────────────
