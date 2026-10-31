@@ -97,6 +97,7 @@ import com.rkd.audiobasics.ui.EngineInfoScreen
 import com.rkd.audiobasics.ui.HomeScreen
 import com.rkd.audiobasics.ui.LibraryScreen
 import com.rkd.audiobasics.ui.LikedScreen
+import com.rkd.audiobasics.api.account.LibraryUpload
 import com.rkd.audiobasics.ui.LibraryRefresh
 import com.rkd.audiobasics.ui.LibraryRefreshOverlay
 import com.rkd.audiobasics.ui.MusicViewModel
@@ -233,6 +234,7 @@ class MainActivity : ComponentActivity() {
                 // Pull the account library once per app start (only if an account is linked);
                 // shows the same indicator as pull-to-refresh.
                 LibraryRefresh.refreshOnLaunch(vm, this@MainActivity)
+                LibraryUpload.launchNotice(this@MainActivity)
             }
 
             val lifecycleOwner = LocalLifecycleOwner.current
