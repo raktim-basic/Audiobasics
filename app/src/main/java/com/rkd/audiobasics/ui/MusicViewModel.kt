@@ -2104,6 +2104,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadPlaylistSongs(playlistId: String) {
+        // Switching to another playlist: drop the previous one's songs now, so nothing can read
+        // them as this playlist's (isSongInPlaylist trusts the list once the id matches) while
+        // the database read is in flight. Reopening the same playlist keeps its list.
+        if (_openPlaylistId.value != playlistId) _openPlaylistSongs.value = emptyList()
         _openPlaylistId.value = playlistId
         viewModelScope.launch(Dispatchers.IO) {
             _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
