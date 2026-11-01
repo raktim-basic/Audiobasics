@@ -37,14 +37,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
 import com.rkd.audiobasics.ui.LocalMorphOverlay
 import com.rkd.audiobasics.ui.MonochromeExcept
+import com.rkd.audiobasics.ui.MorphAlertDialog
 import com.rkd.audiobasics.ui.MorphOverlayHost
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.MorphOverlayState
 import com.rkd.audiobasics.ui.MorphPlacement
 import com.rkd.audiobasics.ui.MorphPopup
@@ -464,13 +466,17 @@ fun AudiobasicsApp(
     CompositionLocalProvider(LocalMorphOverlay provides morphOverlay) {
 
     if (showStorageLow) {
-        AlertDialog(
+        val lowTextColor = if (isDarkMode) Color.White else Color.Black
+        MorphAlertDialog(
             onDismissRequest = { vm.dismissStorageLow() },
-            title = { Text("Storage Low", fontFamily = NothingFont) },
-            text = { Text("Cannot download song — less than 1GB storage available.", fontFamily = NothingFont) },
+            isDarkMode = isDarkMode,
+            title = {
+                Text("Storage Low", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = lowTextColor)
+            },
+            text = { Text("Cannot download song — less than 1GB storage available.", fontFamily = NothingFont, color = lowTextColor) },
             confirmButton = {
                 TextButton(onClick = { vm.dismissStorageLow() }) {
-                    Text("OK", fontFamily = NothingFont, color = Color.Red)
+                    Text("OK", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
                 }
             }
         )
