@@ -68,7 +68,13 @@ fun CustomPlaylistScreen(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
-    val playlistSongs by vm.openPlaylistSongs.collectAsState()
+    val openSongs by vm.openPlaylistSongs.collectAsState()
+    // The ViewModel keeps one shared list for whichever playlist was opened last, so on opening
+    // a different playlist it still holds the previous one's songs for a frame, until this
+    // playlist's own load lands. Only ever show rows that belong to THIS playlist.
+    val playlistSongs = remember(openSongs, playlist.id) {
+        openSongs.filter { it.playlistId == playlist.id }
+    }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val bodyColor = if (isDarkMode) AmoledBlack else bgColor
