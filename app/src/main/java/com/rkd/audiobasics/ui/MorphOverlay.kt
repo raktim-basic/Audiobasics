@@ -115,7 +115,14 @@ class MorphEntry internal constructor(
     val onDismissRequest: () -> Unit,
     val content: @Composable (close: () -> Unit) -> Unit,
     /** False = a tap on the dimmed backdrop does nothing (back press and `close()` still work). */
-    val dismissOnOutsideTap: Boolean = true
+    val dismissOnOutsideTap: Boolean = true,
+    /**
+     * While this returns true (a cloud write is running), the popup can't be dismissed by a
+     * backdrop tap OR the back button — both are swallowed. Only the popup's own `close()`
+     * (called by its content when the work finishes) still closes it. Read live, so it can
+     * be backed by Compose state.
+     */
+    val isLocked: () -> Boolean = { false }
 ) {
     /** True once dismissal has started; the host plays the shrink animation, then removes the entry. */
     var closing by mutableStateOf(false)
@@ -170,11 +177,12 @@ class MorphOverlayState {
         bare: Boolean = false,
         onDismissRequest: () -> Unit = {},
         dismissOnOutsideTap: Boolean = true,
+        isLocked: () -> Boolean = { false },
         content: @Composable (close: () -> Unit) -> Unit
     ): MorphEntry {
         val e = MorphEntry(
             anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest, content,
-            dismissOnOutsideTap
+            dismissOnOutsideTap, isLocked
         )
         _entries.add(e)
         return e
@@ -246,13 +254,24 @@ fun MorphPopup(
     wide: Boolean = false,
     bare: Boolean = false,
     dismissOnOutsideTap: Boolean = true,
+    isLocked: () -> Boolean = { false },
     overlay: MorphOverlayState = LocalMorphOverlay.current,
     content: @Composable (close: () -> Unit) -> Unit
 ) {
+    // Read through rememberUpdatedState so the entry (created once) always sees the latest lambda.
+    val currentIsLocked by rememberUpdatedState(isLocked)
     DisposableEffect(Unit) {
         val e = overlay.show(
-            anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest,
-            dismissOnOutsideTap, content
+            anchor = anchor,
+            placement = placement,
+            containerColor = containerColor,
+            highlightBounds = highlightBounds,
+            wide = wide,
+            bare = bare,
+            onDismissRequest = onDismissRequest,
+            dismissOnOutsideTap = dismissOnOutsideTap,
+            isLocked = { currentIsLocked() },
+            content = content
         )
         onDispose { overlay.requestClose(e) }
     }
@@ -364,7 +383,9 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     }
 
     // Registered after NavDisplay's own back handler, so it wins while a popup is open.
-    BackHandler(enabled = !entry.closing) { requestClose() }
+    // While locked (a write is running) the back press is swallowed here, so it neither closes
+    // the popup nor falls through to the screen underneath.
+    BackHandler(enabled = !entry.closing) { if (!entry.isLocked()) requestClose() }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Backdrop: dims (dialogs only) and closes on outside tap. Also blocks touches to the app below.
@@ -375,7 +396,9 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     drawRect(Color.Black.copy(alpha = scrimAlpha * progress.value))
                 }
                 .pointerInput(Unit) {
-                    detectTapGestures(onTap = { if (entry.dismissOnOutsideTap) requestClose() })
+                    detectTapGestures(onTap = {
+                        if (entry.dismissOnOutsideTap && !entry.isLocked()) requestClose()
+                    })
                 }
         )
 

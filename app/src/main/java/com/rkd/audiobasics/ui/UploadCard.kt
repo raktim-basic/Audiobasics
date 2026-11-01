@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -146,9 +145,9 @@ internal fun UploadCard(isDarkMode: Boolean, hapticsEnabled: Boolean) {
     }
 
     if (confirmDiscard) {
-        AlertDialog(
+        MorphAlertDialog(
             onDismissRequest = { confirmDiscard = false },
-            containerColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White,
+            isDarkMode = isDarkMode,
             title = { Text("Discard the upload?", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = textColor) },
             text = {
                 Text(

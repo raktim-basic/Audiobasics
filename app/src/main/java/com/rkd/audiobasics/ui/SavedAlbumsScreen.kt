@@ -77,6 +77,9 @@ fun SavedAlbumsScreen(
 
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
 
+    // The album waiting for a Yes/No before it is removed from the saved list.
+    var removeConfirm by remember { mutableStateOf<Album?>(null) }
+
     // Reordering is only available on the full saved-album list, not while searching.
     var reorderTemporarilyDisabled by remember { mutableStateOf(false) }
     val reorderEnabled = !reorderTemporarilyDisabled && searchQuery.isBlank()
@@ -318,7 +321,7 @@ fun SavedAlbumsScreen(
                                                 draggingIndex = if (armed) null else index
                                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                             },
-                                            onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
+                                            onRemoveFromSave = { draggingIndex = null; removeConfirm = album }
                                         )
                                     }
                                 }
@@ -330,7 +333,7 @@ fun SavedAlbumsScreen(
                                     context = context,
                                     isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
                                     onClick = { onAlbumClick(album) },
-                                    onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
+                                    onRemoveFromSave = { draggingIndex = null; removeConfirm = album }
                                 )
                             }
                         }
@@ -340,6 +343,19 @@ fun SavedAlbumsScreen(
 
 
         }
+    }
+
+    // ── Remove confirmation ────────────────────────────────────────────────
+    // Same design as the song removal confirmations: Yes spins until the account (and then
+    // this device) has actually changed; outside tap and back do nothing while it spins.
+    removeConfirm?.let { album ->
+        MorphConfirmDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            message = "Remove \"${album.title}\" from \"Saved Albums\"?",
+            onDismiss = { removeConfirm = null },
+            onConfirm = { vm.unsaveAlbumAwait(album) }
+        )
     }
 }
 

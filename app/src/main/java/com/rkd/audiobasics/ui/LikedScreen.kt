@@ -378,38 +378,15 @@ fun LikedScreen(
     }
 
     // ── Remove confirmation ────────────────────────────────────────────────
+    // Yes shows a spinner on the button and keeps the dialog open until the account (and then
+    // this device) has actually changed; outside tap and back do nothing while it spins.
     removeConfirm?.let { song ->
-        val confirmBg = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
-        MorphPopup(
-            onDismissRequest = { removeConfirm = null },
-            placement = MorphPlacement.Center,
-            containerColor = confirmBg
-        ) { close ->
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-                Text("Are you sure?", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
-                Spacer(Modifier.height(8.dp))
-                Text("Remove \"${song.title}\" from \"Liked Songs\"?", fontFamily = NothingFont, color = textColor)
-                Spacer(Modifier.height(20.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        close()
-                    }) {
-                        Text("No", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
-                    }
-                    TextButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        vm.toggleLike(song)
-                        close()
-                    }) {
-                        Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
-                    }
-                }
-            }
-        }
+        MorphConfirmDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            message = "Remove \"${song.title}\" from \"Liked Songs\"?",
+            onDismiss = { removeConfirm = null },
+            onConfirm = { vm.unlikeSongAwait(song) }
+        )
     }
 }

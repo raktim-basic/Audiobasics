@@ -414,25 +414,19 @@ fun LibraryScreen(
     }
     deleteTarget?.let { target ->
         val savedOnly = access.isReadOnly(target.cloudId)
-        AlertDialog(onDismissRequest = { deleteTarget = null },
-            title = { Text(if (savedOnly) "Remove \"${target.name}\"?" else "Delete \"${target.name}\"?", fontFamily = NothingFont) },
-            text = {
-                Text(
-                    if (savedOnly) "It stays on YouTube Music. Only your copy of the playlist is removed."
-                    else "Are you sure you want to remove the songs in the playlist?",
-                    fontFamily = NothingFont
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { vm.deletePlaylist(target.id); deleteTarget = null }) {
-                    Text(if (savedOnly) "Remove" else "Delete", color = Color.Red, fontFamily = NothingFont)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text("Cancel", fontFamily = NothingFont)
-                }
-            })
+        // Same design as the other confirmations; the button spins until the account (and then
+        // this device) has actually changed, and nothing can dismiss it meanwhile.
+        MorphConfirmDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            title = if (savedOnly) "Remove \"${target.name}\"?" else "Delete \"${target.name}\"?",
+            message = if (savedOnly) "It stays on YouTube Music. Only your copy of the playlist is removed."
+            else "Are you sure you want to remove the songs in the playlist?",
+            cancelLabel = "Cancel",
+            confirmLabel = if (savedOnly) "Remove" else "Delete",
+            onDismiss = { deleteTarget = null },
+            onConfirm = { vm.deletePlaylistAwait(target.id) }
+        )
     }
 }
 

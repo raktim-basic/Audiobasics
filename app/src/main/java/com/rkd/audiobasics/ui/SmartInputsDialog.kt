@@ -7,7 +7,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,13 +21,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
+/**
+ * Shown after a YouTube link is shared into Audiobasics. Drawn as a morph popup (like every
+ * other popup), with morph menus on the 3-dot buttons. The popup's content is created once,
+ * when it opens, but this dialog opens while the link is still loading — so the values below
+ * are read through State, and the card fills in by itself once the song and matches arrive.
+ */
 @Composable
 fun SmartInputsDialog(
     isDarkMode: Boolean,
@@ -39,31 +46,61 @@ fun SmartInputsDialog(
     onAddToSheet: (Song) -> Unit
 ) {
     val bgColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFF0F0F0)
-    val textColor = if (isDarkMode) Color.White else Color.Black
-    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+    val loadingNow by rememberUpdatedState(loading)
+    val linkSongNow by rememberUpdatedState(linkSong)
+    val matchesNow by rememberUpdatedState(matches)
+    val onPlayLinkSongNow by rememberUpdatedState(onPlayLinkSong)
+    val onAddToSheetNow by rememberUpdatedState(onAddToSheet)
 
-    Dialog(
+    MorphPopup(
         onDismissRequest = {
             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
             onDismiss()
         },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .background(bgColor, RoundedCornerShape(20.dp))
-                .padding(20.dp)
-        ) {
-            if (loading || linkSong == null) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = Color.Red)
-                }
-                return@Box
+        placement = MorphPlacement.Center,
+        containerColor = bgColor
+    ) { close ->
+        SmartInputsContent(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            loading = loadingNow,
+            linkSong = linkSongNow,
+            matches = matchesNow,
+            vm = vm,
+            onDismiss = close,
+            onPlayLinkSong = { onPlayLinkSongNow() },
+            onAddToSheet = { onAddToSheetNow(it) }
+        )
+    }
+}
+
+@Composable
+private fun SmartInputsContent(
+    isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
+    loading: Boolean,
+    linkSong: Song?,
+    matches: List<Song>,
+    vm: MusicViewModel,
+    onDismiss: () -> Unit,
+    onPlayLinkSong: () -> Unit,
+    onAddToSheet: (Song) -> Unit
+) {
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+
+    Box(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+        if (loading || linkSong == null) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color.Red)
             }
+            return@Box
+        }
 
             Column {
                 Row(
@@ -79,35 +116,38 @@ fun SmartInputsDialog(
                         modifier = Modifier.weight(1f)
                     )
 
-                    var linkMenuExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(onClick = {
+                    val overlay = LocalMorphOverlay.current
+                    val linkMenuAnchor = rememberMorphAnchor()
+                    IconButton(
+                        onClick = {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            linkMenuExpanded = true
-                        }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor)
-                        }
-                        DropdownMenu(
-                            expanded = linkMenuExpanded,
-                            onDismissRequest = { linkMenuExpanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Add to queue", fontFamily = NothingFont) },
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    linkMenuExpanded = false
-                                    vm.addToQueue(linkSong)
+                            overlay.show(
+                                anchor = linkMenuAnchor.bounds(),
+                                placement = MorphPlacement.Anchored
+                            ) { close ->
+                                MorphMenuColumn {
+                                    MorphMenuItem(
+                                        text = "Add to queue",
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            close()
+                                            vm.addToQueue(linkSong)
+                                        }
+                                    )
+                                    MorphMenuItem(
+                                        text = "Play next",
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            close()
+                                            vm.playNext(linkSong)
+                                        }
+                                    )
                                 }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Play next", fontFamily = NothingFont) },
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    linkMenuExpanded = false
-                                    vm.playNext(linkSong)
-                                }
-                            )
-                        }
+                            }
+                        },
+                        modifier = Modifier.morphAnchor(linkMenuAnchor)
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor)
                     }
                 }
 
@@ -205,7 +245,6 @@ fun SmartInputsDialog(
                 }
             }
         }
-    }
 }
 
 @Composable
@@ -221,7 +260,8 @@ private fun SmartInputMatchRow(
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
-    var menuExpanded by remember { mutableStateOf(false) }
+    val overlay = LocalMorphOverlay.current
+    val menuAnchor = rememberMorphAnchor()
 
     Row(
         modifier = Modifier
@@ -258,43 +298,44 @@ private fun SmartInputMatchRow(
             )
         }
 
-        Box {
-            IconButton(onClick = {
+        IconButton(
+            onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                menuExpanded = true
-            }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor)
-            }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                DropdownMenuItem(
-                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Add to playlist", fontFamily = NothingFont) },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        menuExpanded = false
-                        onAddToPlaylist()
+                overlay.show(
+                    anchor = menuAnchor.bounds(),
+                    placement = MorphPlacement.Anchored
+                ) { close ->
+                    MorphMenuColumn {
+                        MorphMenuItem(
+                            text = "Add to playlist",
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                onAddToPlaylist()
+                            }
+                        )
+                        MorphMenuItem(
+                            text = "Play next",
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                onPlayNext()
+                            }
+                        )
+                        MorphMenuItem(
+                            text = "Add to queue",
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                onAddToQueue()
+                            }
+                        )
                     }
-                )
-                DropdownMenuItem(
-                    text = { Text("Play next", fontFamily = NothingFont) },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        menuExpanded = false
-                        onPlayNext()
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Add to queue", fontFamily = NothingFont) },
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        menuExpanded = false
-                        onAddToQueue()
-                    }
-                )
-            }
+                }
+            },
+            modifier = Modifier.morphAnchor(menuAnchor)
+        ) {
+            Icon(Icons.Default.MoreVert, contentDescription = "More", tint = textColor)
         }
     }
 }

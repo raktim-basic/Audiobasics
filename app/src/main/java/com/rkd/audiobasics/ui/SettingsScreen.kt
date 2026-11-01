@@ -11,6 +11,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,7 +54,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.api.account.AccountManager
 import com.rkd.audiobasics.api.account.AccountState
@@ -536,8 +537,11 @@ private fun AppearancePage(
     val newPlayerDesign by vm.newPlayerDesign.collectAsState()
     val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
 
+    val scrollState = rememberScrollState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        scrollState = scrollState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -566,6 +570,8 @@ private fun AppearancePage(
 
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
+            // Everything under the header scrolls, so a small / low-dpi screen can reach every row.
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)) {
 
             Column(
                 modifier = Modifier
@@ -765,6 +771,7 @@ private fun AppearancePage(
             Spacer(Modifier.weight(1f))
 
 
+            }
         }
     }
 }
@@ -786,8 +793,11 @@ private fun GeneralPage(
     val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
     val audioQuality by vm.audioQuality.collectAsState()
 
+    val scrollState = rememberScrollState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        scrollState = scrollState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -816,6 +826,8 @@ private fun GeneralPage(
 
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
+            // Everything under the header scrolls, so a small / low-dpi screen can reach every row.
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)) {
 
             Row(
                 modifier = Modifier
@@ -1021,6 +1033,7 @@ private fun GeneralPage(
             Spacer(Modifier.weight(1f))
 
 
+            }
         }
     }
 }
@@ -1062,66 +1075,58 @@ private fun LibraryPage(
     }
 
     if (showImportWarning) {
-        Dialog(onDismissRequest = {
-            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-            showImportWarning = false
-        }) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(if (isDarkMode) Color(0xFF1E1E1E) else Color.White)
-                    .padding(20.dp)
-            ) {
-                Column {
-                    Text(
-                        text = "Import Warning",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = textColor
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever              :(  Are you sure?",
-                        fontFamily = NothingFont,
-                        fontSize = 14.sp,
-                        color = subTextColor
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = {
+        MorphAlertDialog(
+            onDismissRequest = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                showImportWarning = false
+            },
+            isDarkMode = isDarkMode,
+            title = {
+                Text(
+                    text = "Import Warning",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = textColor
+                )
+            },
+            text = {
+                Text(
+                    text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever              :(  Are you sure?",
+                    fontFamily = NothingFont,
+                    fontSize = 14.sp,
+                    color = subTextColor
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    showImportWarning = false
+                }) {
+                    Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
+                }
+            },
+            confirmButton = {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Red)
+                        .clickable {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             showImportWarning = false
-                        }) {
-                            Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
+                            pendingImportUri?.let { vm.importData(context, it) }
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Red)
-                                .clickable {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    showImportWarning = false
-                                    pendingImportUri?.let { vm.importData(context, it) }
-                                }
-                                .padding(horizontal = 20.dp, vertical = 10.dp)
-                        ) {
-                            Text(
-                                "Import",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "Import",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                 }
             }
-        }
+        )
     }
 
     val listState = rememberLazyListState()
@@ -1359,8 +1364,11 @@ private fun DevToolsPage(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) AmoledBlack else Color.White
 
+    val scrollState = rememberScrollState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        scrollState = scrollState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -1389,6 +1397,8 @@ private fun DevToolsPage(
 
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
+            // Everything under the header scrolls, so a small / low-dpi screen can reach every row.
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)) {
 
             SettingsRow(
                 isDarkMode = isDarkMode,
@@ -1443,6 +1453,7 @@ private fun DevToolsPage(
             Spacer(Modifier.weight(1f))
 
 
+            }
         }
     }
 }

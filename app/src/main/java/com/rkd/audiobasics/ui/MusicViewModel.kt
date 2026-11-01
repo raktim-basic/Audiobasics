@@ -47,6 +47,7 @@ import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.utils.EasterEggUtils
 import com.rkd.audiobasics.utils.MigrationMessageProvider
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -54,7 +55,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -669,6 +672,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             { it.run() }
         )
         refreshCacheSize()
+        // Once per start: drop downloaded files nothing in the library points at any more.
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(3_000)
+            sweepOrphanedCacheNow()
+        }
         checkForUpdate()
         MigrationMessageProvider.loadCache(app)
         fetchHomeHeader()
@@ -1336,6 +1344,24 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Removes [song] from Liked Songs and returns true once it is gone. With an account linked
+     * it is removed there first; any failure returns false and nothing changes on this device
+     * (the reason has already been shown).
+     */
+    suspend fun unlikeSongAwait(song: Song): Boolean = when (writeMode()) {
+        WriteMode.LOCAL -> {
+            if (isLiked(song.id)) unlike(song)
+            true
+        }
+        WriteMode.REFUSED -> {
+            refuseExpired()
+            false
+        }
+        // Already gone (a refresh may have just removed it): nothing left to do.
+        WriteMode.CLOUD -> if (!isLiked(song.id)) true else toggleLikeCloud(song) == false
+    }
+
     private fun like(song: Song) {
         val updatedSong = song.copy(isCached = false, cacheFailed = false)
         _likedSongs.value = listOf(updatedSong) + _likedSongs.value.filter { it.id != song.id }
@@ -1348,12 +1374,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private fun unlike(song: Song) {
         _likedSongs.value = _likedSongs.value.filter { it.id != song.id }
         saveLikedSongs()
-        // Only remove cache if not in any custom playlist
+        // Its files go too, unless a playlist or a saved album still has the song.
         viewModelScope.launch(Dispatchers.IO) {
-            val inCustomPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
-            if (!inCustomPlaylist) {
-                CacheManager.removeCachedSong(getApplication(), song.id)
-            }
+            sweepOrphanedCacheNow()
             refreshCacheSize()
         }
     }
@@ -1603,6 +1626,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
         } finally {
             _cachingSongIds.value = _cachingSongIds.value - song.id
+            // The song may have been removed from the library while it was downloading; its
+            // file would otherwise stay on this device with nothing pointing at it.
+            withContext(NonCancellable + Dispatchers.IO) {
+                if (!isInLibrary(song.id)) {
+                    CacheManager.removeCachedSong(getApplication(), song.id)
+                    refreshCacheSize()
+                }
+            }
         }
     }
 
@@ -1720,10 +1751,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 cloudCall(key) { s -> CloudWriter.removeSong(s, cloudId, song.id, entryId) }
                     ?: return@inVmScope already
                 playlistDao.removeSong(playlistId, song.id)
-                if (!isLiked(song.id) && playlistDao.countPlaylistsContainingSong(song.id) == 0) {
-                    CacheManager.removeCachedSong(getApplication(), song.id)
-                    refreshCacheSize()
-                }
+                sweepOrphanedCacheNow()
                 refreshOpenPlaylist(playlistId)
                 false
             } else {
@@ -1767,9 +1795,56 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    /** Every song ID this device still needs audio for: liked songs plus all playlist songs. */
-    private suspend fun libraryAudioIds(): Set<String> =
-        _likedSongs.value.map { it.id }.toSet() + playlistDao.getAllPlaylistSongIds()
+    // ─────────────────────────────────────────────────────────────────────────
+    // Downloaded files follow the library. One rule, in one place: a song's audio, thumbnail
+    // and lyrics stay on this device only while the song is liked, in a playlist, or in a
+    // saved album. Everything else is removed — after a sync pull, after any removal, after a
+    // download that finishes for a song that was just removed, and once when the app starts
+    // (which also clears anything left behind by older versions).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private val cacheSweepMutex = Mutex()
+
+    /** True if [songId] is liked, in any playlist, or in the tracklist of any saved album. */
+    private suspend fun isInLibrary(songId: String): Boolean {
+        if (isLiked(songId)) return true
+        if (_savedAlbumSongs.value.values.any { songs -> songs.any { it.id == songId } }) return true
+        return playlistDao.countPlaylistsContainingSong(songId) > 0
+    }
+
+    /**
+     * Deletes every downloaded file (audio, thumbnail, lyrics, half-finished download) whose
+     * song is no longer in the library. Songs being downloaded right now are left alone, and so
+     * is the one playing. If anything goes wrong reading the library, nothing is deleted.
+     */
+    private suspend fun sweepOrphanedCacheNow() {
+        cacheSweepMutex.withLock {
+            withContext(Dispatchers.IO) {
+                try {
+                    val app = getApplication<Application>()
+                    val keep = HashSet<String>()
+                    _likedSongs.value.forEach { keep += it.id }
+                    keep += playlistDao.getAllPlaylistSongIds()
+                    _savedAlbumSongs.value.values.forEach { songs -> songs.forEach { keep += it.id } }
+                    keep += _cachingSongIds.value
+                    _currentSong.value?.id?.let { keep += it }
+
+                    var removed = 0
+                    for (id in CacheManager.listCachedSongIds(app)) {
+                        if (id.isBlank() || id in keep) continue
+                        CacheManager.removeCachedSong(app, id)
+                        removed++
+                    }
+                    if (removed > 0) {
+                        Timber.tag("Cache").i("Removed files of $removed songs that are no longer in the library")
+                        refreshCacheSize()
+                    }
+                } catch (e: Exception) {
+                    Log.e("YTLite", "Cache sweep failed, nothing was deleted: ${e.message}")
+                }
+            }
+        }
+    }
 
     /**
      * Makes this device's library match [snapshot]. Playlists are written in one database
@@ -1779,7 +1854,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     internal suspend fun replaceLibraryWithCloud(snapshot: CloudSnapshot, wipeLocalOnly: Boolean) {
         withContext(Dispatchers.IO) {
             val app = getApplication<Application>()
-            val before = libraryAudioIds()
 
             // ── Playlists ──
             val existing = playlistDao.getPlaylists()
@@ -1853,9 +1927,21 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
             saveSavedAlbums()
 
+            // Tracklists kept for albums that are no longer saved would keep those songs' audio
+            // alive. An album counts as still saved if its id OR its title matches (the account
+            // can list the same album under a different browse id).
+            val keptIds = _savedAlbums.value.map { it.id }.toSet()
+            val keptTitles = _savedAlbums.value.map { normalizeAlbumTitle(it.title) }.toSet()
+            val staleKeys = _savedAlbumSongs.value.keys.filter { key ->
+                key !in keptIds && oldAlbums[key]?.let { normalizeAlbumTitle(it.title) in keptTitles } != true
+            }
+            if (staleKeys.isNotEmpty()) {
+                _savedAlbumSongs.value = _savedAlbumSongs.value - staleKeys.toSet()
+                saveSavedAlbumSongs()
+            }
+
             // ── Audio no longer referenced by anything ──
-            val after = libraryAudioIds()
-            (before - after).forEach { CacheManager.removeCachedSong(app, it) }
+            sweepOrphanedCacheNow()
             refreshCacheSize()
             _openPlaylistId.value?.let { _openPlaylistSongs.value = playlistDao.getPlaylistSongs(it) }
         }
@@ -1864,14 +1950,14 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     /** Empties liked songs, saved albums and playlists on this device, and their cached audio. */
     internal suspend fun clearLocalLibrary() {
         withContext(Dispatchers.IO) {
-            val app = getApplication<Application>()
-            val before = libraryAudioIds()
             playlistDao.clearAllLocalPlaylists()
             _likedSongs.value = emptyList()
             saveLikedSongs()
             _savedAlbums.value = emptyList()
             saveSavedAlbums()
-            before.forEach { CacheManager.removeCachedSong(app, it) }
+            _savedAlbumSongs.value = emptyMap()
+            saveSavedAlbumSongs()
+            sweepOrphanedCacheNow()
             refreshCacheSize()
             _openPlaylistSongs.value = emptyList()
         }
@@ -1945,44 +2031,44 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deletePlaylist(playlistId: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
-            if (cloudId != null) {
-                val access = PlaylistAccess.flags.value
-                if (access.isSpecial(cloudId)) {
-                    toast("This list can't be removed.")
-                    return@launch
-                }
-                // Someone else's playlist is only taken out of the library; it stays on YouTube.
-                val savedOnly = access.isReadOnly(cloudId)
-                when (writeMode()) {
-                    WriteMode.REFUSED -> {
-                        refuseExpired()
-                        return@launch
-                    }
-                    WriteMode.CLOUD -> {
-                        cloudCall("pl:$playlistId") { s ->
-                            if (savedOnly) CloudWriter.removeSavedPlaylist(s, cloudId)
-                            else CloudWriter.deletePlaylist(s, cloudId)
-                        } ?: return@launch
-                    }
-                    WriteMode.LOCAL -> Unit
-                }
+        viewModelScope.launch { deletePlaylistAwait(playlistId) }
+    }
+
+    /**
+     * Deletes (or, for someone else's playlist, un-saves) a playlist and returns true once it is
+     * gone. With an account linked the account is changed first; any failure returns false and
+     * nothing changes on this device (the reason has already been shown).
+     */
+    suspend fun deletePlaylistAwait(playlistId: String): Boolean = inVmScope {
+        val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (cloudId != null) {
+            val access = PlaylistAccess.flags.value
+            if (access.isSpecial(cloudId)) {
+                toast("This list can't be removed.")
+                return@inVmScope false
             }
-            // Get songs before deletion to check cache cleanup
-            val songs = playlistDao.getPlaylistSongs(playlistId)
-            playlistDao.clearPlaylist(playlistId)
-            playlistDao.deletePlaylist(playlistId)
-            // For each song, remove cache only if it's not liked and not in other playlists
-            songs.forEach { entity ->
-                val liked = isLiked(entity.songId)
-                val inOther = playlistDao.countPlaylistsContainingSong(entity.songId) > 0
-                if (!liked && !inOther) {
-                    CacheManager.removeCachedSong(getApplication(), entity.songId)
+            // Someone else's playlist is only taken out of the library; it stays on YouTube.
+            val savedOnly = access.isReadOnly(cloudId)
+            when (writeMode()) {
+                WriteMode.REFUSED -> {
+                    refuseExpired()
+                    return@inVmScope false
                 }
+                WriteMode.CLOUD -> {
+                    cloudCall("pl:$playlistId") { s ->
+                        if (savedOnly) CloudWriter.removeSavedPlaylist(s, cloudId)
+                        else CloudWriter.deletePlaylist(s, cloudId)
+                    } ?: return@inVmScope false
+                }
+                WriteMode.LOCAL -> Unit
             }
-            refreshCacheSize()
         }
+        playlistDao.clearPlaylist(playlistId)
+        playlistDao.deletePlaylist(playlistId)
+        // Songs that were only in this playlist lose their files too.
+        sweepOrphanedCacheNow()
+        refreshCacheSize()
+        true
     }
 
     fun renamePlaylist(playlistId: String, name: String, emoji: String) {
@@ -2164,36 +2250,41 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeSongFromCustomPlaylist(playlistId: String, song: Song) {
-        viewModelScope.launch(Dispatchers.IO) {
-            if (refuseReadOnly(playlistId)) return@launch
-            val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
-            if (cloudId != null) {
-                when (writeMode()) {
-                    WriteMode.REFUSED -> {
-                        refuseExpired()
-                        return@launch
-                    }
-                    WriteMode.CLOUD -> {
-                        val entryId = playlistDao.getPlaylistSongs(playlistId)
-                            .firstOrNull { it.songId == song.id }?.setVideoId
-                        cloudCall("pl:$playlistId:${song.id}") { s ->
-                            CloudWriter.removeSong(s, cloudId, song.id, entryId)
-                        } ?: return@launch
-                    }
-                    WriteMode.LOCAL -> Unit
+        viewModelScope.launch { removeSongFromCustomPlaylistAwait(playlistId, song) }
+    }
+
+    /**
+     * Removes a song from a playlist and returns true once it is gone. With an account linked
+     * it is removed there first; any failure returns false and nothing changes on this device
+     * (the reason has already been shown).
+     */
+    suspend fun removeSongFromCustomPlaylistAwait(playlistId: String, song: Song): Boolean = inVmScope {
+        if (refuseReadOnly(playlistId)) return@inVmScope false
+        val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (cloudId != null) {
+            when (writeMode()) {
+                WriteMode.REFUSED -> {
+                    refuseExpired()
+                    return@inVmScope false
                 }
-            }
-            playlistDao.removeSong(playlistId, song.id)
-            val liked = isLiked(song.id)
-            val inOther = playlistDao.countPlaylistsContainingSong(song.id) > 0
-            if (!liked && !inOther) {
-                CacheManager.removeCachedSong(getApplication(), song.id)
-                refreshCacheSize()
-            }
-            if (_openPlaylistId.value == playlistId) {
-                _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+                WriteMode.CLOUD -> {
+                    val entryId = playlistDao.getPlaylistSongs(playlistId)
+                        .firstOrNull { it.songId == song.id }?.setVideoId
+                    cloudCall("pl:$playlistId:${song.id}") { s ->
+                        CloudWriter.removeSong(s, cloudId, song.id, entryId)
+                    } ?: return@inVmScope false
+                }
+                WriteMode.LOCAL -> Unit
             }
         }
+        playlistDao.removeSong(playlistId, song.id)
+        // The song's files go too, unless it is liked, in another playlist or in a saved album.
+        sweepOrphanedCacheNow()
+        refreshCacheSize()
+        if (_openPlaylistId.value == playlistId) {
+            _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+        }
+        true
     }
 
     fun playCustomPlaylist(playlistId: String) {
@@ -2308,16 +2399,33 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun unsaveAlbum(album: Album) {
+        viewModelScope.launch { unsaveAlbumAwait(album) }
+    }
+
+    /**
+     * Removes a saved album and returns true once it is gone. With an account linked it is
+     * removed there first; any failure returns false and nothing changes on this device (the
+     * reason has already been shown). Runs on the ViewModel's own scope, so the account and
+     * this device always finish together even if the caller goes away halfway.
+     */
+    suspend fun unsaveAlbumAwait(album: Album): Boolean = viewModelScope.async {
         when (writeMode()) {
-            WriteMode.LOCAL -> unsaveAlbumLocal(album)
-            WriteMode.REFUSED -> refuseExpired()
-            WriteMode.CLOUD -> viewModelScope.launch {
-                cloudCall("album:${album.id}") { s -> CloudWriter.likeAlbum(s, album.id, false) }
-                    ?: return@launch
+            WriteMode.LOCAL -> {
                 unsaveAlbumLocal(album)
+                true
+            }
+            WriteMode.REFUSED -> {
+                refuseExpired()
+                false
+            }
+            WriteMode.CLOUD -> {
+                cloudCall("album:${album.id}") { s -> CloudWriter.likeAlbum(s, album.id, false) }
+                    ?: return@async false
+                unsaveAlbumLocal(album)
+                true
             }
         }
-    }
+    }.await()
 
     private fun unsaveAlbumLocal(album: Album) {
         // Remove by id OR by matching title, so unsaving works even if this screen was
@@ -2329,28 +2437,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _savedAlbums.value = _savedAlbums.value.filterNot { it in toRemove }
         saveSavedAlbums()
         Toast.makeText(getApplication(), "Album removed", Toast.LENGTH_SHORT).show()
-        // Remove cached songs that aren't liked or in custom playlists, using the persisted
-        // tracklist (falls back to a live lookup only if we never had one cached).
+        // Forget the removed albums' tracklists, then delete the files of songs nothing else
+        // (a like, a playlist, another saved album) still needs.
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 toRemove.forEach { removedAlbum ->
-                    val songs = _savedAlbumSongs.value[removedAlbum.id]
-                        ?: try {
-                            Innertube.getAlbumSongs(removedAlbum.id, removedAlbum.artist, caller = "unsaveAlbum").second
-                        } catch (e: Exception) {
-                            Log.e("YTLite", "unsaveAlbum: live lookup failed: ${e.message}")
-                            emptyList()
-                        }
-                    songs.forEach { song ->
-                        val liked = isLiked(song.id)
-                        val inPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
-                        if (!liked && !inPlaylist) {
-                            CacheManager.removeCachedSong(getApplication(), song.id)
-                        }
-                    }
                     _savedAlbumSongs.value = _savedAlbumSongs.value - removedAlbum.id
                 }
                 saveSavedAlbumSongs()
+                sweepOrphanedCacheNow()
                 refreshCacheSize()
             } catch (e: Exception) {
                 Log.e("YTLite", "Failed to clean album cache: ${e.message}")

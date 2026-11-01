@@ -43,7 +43,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
@@ -709,15 +708,17 @@ fun PlayByLinkDialog(
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
     val textColor = if (isDarkMode) Color.White else Color.Black
 
-    Dialog(onDismissRequest = {
-        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        onDismiss()
-    }) {
+    MorphPopup(
+        onDismissRequest = {
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+            onDismiss()
+        },
+        placement = MorphPlacement.Center,
+        containerColor = bgColor
+    ) { _ ->
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(bgColor)
                 .padding(20.dp)
         ) {
             Column {

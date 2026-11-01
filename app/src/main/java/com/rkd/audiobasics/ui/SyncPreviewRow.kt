@@ -7,7 +7,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -77,9 +76,9 @@ internal fun SyncPreviewRow(
     )
 
     report?.let { lines ->
-        AlertDialog(
+        MorphAlertDialog(
             onDismissRequest = { report = null },
-            containerColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White,
+            isDarkMode = isDarkMode,
             title = {
                 Text(
                     "Sync preview",

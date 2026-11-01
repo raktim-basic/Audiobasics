@@ -79,7 +79,10 @@ fun AddToPlaylistSheet(
         onDismissRequest = { if (!saving) onDismiss() },
         placement = MorphPlacement.Center,
         containerColor = bgColor,
-        dismissOnOutsideTap = false
+        dismissOnOutsideTap = false,
+        // Back is ignored (not just un-wired) while changes are being made, so the popup
+        // can't vanish mid-write.
+        isLocked = { saving }
     ) { close ->
         Column(modifier = Modifier.fillMaxWidth()) {
             // Title

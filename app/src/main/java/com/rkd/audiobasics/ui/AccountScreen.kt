@@ -9,6 +9,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Login
@@ -88,8 +90,11 @@ internal fun AccountPage(
     // only an explicit rejection from YouTube ever changes the state.
     LaunchedEffect(Unit) { AccountManager.validateSession() }
 
+    val scrollState = rememberScrollState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        scrollState = scrollState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -118,6 +123,8 @@ internal fun AccountPage(
                 StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
             }
 
+            // Everything under the header scrolls, so a small / low-dpi screen can reach Sync now and Log out.
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)) {
             when (val current = state) {
                 is AccountState.LoggedOut -> {
                     SettingsRow(
@@ -213,17 +220,17 @@ internal fun AccountPage(
                     }
                 }
             }
+            }
         }
     }
 
     LibraryFlowHost(vm = vm, isDarkMode = isDarkMode)
 
     if (showLogoutConfirm) {
-        val dialogColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
         if (askAboutLibrary) {
-            AlertDialog(
+            MorphAlertDialog(
                 onDismissRequest = { showLogoutConfirm = false },
-                containerColor = dialogColor,
+                isDarkMode = isDarkMode,
                 title = {
                     Text("Log out?", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = textColor)
                 },
@@ -252,12 +259,11 @@ internal fun AccountPage(
                         }
                     }
                 },
-                confirmButton = {}
             )
         } else {
-            AlertDialog(
+            MorphAlertDialog(
                 onDismissRequest = { showLogoutConfirm = false },
-                containerColor = dialogColor,
+                isDarkMode = isDarkMode,
                 title = {
                     Text("Log out?", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = textColor)
                 },

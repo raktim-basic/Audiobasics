@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -165,7 +164,7 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
 
     @Composable
     fun Title(text: String) {
-        Text(text, fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = textColor)
+        Text(text, fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
     }
 
     @Composable
@@ -176,10 +175,11 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
     when (val s = state) {
         is LibraryFlowState.Idle -> Unit
 
-        is LibraryFlowState.Working -> AlertDialog(
+        is LibraryFlowState.Working -> MorphAlertDialog(
             onDismissRequest = {},
-            containerColor = container,
-            confirmButton = {},
+            isDarkMode = isDarkMode,
+            dismissOnOutsideTap = false,
+            isLocked = { true },
             title = { Title("Please wait") },
             text = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -194,9 +194,11 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
             }
         )
 
-        is LibraryFlowState.ConfirmOverride -> AlertDialog(
+        is LibraryFlowState.ConfirmOverride -> MorphAlertDialog(
             onDismissRequest = {},
-            containerColor = container,
+            isDarkMode = isDarkMode,
+            dismissOnOutsideTap = false,
+            isLocked = { true },
             title = { Title("Replace this device's library?") },
             text = {
                 Column {
@@ -219,9 +221,11 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
             }
         )
 
-        is LibraryFlowState.ChooseForEmptyAccount -> AlertDialog(
+        is LibraryFlowState.ChooseForEmptyAccount -> MorphAlertDialog(
             onDismissRequest = {},
-            containerColor = container,
+            isDarkMode = isDarkMode,
+            dismissOnOutsideTap = false,
+            isLocked = { true },
             title = { Title("This account is empty") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -247,9 +251,9 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
             }
         )
 
-        is LibraryFlowState.Failed -> AlertDialog(
+        is LibraryFlowState.Failed -> MorphAlertDialog(
             onDismissRequest = { LibraryFlow.dismiss() },
-            containerColor = container,
+            isDarkMode = isDarkMode,
             title = { Title("Nothing was changed") },
             text = { Body(s.message) },
             confirmButton = {
@@ -259,9 +263,9 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
             }
         )
 
-        is LibraryFlowState.Done -> AlertDialog(
+        is LibraryFlowState.Done -> MorphAlertDialog(
             onDismissRequest = { LibraryFlow.dismiss() },
-            containerColor = container,
+            isDarkMode = isDarkMode,
             title = { Title("Done") },
             text = { Body(s.message) },
             confirmButton = {
