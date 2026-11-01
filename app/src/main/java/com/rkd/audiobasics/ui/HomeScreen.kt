@@ -50,7 +50,6 @@ fun HomeScreen(
     onNavigateSearch: () -> Unit,
     onNavigateQueue: () -> Unit,
     onNavigateSettings: () -> Unit,
-    onNavigateAccount: () -> Unit,
     onNavigateLogin: () -> Unit,
     onNavigateLiked: () -> Unit,
     onNavigateAlbums: () -> Unit,
@@ -158,41 +157,36 @@ fun HomeScreen(
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
 
-            // ── Account entry ──────────────────────────────────────────────────
-            // Signed out: a sign-in link (straight to the sign-in page) with a hint under it.
-            // Signed in (or session expired): the same spot opens the Account settings.
-            val linkColor = if (isDarkMode) Color(0xFF4A9EFF) else Color(0xFF1A73E8)
-            val signedOut = accountState is AccountState.LoggedOut
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = when (accountState) {
-                        is AccountState.LoggedOut -> "Sign in with your YouTube account"
-                        is AccountState.SessionExpired -> "Sign in again"
-                        is AccountState.LoggedIn -> "Account settings"
-                    },
-                    fontSize = 16.sp,
-                    color = linkColor,
-                    textDecoration = TextDecoration.Underline,
-                    textAlign = TextAlign.Center,
+            // ── Sign-in link (signed out, or session expired) ──────────────────
+            // Goes straight to the sign-in page. While an account is linked and working,
+            // nothing is shown here; the account lives in Settings > Account.
+            val needsSignIn = accountState is AccountState.LoggedOut ||
+                accountState is AccountState.SessionExpired
+            if (needsSignIn) {
+                val linkColor = if (isDarkMode) Color(0xFF4A9EFF) else Color(0xFF1A73E8)
+                Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            if (signedOut) onNavigateLogin() else onNavigateAccount()
-                        }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-                if (signedOut) {
+                        .fillMaxWidth()
+                        .padding(start = 24.dp, end = 24.dp, top = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Text(
-                        text = "Sign in with an empty account to upload your local library",
-                        fontSize = 12.sp,
-                        color = subTextColor,
-                        textAlign = TextAlign.Center
+                        text = if (accountState is AccountState.SessionExpired) {
+                            "Session expired. Sign in again"
+                        } else {
+                            "Sign in with your YouTube account"
+                        },
+                        fontSize = 16.sp,
+                        color = linkColor,
+                        textDecoration = TextDecoration.Underline,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                onNavigateLogin()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
                     )
                 }
             }
