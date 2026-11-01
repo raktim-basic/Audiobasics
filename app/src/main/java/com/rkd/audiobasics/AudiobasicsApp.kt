@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.util.Log
 import com.rkd.audiobasics.api.account.AccountManager
 import com.rkd.audiobasics.api.account.LibraryUpload
+import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.api.cipher.CipherDeobfuscator
 import com.rkd.audiobasics.ui.DebugLogCollector
 import com.rkd.audiobasics.utils.EasterEggUtils
@@ -31,6 +32,7 @@ class AudiobasicsApp : Application() {
         CipherDeobfuscator.initialize(this)
         AccountManager.init(this)
         LibraryUpload.init(this)
+        PlaylistAccess.init(this)
         applyAnniversaryIcon()
         Timber.d("AudiobasicsApp started")
     }
