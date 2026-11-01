@@ -99,16 +99,16 @@ internal object SyncPreview {
             when (val r = CloudLibrary.fetchPlaylists(session)) {
                 is AccountResult.Success -> {
                     val all = r.value.items
-                    val candidates = all.filter { !(it.saved && !it.owned) }
-                    log("Playlists: ${all.size} in the library; ${all.size - candidates.size} are clearly saved from others and aren't synced.")
-                    for (p in candidates) {
+                    log("Playlists: ${all.size} in the library (all of them are mirrored; the ones you can't edit are read-only).")
+                    for (p in all) {
                         Thread.sleep(STEP_PAUSE_MS)
                         when (val pr = CloudLibrary.fetchPlaylistSongs(session, p.id)) {
                             is AccountResult.Success -> {
                                 val l = pr.value
-                                if (!p.owned && l.editable != true) {
-                                    log("  not synced: ${p.title} (not editable by this account)")
-                                    continue
+                                val kind = when {
+                                    p.special -> "built-in list, read-only"
+                                    p.owned || l.editable == true -> "editable"
+                                    else -> "read-only"
                                 }
                                 val unique = l.items.map { it.song.id }.toSet().size
                                 val notes = buildList {
@@ -117,7 +117,7 @@ internal object SyncPreview {
                                     l.advertisedCount?.let { if (it > l.rowCount) add("${it - l.rowCount} counted by YouTube but unavailable") }
                                     if (l.advertisedCount == null) add("no header count")
                                 }
-                                log("  ${p.title}: ${l.items.size} songs, complete" +
+                                log("  ${p.title} [$kind]: ${l.items.size} songs, complete" +
                                     (if (notes.isEmpty()) "." else " (${notes.joinToString(", ")})."))
                             }
                             else -> {

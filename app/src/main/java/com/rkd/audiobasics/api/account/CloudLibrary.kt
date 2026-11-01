@@ -14,12 +14,13 @@ internal data class CloudPlaylist(
     val id: String,
     val title: String,
     /**
-     * True when this is known to be the account's own, editable playlist. A library tile alone can't
-     * always say (its menu varies), so the snapshot fetcher confirms from the playlist page itself.
+     * True when the account can edit this playlist (rename it, add and remove songs). The library
+     * tile's menu only hints at this, so the snapshot fetcher confirms it from the playlist page and
+     * stores the answer here.
      */
     val owned: Boolean,
-    /** The tile's menu offered "save / remove from library", so it's someone else's playlist. */
-    val saved: Boolean = false
+    /** YouTube's built-in lists (Episodes for Later, Watch Later): never editable, never removable. */
+    val special: Boolean = false
 )
 
 /**
@@ -59,6 +60,9 @@ internal object CloudLibrary {
 
     private const val TAG = "Sync"
     private const val MAX_PAGES = 100
+
+    /** YouTube's built-in lists that show up in the library: Episodes for Later and Watch Later. */
+    val SPECIAL_LISTS = setOf("SE", "WL")
 
     /** YouTube returns up to 100 rows per page; a final page this full may have been cut off. */
     private const val FULL_PAGE_ROWS = 100
@@ -461,15 +465,15 @@ internal object CloudLibrary {
             ?.optString("browseId").orEmpty()
         if (!browseId.startsWith("VL")) return null
         val id = browseId.removePrefix("VL")
-        // "Your likes" and "Episodes for later" are built-in lists, not playlists to mirror.
-        if (id == "LM" || id == "SE" || id.isBlank()) return null
+        // "Your likes" is the liked-songs list, mirrored separately. Everything else in the library
+        // is a playlist to show, including other people's and YouTube's built-in lists.
+        if (id == "LM" || id.isBlank()) return null
         val title = r.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)
             ?.optString("text").orEmpty()
         if (title.isBlank()) return null
 
-        // The tile's menu varies, so it only gives hints: an edit/delete item means it's yours, a
-        // save/remove-from-library toggle means it's someone else's. Anything else is settled from
-        // the playlist page itself (see CloudSnapshotFetcher).
+        // The tile's menu varies between accounts, so an edit item is only a hint that it's editable.
+        // The playlist page itself settles it (see CloudSnapshotFetcher).
         val items = r.optJSONObject("menu")?.optJSONObject("menuRenderer")?.optJSONArray("items")
         val icons = ArrayList<String>()
         if (items != null) {
@@ -485,10 +489,10 @@ internal object CloudLibrary {
                 }
             }
         }
-        val owned = icons.any { it == "EDIT" || it == "DELETE" }
-        val saved = icons.any { it.startsWith("toggle:LIBRARY") || it.startsWith("toggle:KEEP") }
-        Timber.tag(TAG).d("Playlist tile \"$title\": owned-hint=$owned, saved-hint=$saved, menu=${icons.joinToString(",")}")
-        return CloudPlaylist(id = id, title = title, owned = owned, saved = saved)
+        val editHint = icons.any { it == "EDIT" || it == "DELETE" }
+        val special = id in SPECIAL_LISTS
+        Timber.tag(TAG).d("Playlist tile \"$title\": edit-hint=$editHint, built-in=$special, menu=${icons.joinToString(",")}")
+        return CloudPlaylist(id = id, title = title, owned = editHint && !special, special = special)
     }
 
     // ─── Layout helpers ──────────────────────────────────────────────────────

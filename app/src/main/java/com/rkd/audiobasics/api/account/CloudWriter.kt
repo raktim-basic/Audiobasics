@@ -73,6 +73,17 @@ internal object CloudWriter {
         }
     }
 
+    /**
+     * "Remove from library" for a playlist someone else made: it stays on YouTube, only this
+     * account's copy goes. (Saving it again is the same call with like/like.)
+     */
+    fun removeSavedPlaylist(session: AccountSession, playlistId: String): AccountResult<Unit> {
+        val body = JSONObject().put("target", JSONObject().put("playlistId", playlistId))
+        return AccountClient.post(session, "like/removelike", body).flatMap { json ->
+            acknowledged(json, "like/removelike")
+        }
+    }
+
     fun deletePlaylist(session: AccountSession, playlistId: String): AccountResult<Unit> {
         val body = JSONObject().put("playlistId", playlistId)
         return AccountClient.post(session, "playlist/delete", body).flatMap { json ->

@@ -94,37 +94,36 @@ internal object CloudSnapshotFetcher {
             else -> return r.asFailure()
         }
 
-        // Which tiles are the user's own playlists? The tile menu only hints (and varies), so every
-        // tile that isn't clearly someone else's is read, and the playlist page decides: editable
-        // playlists are mirrored, the rest are left alone.
+        // Every playlist in the library is mirrored: the user's own, other people's that they saved,
+        // and YouTube's built-in lists. Each one's page says whether the account can edit it
+        // (CloudPlaylist.owned); that decides which options the app offers, not whether it's shown.
         val playlists = ArrayList<CloudPlaylistData>()
         for (p in tiles) {
-            if (p.saved && !p.owned) continue
-            if (!p.owned && p.id in notEditable) continue
             Thread.sleep(STEP_PAUSE_MS)
             val list = when (val r = CloudLibrary.fetchPlaylistSongs(session, p.id)) {
                 is AccountResult.Success -> r.value
                 is AccountResult.SessionExpired, is AccountResult.NetworkError -> return r.asFailure()
-                else -> {
-                    // A playlist that is clearly the user's own must read, or nothing is applied. One that
-                    // only might be someone else's (and can't be read) is just left out.
-                    if (p.owned) return r.asFailure()
-                    Timber.tag("Sync").w("Couldn't read \"${p.title}\" to check whether it's yours; leaving it out")
+                is AccountResult.ServerError -> {
+                    // A playlist that's gone or private now (4xx) is left out. Anything else (a 5xx, rate
+                    // limit) could be a hiccup, and dropping a playlist because of one would remove it here.
+                    if (r.code !in 400..499) return r.asFailure()
+                    Timber.tag("Sync").w("\"${p.title}\" isn't available (HTTP ${r.code}); leaving it out")
+                    continue
+                }
+                is AccountResult.ParseError -> {
+                    // YouTube's built-in lists (episodes, ...) use other layouts; those are left out rather
+                    // than shown empty. An ordinary playlist that can't be read still fails the refresh.
+                    if (!p.special) return r.asFailure()
+                    Timber.tag("Sync").w("Built-in list \"${p.title}\" couldn't be read (${r.message}); leaving it out")
                     continue
                 }
             }
-            if (!p.owned && list.editable != true) {
-                notEditable += p.id
-                Timber.tag("Sync").i("\"${p.title}\" isn't editable by this account, so it isn't synced")
-                continue
-            }
-            playlists += CloudPlaylistData(p.copy(owned = true), list.items.distinctBy { it.song.id })
+            val editable = !p.special && (p.owned || list.editable == true)
+            Timber.tag("Sync").i("\"${p.title}\": ${list.items.size} songs, ${if (editable) "editable" else "read-only"}")
+            playlists += CloudPlaylistData(p.copy(owned = editable), list.items.distinctBy { it.song.id })
         }
         return AccountResult.Success(CloudSnapshot(liked, albums, playlists))
     }
-
-    /** Playlists found (this run of the app) not to be editable, so they aren't re-read every refresh. */
-    private val notEditable = HashSet<String>()
 }
 
 /** What applying a snapshot changed (or would change) on this device. */

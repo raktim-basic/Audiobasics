@@ -477,7 +477,7 @@ internal object LibraryUpload {
                         is Outcome.Ok -> {
                             // The tile's own-playlist hint isn't reliable (see CloudSnapshotFetcher); an exact title match that
                             // isn't marked as saved-from-others is enough to recognise the playlist we just made.
-                            val matches = o.value.items.filter { it.title == title && !(it.saved && !it.owned) }
+                            val matches = o.value.items.filter { it.title == title }
                             if (matches.size == 1) cloudId = matches[0].id
                         }
                         is Outcome.Refused -> Unit
