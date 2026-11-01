@@ -677,6 +677,8 @@ fun AudiobasicsApp(
                                 onNavigateSearch = { push(SearchKey) },
                                 onNavigateQueue = { push(QueueKey) },
                                 onNavigateSettings = { push(SettingsKey()) },
+                                onNavigateAccount = { push(SettingsKey(openAccount = true)) },
+                                onNavigateLogin = { push(SettingsKey(openLogin = true)) },
                                 onNavigateLiked = { push(LikedKey) },
                                 onNavigateAlbums = { push(AlbumsKey) },
                                 onNavigateLibrary = { push(LibraryKey) }
@@ -707,6 +709,8 @@ fun AudiobasicsApp(
                                 isDarkMode = isDarkModeNow,
                                 openCache = key.openCache,
                                 openLibrary = key.openLibrary,
+                                openAccount = key.openAccount,
+                                openLogin = key.openLogin,
                                 onBack = { navigateBack() },
                                 onNavigateUpdater = { push(UpdaterKey) }
                             )
