@@ -144,6 +144,17 @@ internal fun AccountPage(
                             onNavigateLogin()
                         }
                     )
+                    // Lines up with the row's text (20dp padding + 24dp icon + 16dp gap).
+                    Text(
+                        text = "Sign in with an empty account to upload your local library",
+                        fontFamily = NothingFont,
+                        fontSize = 12.sp,
+                        color = subTextColor,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(surfaceColor)
+                            .padding(start = 60.dp, end = 20.dp, bottom = 14.dp)
+                    )
                 }
 
                 is AccountState.LoggedIn -> {
