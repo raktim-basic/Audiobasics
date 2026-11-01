@@ -79,15 +79,23 @@ fun SettingsScreen(
     isDarkMode: Boolean,
     openCache: Boolean = false,
     openLibrary: Boolean = false,
+    openAccount: Boolean = false,
+    openLogin: Boolean = false,
     onBack: () -> Unit,
     onNavigateUpdater: () -> Unit
 ) {
     val context = LocalContext.current
+    // Opened from the Home screen's account link: back leaves Settings (to Home) rather than
+    // stepping through the Settings pages.
+    val fromHomeAccount = remember { openAccount || openLogin }
+    val loginFirst = remember { openLogin }
     var currentPage by remember { 
         mutableStateOf<SettingsPage>(
             // Downloads settings live inside the merged Library management page now, so
             // both deep links land there.
             when {
+                openLogin -> SettingsPage.Login
+                openAccount -> SettingsPage.Account
                 openCache || openLibrary -> SettingsPage.Library
                 else -> SettingsPage.Main
             }
@@ -112,13 +120,12 @@ fun SettingsScreen(
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        goBack(
-            when (currentPage) {
-                SettingsPage.EngineInfo -> SettingsPage.DevTools
-                SettingsPage.Login -> SettingsPage.Account
-                else -> SettingsPage.Main
-            }
-        )
+        when (currentPage) {
+            SettingsPage.EngineInfo -> goBack(SettingsPage.DevTools)
+            SettingsPage.Login -> if (loginFirst) onBack() else goBack(SettingsPage.Account)
+            SettingsPage.Account -> if (fromHomeAccount) onBack() else goBack(SettingsPage.Main)
+            else -> goBack(SettingsPage.Main)
+        }
     }
 
     AnimatedContent(
@@ -158,13 +165,13 @@ fun SettingsScreen(
             is SettingsPage.Account -> AccountPage(
                 vm = vm,
                 isDarkMode = isDarkMode,
-                onBack = { goBack(SettingsPage.Main) },
+                onBack = { if (fromHomeAccount) onBack() else goBack(SettingsPage.Main) },
                 onNavigateLogin = { goTo(SettingsPage.Login) }
             )
             is SettingsPage.Login -> LoginPage(
                 vm = vm,
                 isDarkMode = isDarkMode,
-                onBack = { goBack(SettingsPage.Account) },
+                onBack = { if (loginFirst) onBack() else goBack(SettingsPage.Account) },
                 onLoggedIn = { goBack(SettingsPage.Account) }
             )
             is SettingsPage.DevTools -> DevToolsPage(

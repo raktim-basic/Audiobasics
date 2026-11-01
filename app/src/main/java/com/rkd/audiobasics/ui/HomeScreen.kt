@@ -24,11 +24,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.api.account.AccountManager
+import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 import com.rkd.audiobasics.utils.MigrationMessageProvider
+import java.util.Calendar
 
 @Composable
 fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
@@ -45,6 +50,8 @@ fun HomeScreen(
     onNavigateSearch: () -> Unit,
     onNavigateQueue: () -> Unit,
     onNavigateSettings: () -> Unit,
+    onNavigateAccount: () -> Unit,
+    onNavigateLogin: () -> Unit,
     onNavigateLiked: () -> Unit,
     onNavigateAlbums: () -> Unit,
     onNavigateLibrary: () -> Unit
@@ -54,6 +61,26 @@ fun HomeScreen(
     val updateAvailable by vm.updateAvailable.collectAsState()
     val homeHeaderReady by vm.homeHeaderReady.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val accountState by AccountManager.state.collectAsState()
+
+    // The built-in header is a time-of-day greeting. Whatever is set remotely
+    // (ab-configs/header.json) still takes over from it, line by line.
+    val hello = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        else -> "Good evening"
+    }
+    val knownProfile = (accountState as? AccountState.LoggedIn)?.profile
+        ?: (accountState as? AccountState.SessionExpired)?.profile
+    val greetingLine1 = if (knownProfile == null) "$hello, uhh..." else hello
+    val greetingLine2 = if (knownProfile == null) {
+        "What's your name?"
+    } else {
+        // First name only; falls back to the start of the email if the account has no name.
+        knownProfile.name.trim().substringBefore(' ')
+            .ifBlank { knownProfile.email?.substringBefore('@').orEmpty() }
+            .ifBlank { "friend" }
+    }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val bodyColor = if (isDarkMode) AmoledBlack else bgColor
@@ -112,14 +139,14 @@ fun HomeScreen(
                     // rather than only showing fresh text on the next screen visit.
                     @Suppress("UNUSED_EXPRESSION") homeHeaderReady
                     Text(
-                        text = MigrationMessageProvider.homeHeaderLine1(),
+                        text = MigrationMessageProvider.remoteHomeHeaderLine1() ?: greetingLine1,
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
                         color = textColor
                     )
                     Text(
-                        text = MigrationMessageProvider.homeHeaderLine2(),
+                        text = MigrationMessageProvider.remoteHomeHeaderLine2() ?: greetingLine2,
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
@@ -130,6 +157,45 @@ fun HomeScreen(
 
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
+
+            // ── Account entry ──────────────────────────────────────────────────
+            // Signed out: a sign-in link (straight to the sign-in page) with a hint under it.
+            // Signed in (or session expired): the same spot opens the Account settings.
+            val linkColor = if (isDarkMode) Color(0xFF4A9EFF) else Color(0xFF1A73E8)
+            val signedOut = accountState is AccountState.LoggedOut
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = when (accountState) {
+                        is AccountState.LoggedOut -> "Sign in with your YouTube account"
+                        is AccountState.SessionExpired -> "Sign in again"
+                        is AccountState.LoggedIn -> "Account settings"
+                    },
+                    fontSize = 16.sp,
+                    color = linkColor,
+                    textDecoration = TextDecoration.Underline,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            if (signedOut) onNavigateLogin() else onNavigateAccount()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+                if (signedOut) {
+                    Text(
+                        text = "Sign in with an empty account to upload your local library",
+                        fontSize = 12.sp,
+                        color = subTextColor,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
 
             Spacer(Modifier.weight(1f))
 
