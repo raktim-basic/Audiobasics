@@ -31,6 +31,7 @@ import com.rkd.audiobasics.api.account.CloudSnapshot
 import com.rkd.audiobasics.api.account.CloudWriter
 import com.rkd.audiobasics.api.account.LibraryCounts
 import com.rkd.audiobasics.api.account.LibraryUpload
+import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.api.account.PlaylistNameCodec
 import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.lyrics.LyricsCache
@@ -1932,18 +1933,38 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * True (with a message) when [playlistId] is a playlist this account can't edit: one someone else
+     * made, or a YouTube built-in list. Nothing is sent to YouTube for it.
+     */
+    private suspend fun refuseReadOnly(playlistId: String): Boolean {
+        val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (!PlaylistAccess.flags.value.isReadOnly(cloudId)) return false
+        toast("This playlist can't be edited.")
+        return true
+    }
+
     fun deletePlaylist(playlistId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
             if (cloudId != null) {
+                val access = PlaylistAccess.flags.value
+                if (access.isSpecial(cloudId)) {
+                    toast("This list can't be removed.")
+                    return@launch
+                }
+                // Someone else's playlist is only taken out of the library; it stays on YouTube.
+                val savedOnly = access.isReadOnly(cloudId)
                 when (writeMode()) {
                     WriteMode.REFUSED -> {
                         refuseExpired()
                         return@launch
                     }
                     WriteMode.CLOUD -> {
-                        cloudCall("pl:$playlistId") { s -> CloudWriter.deletePlaylist(s, cloudId) }
-                            ?: return@launch
+                        cloudCall("pl:$playlistId") { s ->
+                            if (savedOnly) CloudWriter.removeSavedPlaylist(s, cloudId)
+                            else CloudWriter.deletePlaylist(s, cloudId)
+                        } ?: return@launch
                     }
                     WriteMode.LOCAL -> Unit
                 }
@@ -1970,6 +1991,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Renames / re-icons a playlist and returns true once done. Account first when linked. */
     suspend fun renamePlaylistAwait(playlistId: String, name: String, emoji: String): Boolean = inVmScope {
+        if (refuseReadOnly(playlistId)) return@inVmScope false
         val trimmed = name.trim()
         val isDuplicate = customPlaylists.value.any {
             it.id != playlistId && it.name.equals(trimmed, ignoreCase = true)
@@ -2034,6 +2056,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
      * sheet closing, exactly like liking a song already does.
      */
     suspend fun toggleSongInPlaylist(song: Song, playlistId: String): Boolean {
+        if (playlistId != LIKED_PLAYLIST_ID && refuseReadOnly(playlistId)) return false
         // The sheet may have captured the initial link placeholder. Prefer the current resolved
         // song when it represents the same video, so adding after resolution stores real data.
         val songToSave = _currentSong.value?.takeIf {
@@ -2142,6 +2165,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeSongFromCustomPlaylist(playlistId: String, song: Song) {
         viewModelScope.launch(Dispatchers.IO) {
+            if (refuseReadOnly(playlistId)) return@launch
             val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
             if (cloudId != null) {
                 when (writeMode()) {

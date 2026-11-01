@@ -31,6 +31,7 @@ import com.rkd.audiobasics.api.account.LibraryFlowState
 import com.rkd.audiobasics.api.account.LocalLibraryForUpload
 import com.rkd.audiobasics.api.account.LocalLibraryStore
 import com.rkd.audiobasics.api.account.LocalPlaylistForUpload
+import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.api.account.PlaylistNameCodec
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.AppDatabase
@@ -44,10 +45,13 @@ internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStor
 
     override suspend fun replaceWithCloud(snapshot: CloudSnapshot, wipeLocalOnly: Boolean) {
         vm.replaceLibraryWithCloud(snapshot, wipeLocalOnly)
+        // Which of these playlists this account can't edit (for the menus); only after a successful apply.
+        PlaylistAccess.updateFrom(snapshot)
     }
 
     override suspend fun clearAll() {
         vm.clearLocalLibrary()
+        PlaylistAccess.clear()
     }
 
     override suspend fun adoptUnlinkedPlaylists(cloud: List<CloudPlaylist>): Int = withContext(Dispatchers.IO) {
@@ -135,6 +139,7 @@ internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStor
 
     override suspend fun detachFromCloud() {
         vm.detachLocalLibraryFromCloud()
+        PlaylistAccess.clear()
     }
 }
 

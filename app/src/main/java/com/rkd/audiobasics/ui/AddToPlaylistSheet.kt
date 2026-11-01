@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -38,7 +39,10 @@ fun AddToPlaylistSheet(
     onCreateNew: () -> Unit
 ) {
     val likedSongs by vm.likedSongs.collectAsState()
-    val customPlaylists by vm.customPlaylists.collectAsState()
+    val allCustomPlaylists by vm.customPlaylists.collectAsState()
+    val access by PlaylistAccess.flags.collectAsState()
+    // Playlists someone else made (and YouTube's built-in lists) can't take new songs.
+    val customPlaylists = allCustomPlaylists.filter { !access.isReadOnly(it.cloudId) }
     // Changes currently waiting on the account; their rows show a spinner too.
     val cloudBusy by vm.cloudBusy.collectAsState()
     val scope = rememberCoroutineScope()

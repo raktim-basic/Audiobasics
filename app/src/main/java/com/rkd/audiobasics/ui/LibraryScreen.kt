@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
@@ -59,6 +60,7 @@ fun LibraryScreen(
 ) {
     val context = LocalContext.current
     val libraryRefreshing by LibraryRefresh.refreshing.collectAsState()
+    val access by PlaylistAccess.flags.collectAsState()
     val isDarkMode by vm.isDarkMode.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
@@ -360,8 +362,9 @@ fun LibraryScreen(
                                                 onNavigatePlaylist(playlist)
                                             }
                                         },
-                                        onRename = { renameTarget = playlist },
-                                        onDelete = { deleteTarget = playlist },
+                                        onRename = if (access.isReadOnly(playlist.cloudId)) null else ({ renameTarget = playlist }),
+                                        onDelete = if (access.isSpecial(playlist.cloudId)) null else ({ deleteTarget = playlist }),
+                                        deleteLabel = if (access.isReadOnly(playlist.cloudId)) "Remove" else "Delete",
                                         isDragging = armed,
                                         onReorder = {
                                             draggingIndex = if (armed) null else index
@@ -383,8 +386,9 @@ fun LibraryScreen(
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                     onNavigatePlaylist(playlist)
                                 },
-                                onRename = { renameTarget = playlist },
-                                onDelete = { deleteTarget = playlist }
+                                onRename = if (access.isReadOnly(playlist.cloudId)) null else ({ renameTarget = playlist }),
+                                onDelete = if (access.isSpecial(playlist.cloudId)) null else ({ deleteTarget = playlist }),
+                                deleteLabel = if (access.isReadOnly(playlist.cloudId)) "Remove" else "Delete"
                             )
                         }
                     }
@@ -409,12 +413,19 @@ fun LibraryScreen(
             onCreate = { name, emoji -> vm.renamePlaylistAwait(target.id, name, emoji) })
     }
     deleteTarget?.let { target ->
+        val savedOnly = access.isReadOnly(target.cloudId)
         AlertDialog(onDismissRequest = { deleteTarget = null },
-            title = { Text("Delete \"${target.name}\"?", fontFamily = NothingFont) },
-            text = { Text("Are you sure you want to remove the songs in the playlist?", fontFamily = NothingFont) },
+            title = { Text(if (savedOnly) "Remove \"${target.name}\"?" else "Delete \"${target.name}\"?", fontFamily = NothingFont) },
+            text = {
+                Text(
+                    if (savedOnly) "It stays on YouTube Music. Only your copy of the playlist is removed."
+                    else "Are you sure you want to remove the songs in the playlist?",
+                    fontFamily = NothingFont
+                )
+            },
             confirmButton = {
                 TextButton(onClick = { vm.deletePlaylist(target.id); deleteTarget = null }) {
-                    Text("Delete", color = Color.Red, fontFamily = NothingFont)
+                    Text(if (savedOnly) "Remove" else "Delete", color = Color.Red, fontFamily = NothingFont)
                 }
             },
             dismissButton = {
@@ -437,6 +448,7 @@ private fun LibraryRow(
     onClick: () -> Unit,
     onRename: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    deleteLabel: String = "Delete",
     isDragging: Boolean = false,
     onReorder: (() -> Unit)? = null
 ) {
@@ -490,13 +502,15 @@ private fun LibraryRow(
                         highlightBounds = rowAnchor.bounds()
                     ) { close ->
                         MorphMenuColumn {
-                            MorphMenuItem(
-                                text = "Rename",
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    close(); onRename?.invoke()
-                                }
-                            )
+                            if (onRename != null) {
+                                MorphMenuItem(
+                                    text = "Rename",
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close(); onRename.invoke()
+                                    }
+                                )
+                            }
                             if (onReorder != null) {
                                 MorphMenuItem(
                                     text = if (isDragging) "Cancel reorder" else "Reorder",
@@ -506,14 +520,16 @@ private fun LibraryRow(
                                     }
                                 )
                             }
-                            MorphMenuItem(
-                                text = "Delete",
-                                textColor = Color.Red,
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    close(); onDelete?.invoke()
-                                }
-                            )
+                            if (onDelete != null) {
+                                MorphMenuItem(
+                                    text = deleteLabel,
+                                    textColor = Color.Red,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close(); onDelete.invoke()
+                                    }
+                                )
+                            }
                         }
                     }
                 },

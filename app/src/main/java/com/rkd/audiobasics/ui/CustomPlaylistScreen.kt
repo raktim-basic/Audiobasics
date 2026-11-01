@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -62,6 +63,8 @@ fun CustomPlaylistScreen(
 ) {
     val context = LocalContext.current
     val libraryRefreshing by LibraryRefresh.refreshing.collectAsState()
+    val access by PlaylistAccess.flags.collectAsState()
+    val playlistReadOnly = access.isReadOnly(playlist.cloudId)
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
     val currentSong by vm.currentSong.collectAsState()
@@ -385,7 +388,7 @@ fun CustomPlaylistScreen(
                                     onReorder = null,
                                     onAddTo = { onAddTo(song) },
                                     onRetryCache = { vm.retryCacheInPlaylist(song) },
-                                    onRemoveLike = { removeConfirm = song },
+                                    onRemoveLike = if (playlistReadOnly) null else ({ removeConfirm = song }),
                                     isDragging = armed,
                                     isCaching = song.id in cachingSongIds
                                 )
