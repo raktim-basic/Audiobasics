@@ -48,6 +48,7 @@ import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
+import com.rkd.audiobasics.utils.NightOwl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -885,7 +886,8 @@ private fun SearchPill(
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (query.isEmpty()) {
                                 Text(
-                                    text = "Search...",
+                                    // Between midnight and 3:29 am it nags, every time.
+                                    text = if (NightOwl.isLateNight()) "go to sleep..." else "Search...",
                                     fontFamily = NothingFont,
                                     color = Color.Gray,
                                     fontSize = 15.sp,

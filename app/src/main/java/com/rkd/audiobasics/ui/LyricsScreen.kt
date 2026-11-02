@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.lyrics.LyricsCache
+import com.rkd.audiobasics.lyrics.LyricsOutcome
 import com.rkd.audiobasics.lyrics.LyricsRepository
 import com.rkd.audiobasics.lyrics.LyricsResult
 import com.rkd.audiobasics.ui.theme.NothingFont
@@ -55,6 +56,8 @@ fun LyricsCardContent(
     var isRealTime by remember { mutableStateOf(true) }
     var lyricsResult by remember { mutableStateOf<LyricsResult?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+    // hasError = the lookup itself failed (offline, timeout...); a clean "the server has nothing
+    // for this song" leaves it false and lyricsResult null.
     var hasError by remember { mutableStateOf(false) }
     var forceRefresh by remember { mutableStateOf(0) }
 
@@ -83,18 +86,19 @@ fun LyricsCardContent(
             }
 
             // Fetch from network
-            val result = LyricsRepository.getLyrics(
+            when (val outcome = LyricsRepository.fetchLyrics(
                 title = song.title,
                 artist = song.artist,
                 duration = duration
-            )
-            lyricsResult = result
-            hasError = result == null
-
-            // Cache the result if found
-            if (result != null) {
-                val json = LyricsCache.serialize(result)
-                CacheManager.saveLyrics(context, song.id, json)
+            )) {
+                is LyricsOutcome.Found -> {
+                    lyricsResult = outcome.result
+                    // Cache the result if found
+                    val json = LyricsCache.serialize(outcome.result)
+                    CacheManager.saveLyrics(context, song.id, json)
+                }
+                LyricsOutcome.NotFound -> Unit // lyricsResult stays null, hasError stays false
+                LyricsOutcome.Error -> hasError = true
             }
         } catch (_: Exception) {
             hasError = true
@@ -201,7 +205,11 @@ fun LyricsCardContent(
                 hasError || lyricsResult == null -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            text = "Lyrics not found",
+                            text = if (hasError) {
+                                "Couldn't load lyrics.\nCheck your connection and tap refresh."
+                            } else {
+                                "Lyrics not found.\nPerhaps listen to it the old school way :)"
+                            },
                             fontFamily = NothingFont,
                             fontSize = 16.sp,
                             color = Color.Gray,

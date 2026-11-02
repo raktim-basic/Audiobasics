@@ -33,7 +33,7 @@ import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 import com.rkd.audiobasics.utils.MigrationMessageProvider
-import java.util.Calendar
+import com.rkd.audiobasics.utils.NightOwl
 
 @Composable
 fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
@@ -64,21 +64,29 @@ fun HomeScreen(
 
     // The built-in header is a time-of-day greeting. Whatever is set remotely
     // (ab-configs/header.json) still takes over from it, line by line.
-    val hello = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
-        in 5..11 -> "Good morning"
-        in 12..16 -> "Good afternoon"
-        else -> "Good evening"
-    }
     val knownProfile = (accountState as? AccountState.LoggedIn)?.profile
         ?: (accountState as? AccountState.SessionExpired)?.profile
-    val greetingLine1 = if (knownProfile == null) "$hello, uhh..." else hello
-    val greetingLine2 = if (knownProfile == null) {
-        "What's your name?"
-    } else {
-        // First name only; falls back to the start of the email if the account has no name.
-        knownProfile.name.trim().substringBefore(' ')
-            .ifBlank { knownProfile.email?.substringBefore('@').orEmpty() }
+    // First name only; falls back to the start of the email if the account has no name.
+    // Null when nobody is signed in.
+    val firstName = knownProfile?.let { p ->
+        p.name.trim().substringBefore(' ')
+            .ifBlank { p.email?.substringBefore('@').orEmpty() }
             .ifBlank { "friend" }
+    }
+    val slot = NightOwl.slot()
+    val (greetingLine1, greetingLine2) = when (slot) {
+        NightOwl.Slot.LATE_NIGHT ->
+            if (NightOwl.monstersNearby) "There aren't any" to "Monsters nearby.."
+            else "Up late...." to "${firstName ?: "Musichead"}?"
+        NightOwl.Slot.EARLY_MORNING -> "So early!!" to "${firstName ?: "Early bird"}.."
+        else -> {
+            val hello = when (slot) {
+                NightOwl.Slot.MORNING -> "Good morning"
+                NightOwl.Slot.AFTERNOON -> "Good afternoon"
+                else -> "Good evening"
+            }
+            if (firstName == null) "$hello, uhh..." to "What's your name?" else hello to firstName
+        }
     }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
