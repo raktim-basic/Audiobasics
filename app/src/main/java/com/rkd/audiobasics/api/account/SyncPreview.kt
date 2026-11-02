@@ -107,7 +107,7 @@ internal object SyncPreview {
                                 val l = pr.value
                                 val kind = when {
                                     p.special -> "built-in list, read-only"
-                                    p.owned || l.editable == true -> "editable"
+                                    (l.editable ?: p.owned) -> "editable"
                                     else -> "read-only"
                                 }
                                 val unique = l.items.map { it.song.id }.toSet().size

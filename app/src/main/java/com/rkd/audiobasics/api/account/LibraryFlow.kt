@@ -118,8 +118,8 @@ internal object CloudSnapshotFetcher {
                     continue
                 }
             }
-            val editable = !p.special && (p.owned || list.editable == true)
-            Timber.tag("Sync").i("\"${p.title}\": ${list.items.size} songs, ${if (editable) "editable" else "read-only"}")
+            val editable = !p.special && (list.editable ?: p.owned)
+            Timber.tag("Sync").i("\"${p.title}\": ${list.items.size} songs, ${if (editable) "editable" else "read-only"} (page=${list.editable}, tile-hint=${p.owned})")
             playlists += CloudPlaylistData(p.copy(owned = editable), list.items.distinctBy { it.song.id })
         }
         return AccountResult.Success(CloudSnapshot(liked, albums, playlists))

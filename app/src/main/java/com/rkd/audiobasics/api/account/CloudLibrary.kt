@@ -246,12 +246,27 @@ internal object CloudLibrary {
      * "editable playlist header" and their rows carry "remove from playlist" actions; playlists
      * that are only saved have neither. Either is enough, and which one matched is logged.
      */
-    private fun editableSignal(json: JSONObject): Boolean {
+    private fun editableSignal(json: JSONObject): Boolean? {
         val raw = json.toString()
         val header = raw.contains("musicEditablePlaylistDetailHeaderRenderer")
         val remove = raw.contains("ACTION_REMOVE_VIDEO")
-        Timber.tag(TAG).d("Playlist page editable? header=$header, remove-actions=$remove")
-        return header || remove
+        // A playlist that is only saved (someone else's) leads with the plain header; an editable
+        // one wraps its header in the editable renderer. The plain header is the definite
+        // "not yours" answer and beats a stray remove action elsewhere on the page.
+        val plain = json.optJSONObject("contents")
+            ?.optJSONObject("twoColumnBrowseResultsRenderer")
+            ?.optJSONArray("tabs")?.optJSONObject(0)?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")?.optJSONObject(0)
+            ?.has("musicResponsiveHeaderRenderer") == true
+        val verdict: Boolean? = when {
+            header -> true
+            plain -> false
+            remove -> true
+            else -> null // unknown: the library tile's hint decides
+        }
+        Timber.tag(TAG).d("Playlist page editable? header=$header, plain-header=$plain, remove-actions=$remove -> $verdict")
+        return verdict
     }
 
     private fun parseSongRow(item: JSONObject): CloudSong? {
