@@ -20,7 +20,9 @@ data class SettingsKey(
     val openLibrary: Boolean = false,
     // Opened from the Home screen's sign-in link: land straight on the sign-in page. Back then
     // returns to Home instead of walking through Settings.
-    val openLogin: Boolean = false
+    val openLogin: Boolean = false,
+    // Opened from the Home screen's sign-in banner: land on the Account page. Back returns to Home.
+    val openAccount: Boolean = false
 ) : NavKey
 
 @Serializable
