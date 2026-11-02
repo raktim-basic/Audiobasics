@@ -1,6 +1,7 @@
 package com.rkd.audiobasics.api.account
 
 import com.rkd.audiobasics.data.Album
+import com.rkd.audiobasics.data.Song
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,12 @@ internal data class LibraryCounts(val liked: Int, val albums: Int, val playlists
 /** What the flow needs from this device's library. Implemented on top of the ViewModel. */
 internal interface LocalLibraryStore {
     suspend fun counts(): LibraryCounts
+
+    /** Song IDs already represented anywhere in this device's library. */
+    suspend fun songIds(): Set<String>
+
+    /** Saved album IDs already present on this device. */
+    suspend fun albumIds(): Set<String>
 
     /**
      * Makes this device's library match [snapshot]. When [wipeLocalOnly] is true, playlists that
@@ -144,7 +151,12 @@ internal class LibraryDiff(
 /** How a silent refresh ([LibraryFlow.refresh]) ended. A refusal always means nothing was changed. */
 internal sealed interface RefreshResult {
     /** [diff] is what the refresh changed here, or null if that couldn't be worked out. */
-    data class Updated(val diff: LibraryDiff?) : RefreshResult
+    data class Updated(
+        val diff: LibraryDiff?,
+        val newSongs: List<Song> = emptyList(),
+        val newAlbums: List<Album> = emptyList(),
+        val existingSongIds: Set<String> = emptySet()
+    ) : RefreshResult
 
     /** Another library operation is already running; this one did nothing. */
     data object Busy : RefreshResult
@@ -370,6 +382,14 @@ internal object LibraryFlow {
             }
 
             adoptLeftovers(store, snapshot)
+            // Compare song IDs across the whole local library, not just the liked-songs list.
+            // A song already present in any playlist or saved-album tracklist is not new here.
+            val localSongIds = store.songIds()
+            val localAlbumIds = store.albumIds()
+            val newAlbums = snapshot.albums.filter { it.id !in localAlbumIds }
+            val newSongs = (snapshot.liked.map { it.song } + snapshot.playlists.flatMap { playlist ->
+                playlist.songs.map { it.song }
+            }).distinctBy { it.id }.filter { it.id !in localSongIds }
             val diff = try {
                 store.diffAgainst(snapshot).also { d ->
                     Timber.tag(TAG).i(
@@ -393,7 +413,7 @@ internal object LibraryFlow {
                 return RefreshResult.Refused("Couldn't update this device's library. Nothing was changed.")
             }
             Timber.tag(TAG).i("Refreshed: ${snapshot.counts}")
-            return RefreshResult.Updated(diff)
+            return RefreshResult.Updated(diff, newSongs, newAlbums, localSongIds)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
