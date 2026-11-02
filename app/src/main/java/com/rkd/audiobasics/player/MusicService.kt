@@ -79,10 +79,16 @@ class MusicService : MediaLibraryService() {
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             val items = if (parentId == RECENT_ROOT_ID && page == 0) {
-                session.player.currentMediaItem
+                // SystemUI may reconnect after the playback service has been destroyed. In that
+                // case the restored ExoPlayer playlist can exist before it has a current timeline,
+                // so currentMediaItem is not a reliable source for the recent item. Prefer the
+                // live item, then fall back to the same persisted snapshot used for resumption.
+                val current = session.player.currentMediaItem
                     ?.takeIf { it.mediaId.isNotBlank() }
-                    ?.let { listOf(recentItemFor(it)) }
-                    ?: emptyList()
+                val recent = current ?: lastSession?.load()?.let { saved ->
+                    saved.items.getOrNull(saved.index)
+                }
+                recent?.let { listOf(recentItemFor(it)) } ?: emptyList()
             } else emptyList()
             return Futures.immediateFuture(
                 LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
@@ -95,8 +101,13 @@ class MusicService : MediaLibraryService() {
             mediaId: String
         ): ListenableFuture<LibraryResult<MediaItem>> {
             val current = session.player.currentMediaItem
-            return if (current != null && current.mediaId == mediaId) {
-                Futures.immediateFuture(LibraryResult.ofItem(recentItemFor(current), null))
+                ?.takeIf { it.mediaId == mediaId }
+            val saved = if (current == null) {
+                lastSession?.load()?.items?.firstOrNull { it.mediaId == mediaId }
+            } else null
+            val item = current ?: saved
+            return if (item != null) {
+                Futures.immediateFuture(LibraryResult.ofItem(recentItemFor(item), null))
             } else {
                 Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
             }
