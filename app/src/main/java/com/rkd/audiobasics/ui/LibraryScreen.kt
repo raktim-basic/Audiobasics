@@ -420,7 +420,7 @@ fun LibraryScreen(
             isDarkMode = isDarkMode,
             hapticsEnabled = hapticsEnabled,
             title = if (savedOnly) "Remove \"${target.name}\"?" else "Delete \"${target.name}\"?",
-            message = if (savedOnly) "It stays on YouTube Music. Only your copy of the playlist is removed."
+            message = if (savedOnly) "This removes it from your YouTube Music library. The playlist itself stays on YouTube."
             else "Are you sure you want to remove the songs in the playlist?",
             cancelLabel = "Cancel",
             confirmLabel = if (savedOnly) "Remove" else "Delete",

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.api.account.PlaylistAccess
@@ -241,8 +242,16 @@ fun CustomPlaylistScreen(
                                 ) { }
                                 .background(bgColor)
                         ) {
+                            // Same long-name behaviour as the album header: two lines with an
+                            // ellipsis, tap to expand (the shuffle button steps aside while expanded).
+                            var titleOverflowed by remember(playlist.id) { mutableStateOf(false) }
+                            var titleExpanded by remember(playlist.id) { mutableStateOf(false) }
                             Row(
                                 modifier = Modifier.fillMaxWidth()
+                                    .clickable(enabled = titleOverflowed || titleExpanded) {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        titleExpanded = !titleExpanded
+                                    }
                                     .padding(start = 20.dp, top = 10.dp, end = 20.dp, bottom = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -251,15 +260,23 @@ fun CustomPlaylistScreen(
                                     fontFamily = NothingFont,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
-                                    color = textColor
+                                    color = textColor,
+                                    maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    onTextLayout = { result ->
+                                        if (!titleExpanded && result.hasVisualOverflow) titleOverflowed = true
+                                    },
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Spacer(Modifier.weight(1f))
-                                IconButton(onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    vm.shuffleCustomPlaylist(playlist.id)
-                                }) {
-                                    Icon(Icons.Default.Shuffle, contentDescription = "Shuffle",
-                                        tint = textColor, modifier = Modifier.size(24.dp))
+                                if (!titleExpanded) {
+                                    Spacer(Modifier.width(8.dp))
+                                    IconButton(onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        vm.shuffleCustomPlaylist(playlist.id)
+                                    }) {
+                                        Icon(Icons.Default.Shuffle, contentDescription = "Shuffle",
+                                            tint = textColor, modifier = Modifier.size(24.dp))
+                                    }
                                 }
                             }
 
