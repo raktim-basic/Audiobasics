@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
+import com.rkd.audiobasics.ui.LocalHapticsEnabled
 import com.rkd.audiobasics.ui.LocalMorphOverlay
 import com.rkd.audiobasics.ui.MonochromeExcept
 import com.rkd.audiobasics.ui.MorphAlertDialog
@@ -648,6 +649,7 @@ fun AudiobasicsApp(
             .imePadding()
     ) {
         Box(modifier = Modifier.weight(1f)) {
+            CompositionLocalProvider(LocalHapticsEnabled provides vm.hapticsEnabled.collectAsState().value) {
             NavDisplay(
                 backStack = backStack,
                 modifier = Modifier.fillMaxSize(),
@@ -677,7 +679,7 @@ fun AudiobasicsApp(
                                 onNavigateSearch = { push(SearchKey) },
                                 onNavigateQueue = { push(QueueKey) },
                                 onNavigateSettings = { push(SettingsKey()) },
-                                onNavigateLogin = { push(SettingsKey(openLogin = true)) },
+                                onNavigateLogin = { push(SettingsKey(openAccount = true)) },
                                 onNavigateLiked = { push(LikedKey) },
                                 onNavigateAlbums = { push(AlbumsKey) },
                                 onNavigateLibrary = { push(LibraryKey) }
@@ -709,6 +711,7 @@ fun AudiobasicsApp(
                                 openCache = key.openCache,
                                 openLibrary = key.openLibrary,
                                 openLogin = key.openLogin,
+                                openAccount = key.openAccount,
                                 onBack = { navigateBack() },
                                 onNavigateUpdater = { push(UpdaterKey) }
                             )
@@ -822,6 +825,7 @@ fun AudiobasicsApp(
                     }
                 }
             )
+            }
             // Launch refresh on a screen that has no pull gesture of its own (Home, Queue, ...).
             val libraryRefreshing by LibraryRefresh.refreshing.collectAsState()
             val screenHasLibraryPull = topKey is LikedKey || topKey is AlbumsKey ||
