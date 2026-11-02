@@ -52,6 +52,8 @@ fun SongItem(
     isDragging: Boolean = false,
     showCacheIndicator: Boolean = isLiked,
     removeLabel: String = "Remove from liked",
+    // False on screens (the queue) where the broken-heart popup must never offer a remove action.
+    showRemoveInHeartDialog: Boolean = true,
     isCaching: Boolean = false
 ) {
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
@@ -104,9 +106,12 @@ fun SongItem(
                 showBrokenHeartDialog = false
                 onRetryCache?.invoke()
             },
-            onRemoveLike = {
-                showBrokenHeartDialog = false
-                onRemoveLike?.invoke()
+            // No remove action for this row (e.g. a community playlist) means no option at all.
+            onRemoveLike = onRemoveLike?.takeIf { showRemoveInHeartDialog }?.let { action ->
+                {
+                    showBrokenHeartDialog = false
+                    action()
+                }
             }
         )
     }
