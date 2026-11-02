@@ -11,5 +11,8 @@ data class PlaylistEntity(
     val name: String,
     val emoji: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    // YouTube playlist ID when this playlist is linked to the signed-in account (null = local only).
+    // Added in DB v5.
+    val cloudId: String? = null
 )

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -171,7 +172,7 @@ class FloatingBarState {
 }
 
 /** How long the screen must sit untouched and still (after any scroll animation ends) before a hidden bar comes back. */
-private const val AUTO_SHOW_IDLE_MS = 1000L
+private const val AUTO_SHOW_IDLE_MS = 500L
 
 /**
  * Lays [content] out full-size and floats [bar] over its bottom edge (just above the mini
@@ -191,16 +192,21 @@ fun FloatingBarHost(
     lockVisible: Boolean = false,
     barAlignment: Alignment = Alignment.BottomCenter,
     listState: LazyListState? = null,
+    // For a plain scrolling page (a Column with verticalScroll) instead of a LazyColumn.
+    scrollState: ScrollState? = null,
     bar: @Composable () -> Unit,
     content: @Composable () -> Unit
 ) {
     val state = remember { FloatingBarState() }
     var barHeightPx by remember { mutableStateOf(0) }
 
-    val hideAllowed by remember(listState) {
+    val hideAllowed by remember(listState, scrollState) {
         derivedStateOf {
             val ls = listState
+            val ss = scrollState
             when {
+                // A plain page only hides the bar when it really scrolls.
+                ss != null -> ss.canScrollForward || ss.canScrollBackward
                 ls == null -> false
                 ls.canScrollForward || ls.canScrollBackward -> true
                 else -> {
@@ -226,12 +232,14 @@ fun FloatingBarHost(
     // whose last row sits under the bar) the bar stays hidden, because showing it would cover
     // content; it returns on the next scroll up as usual.
     // (Read through snapshotFlow so touches don't recompose the whole screen.)
-    LaunchedEffect(state, listState) {
+    LaunchedEffect(state, listState, scrollState) {
         snapshotFlow {
-            state.hidden &&
-                !state.touching &&
-                listState?.isScrollInProgress == false &&
-                listState.canScrollForward
+            val atRestWithMoreBelow = when {
+                scrollState != null -> !scrollState.isScrollInProgress && scrollState.canScrollForward
+                listState != null -> !listState.isScrollInProgress && listState.canScrollForward
+                else -> false
+            }
+            state.hidden && !state.touching && atRestWithMoreBelow
         }.collectLatest { ready ->
             if (ready) {
                 delay(AUTO_SHOW_IDLE_MS)

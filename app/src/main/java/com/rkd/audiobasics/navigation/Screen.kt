@@ -15,7 +15,15 @@ data object SearchKey : NavKey
 data object QueueKey : NavKey
 
 @Serializable
-data class SettingsKey(val openCache: Boolean = false, val openLibrary: Boolean = false) : NavKey
+data class SettingsKey(
+    val openCache: Boolean = false,
+    val openLibrary: Boolean = false,
+    // Opened from the Home screen's sign-in link: land straight on the sign-in page. Back then
+    // returns to Home instead of walking through Settings.
+    val openLogin: Boolean = false,
+    // Opened from the Home screen's sign-in banner: land on the Account page. Back returns to Home.
+    val openAccount: Boolean = false
+) : NavKey
 
 @Serializable
 data object LikedKey : NavKey

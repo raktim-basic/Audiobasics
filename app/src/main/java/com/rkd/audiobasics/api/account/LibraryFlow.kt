@@ -1,0 +1,528 @@
+package com.rkd.audiobasics.api.account
+
+import com.rkd.audiobasics.data.Album
+import com.rkd.audiobasics.data.Song
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import timber.log.Timber
+import java.util.concurrent.atomic.AtomicBoolean
+
+// ─── Data ────────────────────────────────────────────────────────────────────
+
+internal data class CloudPlaylistData(val playlist: CloudPlaylist, val songs: List<CloudSong>)
+
+/** The whole account library, fetched completely. Never partial. */
+internal data class CloudSnapshot(
+    val liked: List<CloudSong>,
+    val albums: List<Album>,
+    val playlists: List<CloudPlaylistData>
+) {
+    val counts: LibraryCounts
+        get() = LibraryCounts(liked.size, albums.size, playlists.size, playlists.sumOf { it.songs.size })
+    val isEmpty: Boolean get() = counts.isEmpty
+}
+
+/** "Empty" means no liked songs, no saved albums and no playlists (the sync scope). */
+internal data class LibraryCounts(val liked: Int, val albums: Int, val playlists: Int, val playlistSongs: Int) {
+    val isEmpty: Boolean get() = liked == 0 && albums == 0 && playlists == 0
+}
+
+/** What the flow needs from this device's library. Implemented on top of the ViewModel. */
+internal interface LocalLibraryStore {
+    suspend fun counts(): LibraryCounts
+
+    /** Song IDs already represented anywhere in this device's library. */
+    suspend fun songIds(): Set<String>
+
+    /** Saved album IDs already present on this device. */
+    suspend fun albumIds(): Set<String>
+
+    /**
+     * Makes this device's library match [snapshot]. When [wipeLocalOnly] is true, playlists that
+     * were never linked to an account are removed too (the user confirmed a full replace).
+     * Must be all-or-nothing for the playlists.
+     */
+    suspend fun replaceWithCloud(snapshot: CloudSnapshot, wipeLocalOnly: Boolean)
+
+    suspend fun clearAll()
+
+    /** Everything this device has, as the upload needs it (newest first, like the app shows it). */
+    suspend fun readForUpload(): LocalLibraryForUpload
+
+    /**
+     * Local playlists that were never linked to an account copy (left over from an upload) but have
+     * an exact-name twin in [cloud]: links them, or drops the leftover if its twin is already
+     * linked, so that applying the account library makes them mirror it 1:1. Returns how many.
+     */
+    suspend fun adoptUnlinkedPlaylists(cloud: List<CloudPlaylist>): Int
+
+    /** What applying [snapshot] would change on this device (nothing is written). */
+    suspend fun diffAgainst(snapshot: CloudSnapshot): LibraryDiff
+
+    /** Turns linked playlists into plain local ones. */
+    suspend fun detachFromCloud()
+}
+
+// ─── Fetching ────────────────────────────────────────────────────────────────
+
+@Suppress("UNCHECKED_CAST")
+private fun <B> AccountResult<*>.asFailure(): AccountResult<B> = when (this) {
+    is AccountResult.Success -> error("asFailure() called on a success")
+    else -> this as AccountResult<B>
+}
+
+internal object CloudSnapshotFetcher {
+    private const val STEP_PAUSE_MS = 400L
+
+    /** Reads everything, or fails as a whole. A part that can't be read fails the snapshot. */
+    fun fetch(session: AccountSession): AccountResult<CloudSnapshot> {
+        val liked = when (val r = CloudLibrary.fetchLikedSongs(session)) {
+            is AccountResult.Success -> r.value.items.distinctBy { it.song.id }
+            else -> return r.asFailure()
+        }
+        Thread.sleep(STEP_PAUSE_MS)
+
+        val albums = when (val r = CloudLibrary.fetchSavedAlbums(session)) {
+            is AccountResult.Success -> r.value.items.distinctBy { it.id }
+            else -> return r.asFailure()
+        }
+        Thread.sleep(STEP_PAUSE_MS)
+
+        val tiles = when (val r = CloudLibrary.fetchPlaylists(session)) {
+            is AccountResult.Success -> r.value.items.distinctBy { it.id }
+            else -> return r.asFailure()
+        }
+
+        // Every playlist in the library is mirrored: the user's own, other people's that they saved,
+        // and YouTube's built-in lists. Each one's page says whether the account can edit it
+        // (CloudPlaylist.owned); that decides which options the app offers, not whether it's shown.
+        val playlists = ArrayList<CloudPlaylistData>()
+        for (p in tiles) {
+            Thread.sleep(STEP_PAUSE_MS)
+            val list = when (val r = CloudLibrary.fetchPlaylistSongs(session, p.id)) {
+                is AccountResult.Success -> r.value
+                is AccountResult.SessionExpired, is AccountResult.NetworkError -> return r.asFailure()
+                is AccountResult.ServerError -> {
+                    // A playlist that's gone or private now (4xx) is left out. Anything else (a 5xx, rate
+                    // limit) could be a hiccup, and dropping a playlist because of one would remove it here.
+                    if (r.code !in 400..499) return r.asFailure()
+                    Timber.tag("Sync").w("\"${p.title}\" isn't available (HTTP ${r.code}); leaving it out")
+                    continue
+                }
+                is AccountResult.ParseError -> {
+                    // YouTube's built-in lists (episodes, ...) use other layouts; those are left out rather
+                    // than shown empty. An ordinary playlist that can't be read still fails the refresh.
+                    if (!p.special) return r.asFailure()
+                    Timber.tag("Sync").w("Built-in list \"${p.title}\" couldn't be read (${r.message}); leaving it out")
+                    continue
+                }
+            }
+            val editable = !p.special && (list.editable ?: p.owned)
+            Timber.tag("Sync").i("\"${p.title}\": ${list.items.size} songs, ${if (editable) "editable" else "read-only"} (page=${list.editable}, tile-hint=${p.owned})")
+            playlists += CloudPlaylistData(p.copy(owned = editable), list.items.distinctBy { it.song.id })
+        }
+        return AccountResult.Success(CloudSnapshot(liked, albums, playlists))
+    }
+}
+
+/** What applying a snapshot changed (or would change) on this device. */
+internal class LibraryDiff(
+    val likedChanged: Int,
+    val albumsChanged: Int,
+    val playlistsChanged: Int,
+    val playlistsAdded: Int,
+    val playlistsRemoved: Int,
+    /** One line per playlist that differs, for the log. */
+    val details: List<String>
+) {
+    val isEmpty: Boolean
+        get() = likedChanged == 0 && albumsChanged == 0 && playlistsChanged == 0 &&
+            playlistsAdded == 0 && playlistsRemoved == 0
+}
+
+/** How a silent refresh ([LibraryFlow.refresh]) ended. A refusal always means nothing was changed. */
+internal sealed interface RefreshResult {
+    /** [diff] is what the refresh changed here, or null if that couldn't be worked out. */
+    data class Updated(
+        val diff: LibraryDiff?,
+        val newSongs: List<Song> = emptyList(),
+        val newAlbums: List<Album> = emptyList(),
+        val existingSongIds: Set<String> = emptySet()
+    ) : RefreshResult
+
+    /** Another library operation is already running; this one did nothing. */
+    data object Busy : RefreshResult
+
+    data class Refused(
+        val message: String,
+        val offline: Boolean = false,
+        val expired: Boolean = false
+    ) : RefreshResult
+}
+
+// ─── Flow state ──────────────────────────────────────────────────────────────
+
+internal sealed interface LibraryFlowState {
+    data object Idle : LibraryFlowState
+    data class Working(val message: String) : LibraryFlowState
+
+    /** Both sides have data. Signing in would replace the local library: ask first. */
+    data class ConfirmOverride(val local: LibraryCounts, val cloud: LibraryCounts) : LibraryFlowState
+
+    /** This device has a library and the account is empty: empty it here, or (later) upload it. */
+    data class ChooseForEmptyAccount(val local: LibraryCounts) : LibraryFlowState
+
+    /** Nothing was changed. */
+    data class Failed(val message: String) : LibraryFlowState
+    data class Done(val message: String) : LibraryFlowState
+}
+
+/**
+ * The rules for how this device's library and the account fit together.
+ *
+ *   local empty                          -> just take the account's library, no questions
+ *   local has data, account empty        -> choose: empty the local library, or upload it
+ *   both have data                       -> warn: the account replaces the local library
+ *
+ * Nothing is applied until every part of the account library has been read completely, and
+ * a failure at any point leaves this device exactly as it was.
+ */
+internal object LibraryFlow {
+
+    /** Uploading a local library to an empty account (see [LibraryUpload]). */
+    const val UPLOAD_AVAILABLE = true
+
+    private const val TAG = "Sync"
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val busy = AtomicBoolean(false)
+    private val _state = MutableStateFlow<LibraryFlowState>(LibraryFlowState.Idle)
+    val state: StateFlow<LibraryFlowState> = _state.asStateFlow()
+
+    /** Closes a finished or failed message. A running operation can't be dismissed. */
+    fun dismiss() {
+        val s = _state.value
+        if (s is LibraryFlowState.Failed || s is LibraryFlowState.Done) {
+            _state.value = LibraryFlowState.Idle
+        }
+    }
+
+    /** First contact with an account: read it, compare it with this device, ask if needed. */
+    fun begin(store: LocalLibraryStore) = launchExclusive {
+        val session = AccountManager.activeSession() ?: return@launchExclusive
+        if (LibraryUpload.hasUnfinishedFor(session.profile.accountId)) {
+            // This account already holds part of an upload that was started from this device.
+            // Asking "replace your library with the account's?" now would wipe the rest of it.
+            Timber.tag(TAG).i("An unfinished upload exists for this account; not asking the login questions")
+            _state.value = LibraryFlowState.Idle
+            return@launchExclusive
+        }
+        _state.value = LibraryFlowState.Working("Reading your account...")
+        val snapshot = fetchOrFail(session) ?: return@launchExclusive
+
+        val local = store.counts()
+        Timber.tag(TAG).i("Login check: local=$local, account=${snapshot.counts}")
+        if (local.isEmpty) {
+            // Nothing on this device to lose: just take the account's library.
+            applyAndLink(store, snapshot, wipeLocalOnly = true)
+            return@launchExclusive
+        }
+        _state.value = if (snapshot.isEmpty) {
+            LibraryFlowState.ChooseForEmptyAccount(local)
+        } else {
+            LibraryFlowState.ConfirmOverride(local, snapshot.counts)
+        }
+    }
+
+    /**
+     * The user confirmed replacing this device's library with the account's. The account is read
+     * again first, and if it no longer matches what the user was asked about, they're asked
+     * again instead of acting on a stale answer.
+     */
+    fun replaceLocalWithCloud(store: LocalLibraryStore, expectAccountEmpty: Boolean) = launchExclusive {
+        val session = AccountManager.activeSession() ?: return@launchExclusive
+        _state.value = LibraryFlowState.Working("Reading your account...")
+        val snapshot = fetchOrFail(session) ?: return@launchExclusive
+
+        val local = store.counts()
+        if (snapshot.isEmpty != expectAccountEmpty) {
+            Timber.tag(TAG).w("Account changed while waiting for an answer; asking again")
+            _state.value = if (snapshot.isEmpty) {
+                LibraryFlowState.ChooseForEmptyAccount(local)
+            } else {
+                LibraryFlowState.ConfirmOverride(local, snapshot.counts)
+            }
+            return@launchExclusive
+        }
+        applyAndLink(store, snapshot, wipeLocalOnly = true)
+    }
+
+    /** "Log out instead": the user didn't want to link. The local library is untouched. */
+    fun declineAndLogout() = launchExclusive {
+        AccountManager.logout()
+        _state.value = LibraryFlowState.Idle
+    }
+
+    /**
+     * "Upload library to cloud and sync": the user chose to copy this device's library into the
+     * (empty) account. The account is read again first; if it isn't empty any more, the user is
+     * asked the right question instead. The upload itself runs in [LibraryUpload].
+     */
+    fun beginUpload(store: LocalLibraryStore) = launchExclusive {
+        val session = AccountManager.activeSession() ?: return@launchExclusive
+        _state.value = LibraryFlowState.Working("Reading your account...")
+        val snapshot = fetchOrFail(session) ?: return@launchExclusive
+
+        val local = store.counts()
+        if (!snapshot.isEmpty) {
+            Timber.tag(TAG).w("Account is no longer empty; asking again")
+            _state.value = LibraryFlowState.ConfirmOverride(local, snapshot.counts)
+            return@launchExclusive
+        }
+        _state.value = LibraryFlowState.Working("Preparing the upload...")
+        val prepared = try {
+            LibraryUpload.prepare(session, store.readForUpload())
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Couldn't prepare the upload")
+            false
+        }
+        if (!prepared) {
+            _state.value = LibraryFlowState.Failed("Couldn't prepare the upload. Nothing was changed.")
+            return@launchExclusive
+        }
+        _state.value = LibraryFlowState.Idle
+        LibraryUpload.resume()
+    }
+
+    /** Pull the account's current library onto this device (cloud wins). */
+    fun syncNow(store: LocalLibraryStore) = launchExclusive {
+        val session = AccountManager.activeSession() ?: return@launchExclusive
+        _state.value = LibraryFlowState.Working("Reading your account...")
+        var snapshot = fetchOrFail(session) ?: return@launchExclusive
+
+        val local = store.counts()
+        if (looksLikeMassRemoval(local, snapshot.counts)) {
+            // A big drop is either real (cleared on another device) or a bad read. Read again,
+            // and only go ahead if two reads agree.
+            Timber.tag(TAG).w("Large change ($local -> ${snapshot.counts}); reading again before applying")
+            _state.value = LibraryFlowState.Working("Double-checking a large change...")
+            delay(1500)
+            val second = fetchOrFail(session) ?: return@launchExclusive
+            if (!sameLibrary(snapshot, second)) {
+                Timber.tag(TAG).w("Two reads disagreed; nothing applied")
+                _state.value = LibraryFlowState.Failed(
+                    "Your account's library looked different between two reads, so nothing was changed. Try again in a moment."
+                )
+                return@launchExclusive
+            }
+            snapshot = second
+        }
+        adoptLeftovers(store, snapshot)
+        applyAndLink(store, snapshot, wipeLocalOnly = false)
+    }
+
+    /** See [LocalLibraryStore.adoptUnlinkedPlaylists]. A failure here never blocks the sync itself. */
+    private suspend fun adoptLeftovers(store: LocalLibraryStore, snapshot: CloudSnapshot) {
+        try {
+            val n = store.adoptUnlinkedPlaylists(snapshot.playlists.map { it.playlist })
+            if (n > 0) Timber.tag(TAG).i("Matched $n leftover local playlist(s) to their account copies")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Matching leftover playlists failed (continuing)")
+        }
+    }
+
+    /**
+     * The silent version of [syncNow] for pull-to-refresh and the launch refresh: same complete
+     * read, same mass-removal double check, same apply, but it reports through its return value
+     * instead of the dialog state (so no stale "Done" dialog is left for the Account screen).
+     *
+     * [safeToApply] is asked right before anything is written; if it says no (the user changed
+     * something while the account was being read), the read is thrown away.
+     * Only call this for an account whose library is already linked.
+     */
+    suspend fun refresh(store: LocalLibraryStore, safeToApply: () -> Boolean): RefreshResult {
+        if (!busy.compareAndSet(false, true)) return RefreshResult.Busy
+        try {
+            val session = AccountManager.activeSession()
+                ?: return RefreshResult.Refused("Your session expired. Sign in again.", expired = true)
+
+            val first = readForRefresh(session)
+            var snapshot = first.first
+                ?: return first.second ?: RefreshResult.Refused("Something went wrong. Nothing was changed.")
+
+            val local = store.counts()
+            if (looksLikeMassRemoval(local, snapshot.counts)) {
+                Timber.tag(TAG).w("Large change ($local -> ${snapshot.counts}); reading again before applying")
+                delay(1500)
+                val again = readForRefresh(session)
+                val second = again.first
+                    ?: return again.second ?: RefreshResult.Refused("Something went wrong. Nothing was changed.")
+                if (!sameLibrary(snapshot, second)) {
+                    Timber.tag(TAG).w("Two reads disagreed; nothing applied")
+                    return RefreshResult.Refused(
+                        "Your account's library looked different between two reads, so nothing was changed. Try again in a moment."
+                    )
+                }
+                snapshot = second
+            }
+
+            if (!safeToApply()) {
+                Timber.tag(TAG).w("Library changed during the refresh; read discarded")
+                return RefreshResult.Refused("Your library changed while refreshing, so nothing was applied. Pull to refresh again.")
+            }
+
+            adoptLeftovers(store, snapshot)
+            // Compare song IDs across the whole local library, not just the liked-songs list.
+            // A song already present in any playlist or saved-album tracklist is not new here.
+            val localSongIds = store.songIds()
+            val localAlbumIds = store.albumIds()
+            val newAlbums = snapshot.albums.filter { it.id !in localAlbumIds }
+            val newSongs = (snapshot.liked.map { it.song } + snapshot.playlists.flatMap { playlist ->
+                playlist.songs.map { it.song }
+            }).distinctBy { it.id }.filter { it.id !in localSongIds }
+            val diff = try {
+                store.diffAgainst(snapshot).also { d ->
+                    Timber.tag(TAG).i(
+                        "Refresh compared: liked ${d.likedChanged}, albums ${d.albumsChanged}, " +
+                            "playlists changed ${d.playlistsChanged}, new ${d.playlistsAdded}, gone ${d.playlistsRemoved}"
+                    )
+                    d.details.forEach { Timber.tag(TAG).i("  $it") }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.tag(TAG).w(e, "Couldn't compare before applying")
+                null
+            }
+            try {
+                store.replaceWithCloud(snapshot, wipeLocalOnly = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.tag(TAG).e(e, "Applying the refreshed library failed")
+                return RefreshResult.Refused("Couldn't update this device's library. Nothing was changed.")
+            }
+            Timber.tag(TAG).i("Refreshed: ${snapshot.counts}")
+            return RefreshResult.Updated(diff, newSongs, newAlbums, localSongIds)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Library refresh failed")
+            return RefreshResult.Refused("Something went wrong. Nothing was changed.")
+        } finally {
+            busy.set(false)
+        }
+    }
+
+    /**
+     * Logs out, after the user chose what happens to the library on this device. The local step
+     * runs first; if it fails the user stays signed in and nothing has changed.
+     */
+    fun logout(store: LocalLibraryStore, clearLocal: Boolean) = launchExclusive {
+        try {
+            if (clearLocal) store.clearAll() else store.detachFromCloud()
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Logout: couldn't update the local library")
+            _state.value = LibraryFlowState.Failed("Couldn't update the library on this device, so you're still signed in. Nothing was changed.")
+            return@launchExclusive
+        }
+        AccountManager.logout()
+        _state.value = LibraryFlowState.Idle
+    }
+
+    // ── Internals ────────────────────────────────────────────────────────────
+
+    private suspend fun applyAndLink(store: LocalLibraryStore, snapshot: CloudSnapshot, wipeLocalOnly: Boolean) {
+        _state.value = LibraryFlowState.Working("Updating this device...")
+        try {
+            store.replaceWithCloud(snapshot, wipeLocalOnly)
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Applying the account library failed")
+            _state.value = LibraryFlowState.Failed("Couldn't update this device's library. Nothing was changed.")
+            return
+        }
+        if (!AccountManager.markLibraryLinked(true)) {
+            Timber.tag(TAG).w("Library applied but the link state couldn't be saved")
+        }
+        val c = snapshot.counts
+        Timber.tag(TAG).i("Applied: $c")
+        _state.value = LibraryFlowState.Done(
+            "${c.liked} liked songs, ${c.albums} albums and ${c.playlists} playlists are now on this device."
+        )
+    }
+
+    /** The snapshot, or null after moving to a Failed state (nothing was changed). */
+    private suspend fun fetchOrFail(session: AccountSession): CloudSnapshot? {
+        val result = kotlinx.coroutines.withContext(Dispatchers.IO) { CloudSnapshotFetcher.fetch(session) }
+        return when (result) {
+            is AccountResult.Success -> result.value
+            is AccountResult.SessionExpired -> failed("Your session expired. Sign in again.")
+            is AccountResult.NetworkError -> failed("No connection. Nothing was changed.")
+            is AccountResult.ServerError -> failed("YouTube is having trouble right now (${result.code}). Nothing was changed.")
+            is AccountResult.ParseError -> failed("YouTube sent something unexpected (${result.message}). Nothing was changed.")
+        }
+    }
+
+    /** The snapshot, or why it couldn't be read (never both). */
+    private suspend fun readForRefresh(session: AccountSession): Pair<CloudSnapshot?, RefreshResult.Refused?> {
+        val result = withContext(Dispatchers.IO) { CloudSnapshotFetcher.fetch(session) }
+        return when (result) {
+            is AccountResult.Success -> result.value to null
+            is AccountResult.SessionExpired -> {
+                AccountManager.reportSessionRejected()
+                null to RefreshResult.Refused("Your session expired. Sign in again.", expired = true)
+            }
+            is AccountResult.NetworkError ->
+                null to RefreshResult.Refused("No connection. Nothing was changed.", offline = true)
+            is AccountResult.ServerError ->
+                null to RefreshResult.Refused("YouTube is having trouble right now (${result.code}). Nothing was changed.")
+            is AccountResult.ParseError ->
+                null to RefreshResult.Refused("YouTube sent something unexpected (${result.message}). Nothing was changed.")
+        }
+    }
+
+    private fun failed(message: String): CloudSnapshot? {
+        Timber.tag(TAG).w("Not applied: $message")
+        _state.value = LibraryFlowState.Failed(message)
+        return null
+    }
+
+    /** Dropping to nothing, or losing at least half of 10+ items, in any part of the library. */
+    private fun looksLikeMassRemoval(local: LibraryCounts, cloud: LibraryCounts): Boolean {
+        fun drop(l: Int, c: Int) = (l > 0 && c == 0) || (l - c >= 10 && c * 2 < l)
+        return drop(local.liked, cloud.liked) ||
+            drop(local.albums, cloud.albums) ||
+            drop(local.playlists, cloud.playlists) ||
+            drop(local.playlistSongs, cloud.playlistSongs)
+    }
+
+    private fun sameLibrary(a: CloudSnapshot, b: CloudSnapshot): Boolean =
+        a.counts == b.counts &&
+            a.liked.map { it.song.id } == b.liked.map { it.song.id } &&
+            a.albums.map { it.id } == b.albums.map { it.id } &&
+            a.playlists.map { it.playlist.id } == b.playlists.map { it.playlist.id }
+
+    private fun launchExclusive(block: suspend () -> Unit) {
+        if (!busy.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                block()
+            } catch (e: Exception) {
+                Timber.tag(TAG).e(e, "Library flow failed")
+                _state.value = LibraryFlowState.Failed("Something went wrong. Nothing was changed.")
+            } finally {
+                busy.set(false)
+            }
+        }
+    }
+}

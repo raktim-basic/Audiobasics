@@ -11,10 +11,13 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -51,8 +54,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.rkd.audiobasics.api.Innertube
+import com.rkd.audiobasics.api.account.AccountManager
+import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -63,6 +67,8 @@ sealed class SettingsPage {
     // Library now also carries what used to be the standalone "Downloads" (Cache) page —
     // renamed "Library management" in the UI. openCache/openLibrary both route here.
     object Library : SettingsPage()
+    object Account : SettingsPage()
+    object Login : SettingsPage()
     object DevTools : SettingsPage()
     object EngineInfo : SettingsPage()
 }
@@ -73,15 +79,24 @@ fun SettingsScreen(
     isDarkMode: Boolean,
     openCache: Boolean = false,
     openLibrary: Boolean = false,
+    openLogin: Boolean = false,
+    openAccount: Boolean = false,
     onBack: () -> Unit,
     onNavigateUpdater: () -> Unit
 ) {
     val context = LocalContext.current
+    // Opened from the Home screen's sign-in link: back leaves Settings (to Home) rather than
+    // stepping through the Settings pages.
+    val loginFirst = remember { openLogin }
+    // Opened from the Home banner straight onto the Account page: back leaves Settings too.
+    val accountFirst = remember { openAccount }
     var currentPage by remember { 
         mutableStateOf<SettingsPage>(
             // Downloads settings live inside the merged Library management page now, so
             // both deep links land there.
             when {
+                openLogin -> SettingsPage.Login
+                openAccount -> SettingsPage.Account
                 openCache || openLibrary -> SettingsPage.Library
                 else -> SettingsPage.Main
             }
@@ -106,7 +121,12 @@ fun SettingsScreen(
 
     BackHandler(enabled = currentPage != SettingsPage.Main) {
         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-        goBack(if (currentPage == SettingsPage.EngineInfo) SettingsPage.DevTools else SettingsPage.Main)
+        when (currentPage) {
+            SettingsPage.EngineInfo -> goBack(SettingsPage.DevTools)
+            SettingsPage.Login -> if (loginFirst) onBack() else goBack(SettingsPage.Account)
+            SettingsPage.Account -> if (loginFirst || accountFirst) onBack() else goBack(SettingsPage.Main)
+            else -> goBack(SettingsPage.Main)
+        }
     }
 
     AnimatedContent(
@@ -125,7 +145,8 @@ fun SettingsScreen(
                 onNavigateAppearance = { goTo(SettingsPage.Appearance) },
                 onNavigateGeneral = { goTo(SettingsPage.General) },
                 onNavigateLibrary = { goTo(SettingsPage.Library) },
-                onNavigateDevTools = { goTo(SettingsPage.DevTools) }
+                onNavigateDevTools = { goTo(SettingsPage.DevTools) },
+                onNavigateAccount = { goTo(SettingsPage.Account) }
             )
             is SettingsPage.Appearance -> AppearancePage(
                 vm = vm,
@@ -141,6 +162,18 @@ fun SettingsScreen(
                 vm = vm,
                 isDarkMode = isDarkMode,
                 onBack = { goBack(SettingsPage.Main) }
+            )
+            is SettingsPage.Account -> AccountPage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = { if (loginFirst || accountFirst) onBack() else goBack(SettingsPage.Main) },
+                onNavigateLogin = { goTo(SettingsPage.Login) }
+            )
+            is SettingsPage.Login -> LoginPage(
+                vm = vm,
+                isDarkMode = isDarkMode,
+                onBack = { if (loginFirst) onBack() else goBack(SettingsPage.Account) },
+                onLoggedIn = { goBack(SettingsPage.Account) }
             )
             is SettingsPage.DevTools -> DevToolsPage(
                 vm = vm,
@@ -165,9 +198,11 @@ private fun SettingsMainPage(
     onNavigateAppearance: () -> Unit,
     onNavigateGeneral: () -> Unit,
     onNavigateLibrary: () -> Unit,
-    onNavigateDevTools: () -> Unit
+    onNavigateDevTools: () -> Unit,
+    onNavigateAccount: () -> Unit
 ) {
     val context = LocalContext.current
+    val accountState by AccountManager.state.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val logsEnabled by vm.logsEnabled.collectAsState()
     val isRefreshingCipherEngine by vm.isRefreshingCipherEngine.collectAsState()
@@ -256,6 +291,30 @@ private fun SettingsMainPage(
                 state = listState,
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
+                item {
+                    SettingsRow(
+                        isDarkMode = isDarkMode,
+                        title = "Account",
+                        subtitle = when (val acc = accountState) {
+                            is AccountState.LoggedOut -> "Sign in to YouTube Music"
+                            is AccountState.LoggedIn -> acc.profile.name
+                            is AccountState.SessionExpired -> "Session expired. Sign in again"
+                        },
+                        icon = {
+                            Icon(
+                                Icons.Default.AccountCircle,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            onNavigateAccount()
+                        }
+                    )
+                }
+
                 item {
                     SettingsRow(
                         isDarkMode = isDarkMode,
@@ -486,8 +545,11 @@ private fun AppearancePage(
     val newPlayerDesign by vm.newPlayerDesign.collectAsState()
     val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
 
+    val scrollState = rememberScrollState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        scrollState = scrollState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -516,6 +578,8 @@ private fun AppearancePage(
 
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
+            // Everything under the header scrolls, so a small / low-dpi screen can reach every row.
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)) {
 
             Column(
                 modifier = Modifier
@@ -715,6 +779,7 @@ private fun AppearancePage(
             Spacer(Modifier.weight(1f))
 
 
+            }
         }
     }
 }
@@ -736,8 +801,11 @@ private fun GeneralPage(
     val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
     val audioQuality by vm.audioQuality.collectAsState()
 
+    val scrollState = rememberScrollState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        scrollState = scrollState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -766,6 +834,8 @@ private fun GeneralPage(
 
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
+            // Everything under the header scrolls, so a small / low-dpi screen can reach every row.
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)) {
 
             Row(
                 modifier = Modifier
@@ -971,6 +1041,7 @@ private fun GeneralPage(
             Spacer(Modifier.weight(1f))
 
 
+            }
         }
     }
 }
@@ -994,6 +1065,9 @@ private fun LibraryPage(
 
     var showImportWarning by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    // Restoring a backup while an account is linked would silently diverge from it, so it is
+    // only available when signed out. Export always works.
+    val signedIn = AccountManager.state.collectAsState().value !is AccountState.LoggedOut
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -1009,66 +1083,58 @@ private fun LibraryPage(
     }
 
     if (showImportWarning) {
-        Dialog(onDismissRequest = {
-            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-            showImportWarning = false
-        }) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(if (isDarkMode) Color(0xFF1E1E1E) else Color.White)
-                    .padding(20.dp)
-            ) {
-                Column {
-                    Text(
-                        text = "Import Warning",
-                        fontFamily = NothingFont,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = textColor
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever              :(  Are you sure?",
-                        fontFamily = NothingFont,
-                        fontSize = 14.sp,
-                        color = subTextColor
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = {
+        MorphAlertDialog(
+            onDismissRequest = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                showImportWarning = false
+            },
+            isDarkMode = isDarkMode,
+            title = {
+                Text(
+                    text = "Import Warning",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = textColor
+                )
+            },
+            text = {
+                Text(
+                    text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever              :(  Are you sure?",
+                    fontFamily = NothingFont,
+                    fontSize = 14.sp,
+                    color = subTextColor
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    showImportWarning = false
+                }) {
+                    Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
+                }
+            },
+            confirmButton = {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Red)
+                        .clickable {
                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                             showImportWarning = false
-                        }) {
-                            Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
+                            pendingImportUri?.let { vm.importData(context, it) }
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Red)
-                                .clickable {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    showImportWarning = false
-                                    pendingImportUri?.let { vm.importData(context, it) }
-                                }
-                                .padding(horizontal = 20.dp, vertical = 10.dp)
-                        ) {
-                            Text(
-                                "Import",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        "Import",
+                        fontFamily = NothingFont,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                 }
             }
-        }
+        )
     }
 
     val listState = rememberLazyListState()
@@ -1212,7 +1278,7 @@ private fun LibraryPage(
                     SettingsRow(
                         isDarkMode = isDarkMode,
                         title = "Import Library",
-                        subtitle = "Import a backup file of your library",
+                        subtitle = if (signedIn) "Log out to import a backup" else "Import a backup file of your library",
                         icon = {
                             Icon(
                                 Icons.Default.Download,
@@ -1222,8 +1288,10 @@ private fun LibraryPage(
                             )
                         },
                         onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            importLauncher.launch(arrayOf("application/json"))
+                            if (!signedIn) {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                importLauncher.launch(arrayOf("application/json"))
+                            }
                         }
                     )
                 }
@@ -1304,8 +1372,11 @@ private fun DevToolsPage(
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE8E8E8)
     val surfaceColor = if (isDarkMode) AmoledBlack else Color.White
 
+    val scrollState = rememberScrollState()
+
     FloatingBarHost(
         barAlignment = Alignment.BottomStart,
+        scrollState = scrollState,
         bar = {
             BackOnlyPill(
                 isDarkMode = isDarkMode,
@@ -1334,6 +1405,8 @@ private fun DevToolsPage(
 
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
+            // Everything under the header scrolls, so a small / low-dpi screen can reach every row.
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState)) {
 
             SettingsRow(
                 isDarkMode = isDarkMode,
@@ -1352,6 +1425,8 @@ private fun DevToolsPage(
                     onNavigateEngineInfo()
                 }
             )
+
+            SyncPreviewRow(vm = vm, isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled)
 
             Row(
                 modifier = Modifier
@@ -1386,6 +1461,7 @@ private fun DevToolsPage(
             Spacer(Modifier.weight(1f))
 
 
+            }
         }
     }
 }

@@ -8,14 +8,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -40,8 +40,9 @@ data class StreamErrorState(
  * - Songs YouTube says need an account share one "login required" message.
  * - Anything else shows its raw failure log so people can screenshot it for us.
  *
- * Uses a real Dialog window (like AppLinksNudgeDialog) rather than a MorphPopup so it always
- * appears above the player card, which is usually what's open when playback fails.
+ * Drawn as a morph popup. It opens after the player card (which is what's usually open when
+ * playback fails), so the overlay stack puts it on top. More failures can arrive while it is
+ * open, so it reads the latest state rather than the one it opened with.
  */
 @Composable
 fun StreamErrorDialog(
@@ -52,6 +53,31 @@ fun StreamErrorDialog(
     onDismiss: () -> Unit
 ) {
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
+    val stateNow by rememberUpdatedState(state)
+    MorphPopup(
+        onDismissRequest = onDismiss,
+        placement = MorphPlacement.Center,
+        containerColor = bgColor,
+        dismissOnOutsideTap = false
+    ) { _ ->
+        StreamErrorContent(
+            state = stateNow,
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            onDismiss = onDismiss
+        )
+    }
+}
+
+@Composable
+private fun StreamErrorContent(
+    state: StreamErrorState,
+    isDarkMode: Boolean,
+    hapticsEnabled: Boolean,
+    context: android.content.Context,
+    onDismiss: () -> Unit
+) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val logBgColor = if (isDarkMode) Color(0xFF2B2B2B) else Color(0xFFE0E0E0)
@@ -72,14 +98,9 @@ fun StreamErrorDialog(
             "implemented. You can listen to the video versions :)"
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnClickOutside = false)
-    ) {
-        Box(
+    Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(bgColor, RoundedCornerShape(16.dp))
                 .padding(20.dp)
         ) {
             Column {
@@ -149,7 +170,6 @@ fun StreamErrorDialog(
                 }
             }
         }
-    }
 }
 
 @Composable

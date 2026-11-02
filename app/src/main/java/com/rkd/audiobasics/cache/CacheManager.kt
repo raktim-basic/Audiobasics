@@ -252,6 +252,20 @@ object CacheManager {
             CacheResult.Failed(lastError, loginRequired = failure?.loginRequired == true, log = log)
         }
 
+    /**
+     * Every song ID that has anything on disk: audio, thumbnail, lyrics or a half-finished
+     * download. Used to find files whose song is no longer in the library.
+     */
+    fun listCachedSongIds(context: Context): Set<String> {
+        val ids = HashSet<String>()
+        for (dir in listOf(getCacheDir(context), getThumbDir(context), getLyricsDir(context))) {
+            dir.listFiles()?.forEach { f ->
+                if (f.isFile) ids += f.name.substringBeforeLast('.')
+            }
+        }
+        return ids
+    }
+
     fun removeCachedSong(context: Context, songId: String) {
         getCacheFile(context, songId).let { if (it.exists()) it.delete() }
         getThumbFile(context, songId).let { if (it.exists()) it.delete() }

@@ -3,6 +3,9 @@ package com.rkd.audiobasics.player
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import androidx.media3.common.Timeline
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
@@ -18,8 +21,17 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionError
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import com.rkd.audiobasics.cache.CacheManager
+import java.io.File
 import com.rkd.audiobasics.MainActivity
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.api.cipher.CipherDeobfuscator
@@ -35,9 +47,155 @@ import java.util.concurrent.ConcurrentHashMap
 
 @UnstableApi
 @AndroidEntryPoint
-class MusicService : MediaSessionService() {
+class MusicService : MediaLibraryService() {
 
-    private var mediaSession: MediaSession? = null
+    private var mediaSession: MediaLibrarySession? = null
+
+    // A library session (not just a plain session) is what lets Android's media resumption ask
+    // "what was playing last?" and show that song in the quick-settings media player after the
+    // app has been closed.
+    private val libraryCallback = object : MediaLibrarySession.Callback {
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val isRecent = params?.isRecent == true ||
+                params?.extras?.getBoolean("android.service.media.extra.RECENT") == true ||
+                params?.extras?.getBoolean("androidx.media.MediaBrowserCompat.EXTRA_RECENT") == true
+            val id = if (isRecent) RECENT_ROOT_ID else BROWSE_ROOT_ID
+            val root = MediaItem.Builder()
+                .setMediaId(id)
+                .setMediaMetadata(
+                    MediaMetadata.Builder().setIsBrowsable(true).setIsPlayable(false).build()
+                )
+                .build()
+            return Futures.immediateFuture(LibraryResult.ofItem(root, params))
+        }
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            val items = if (parentId == RECENT_ROOT_ID && page == 0) {
+                // SystemUI may reconnect after the playback service has been destroyed. In that
+                // case the restored ExoPlayer playlist can exist before it has a current timeline,
+                // so currentMediaItem is not a reliable source for the recent item. Prefer the
+                // live item, then fall back to the same persisted snapshot used for resumption.
+                val current = session.player.currentMediaItem
+                    ?.takeIf { it.mediaId.isNotBlank() }
+                val recent = current ?: lastSession?.load()?.let { saved ->
+                    saved.items.getOrNull(saved.index)
+                }
+                recent?.let { listOf(recentItemFor(it)) } ?: emptyList()
+            } else emptyList()
+            return Futures.immediateFuture(
+                LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+            )
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val current = session.player.currentMediaItem
+                ?.takeIf { it.mediaId == mediaId }
+            val saved = if (current == null) {
+                lastSession?.load()?.items?.firstOrNull { it.mediaId == mediaId }
+            } else null
+            val item = current ?: saved
+            return if (item != null) {
+                Futures.immediateFuture(LibraryResult.ofItem(recentItemFor(item), null))
+            } else {
+                Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+            }
+        }
+
+        // Items asked for by id alone (what the system sends when resuming) get their playable URI.
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>
+        ): ListenableFuture<MutableList<MediaItem>> {
+            val resolved = mediaItems.map { item ->
+                if (item.localConfiguration != null || item.mediaId.isBlank()) item
+                else item.buildUpon()
+                    .setUri(LastSessionStore.uriFor(this@MusicService, item.mediaId))
+                    .build()
+            }.toMutableList()
+            return Futures.immediateFuture(resolved)
+        }
+
+        // When the player has nothing loaded (e.g. a headset button after the queue was cleared
+        // away), bring back the saved session.
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            isForPlayback: Boolean
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            // Prefer the queue already restored into the live player. SystemUI can request
+            // resumption while the player is idle but still has its playlist loaded.
+            val player = mediaSession.player
+            if (player.mediaItemCount > 0) {
+                val items = (0 until player.mediaItemCount).map(player::getMediaItemAt)
+                val index = player.currentMediaItemIndex.coerceIn(0, items.lastIndex)
+                val positionMs = player.currentPosition.coerceAtLeast(0L)
+                return Futures.immediateFuture(
+                    MediaSession.MediaItemsWithStartPosition(items, index, positionMs)
+                )
+            }
+
+            // If the service has no live queue, recover the last persisted session.
+            val saved = lastSession?.load()
+                ?: return Futures.immediateFailedFuture(UnsupportedOperationException("Nothing to resume"))
+            return Futures.immediateFuture(
+                MediaSession.MediaItemsWithStartPosition(saved.items, saved.index, saved.positionMs)
+            )
+        }
+    }
+
+    // What the system's media player card shows for this app: the last song, with its cover
+    // embedded because the system can't read this app's private files.
+    private fun recentItemFor(current: MediaItem): MediaItem {
+        val art: ByteArray? = CacheManager.getCachedThumbPath(this, current.mediaId)?.let { path ->
+            runCatching {
+                File(path).takeIf { it.length() in 1..400_000 }?.readBytes()
+            }.getOrNull()
+        }
+        val meta = current.mediaMetadata.buildUpon()
+            .setIsPlayable(true)
+            .setIsBrowsable(false)
+            .apply { if (art != null) setArtworkData(art, MediaMetadata.PICTURE_TYPE_FRONT_COVER) }
+            .build()
+        return current.buildUpon().setMediaMetadata(meta).build()
+    }
+
+    // Keeps the last queue / song / position on disk so a cleared app comes back where it was.
+    private var lastSession: LastSessionStore? = null
+    private val saveHandler = Handler(Looper.getMainLooper())
+    private val saveNowTask = Runnable { saveSession() }
+    private val periodicSaveTask = object : Runnable {
+        override fun run() {
+            saveSession()
+            saveHandler.postDelayed(this, 10_000)
+        }
+    }
+
+    private fun saveSession() {
+        val player = mediaSession?.player ?: return
+        lastSession?.save(player)
+    }
+
+    // Queue edits and seeks come in bursts; write once things settle.
+    private fun saveSessionSoon() {
+        saveHandler.removeCallbacks(saveNowTask)
+        saveHandler.postDelayed(saveNowTask, 1_000)
+    }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Cache: videoId -> Pair(streamUrl, expiryTimeMs)
@@ -57,6 +215,9 @@ class MusicService : MediaSessionService() {
         // wait ends early (and retries once) as soon as the lookup itself finishes without a
         // URL, instead of sitting out a fixed timer.
         private const val RESOLVE_WAIT_MS = 30_000
+
+        private const val BROWSE_ROOT_ID = "audiobasics_root"
+        private const val RECENT_ROOT_ID = "audiobasics_recent"
     }
 
     // One lookup per song at a time — the player, onMediaItemTransition and the resolver all
@@ -181,11 +342,48 @@ class MusicService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
+        // Bring back the previous queue, song and position, paused. Nothing is prepared, so no
+        // network is touched until the user presses play (the session prepares on demand).
+        val store = LastSessionStore(this)
+        lastSession = store
+        store.load()?.let { restored ->
+            player.setMediaItems(restored.items, restored.index, restored.positionMs)
+            Timber.d("LastSession: restored ${restored.items.size} songs at index ${restored.index}")
+        }
+
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                saveHandler.removeCallbacks(periodicSaveTask)
+                if (isPlaying) {
+                    // Keep the saved position fresh while playing, in case the system ends the service.
+                    saveHandler.postDelayed(periodicSaveTask, 10_000)
+                } else {
+                    saveHandler.removeCallbacks(saveNowTask)
+                    saveSession()
+                }
+            }
+
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) = saveSessionSoon()
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) saveSessionSoon()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) saveSession()
+            }
+        })
+
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(
                 mediaItem: androidx.media3.common.MediaItem?,
                 reason: Int
             ) {
+                saveSessionSoon()
                 val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
                 val videoId = extractVideoId(uri) ?: return
                 preResolveUrl(videoId, force = false)
@@ -207,7 +405,7 @@ class MusicService : MediaSessionService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        mediaSession = MediaSession.Builder(this, player)
+        mediaSession = MediaLibrarySession.Builder(this, player, libraryCallback)
             .setSessionActivity(pendingIntent)
             .build()
     }
@@ -277,9 +475,20 @@ class MusicService : MediaSessionService() {
         return null
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaSession
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Whatever happens next (the service may stop if nothing is playing), keep the latest state.
+        saveHandler.removeCallbacks(saveNowTask)
+        saveSession()
+        super.onTaskRemoved(rootIntent)
+    }
 
     override fun onDestroy() {
+        saveHandler.removeCallbacks(periodicSaveTask)
+        saveHandler.removeCallbacks(saveNowTask)
+        saveSession()
+        lastSession?.flush()
         mediaSession?.run {
             player.release()
             release()

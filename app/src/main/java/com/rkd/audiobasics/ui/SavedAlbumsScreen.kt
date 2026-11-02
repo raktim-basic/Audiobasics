@@ -63,6 +63,7 @@ fun SavedAlbumsScreen(
     onAlbumClick: (Album) -> Unit
 ) {
     val context = LocalContext.current
+    val libraryRefreshing by LibraryRefresh.refreshing.collectAsState()
     val savedAlbums by vm.savedAlbums.collectAsState()
     val savedAlbumSongs by vm.savedAlbumSongs.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -75,6 +76,9 @@ fun SavedAlbumsScreen(
     val focusRequester = remember { FocusRequester() }
 
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
+
+    // The album waiting for a Yes/No before it is removed from the saved list.
+    var removeConfirm by remember { mutableStateOf<Album?>(null) }
 
     // Reordering is only available on the full saved-album list, not while searching.
     var reorderTemporarilyDisabled by remember { mutableStateOf(false) }
@@ -180,151 +184,158 @@ fun SavedAlbumsScreen(
                 .fillMaxSize()
                 .background(bodyColor)
         ) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = listState,
-                contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)
+            RefreshBox(
+                isRefreshing = libraryRefreshing,
+                onRefresh = { LibraryRefresh.pull(vm, context) },
+                isDarkMode = isDarkMode,
+                modifier = Modifier.weight(1f).fillMaxWidth()
             ) {
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(bgColor)
-                            .padding(bottom = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Spacer(Modifier.height(32.dp))
-                        Icon(
-                            imageVector = Icons.Default.Bookmark,
-                            contentDescription = "Saved Albums",
-                            modifier = Modifier.size(100.dp),
-                            tint = textColor
-                        )
-                        Spacer(Modifier.height(24.dp))
-                    }
-                }
-
-                stickyHeader {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { }
-                            .background(bgColor)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Saved Albums (${savedAlbums.size})",
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = textColor
-                            )
-                        }
-                        DashedDivider(
-                            modifier = Modifier.fillMaxWidth(),
-                            isDarkMode = isDarkMode,
-                            scrollProgress = scrollProgress.value
-                        )
-                    }
-                }
-
-                if (filteredAlbums.isEmpty()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)
+                ) {
                     item {
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 80.dp),
-                            contentAlignment = Alignment.Center
+                                .background(bgColor)
+                                .padding(bottom = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                text = if (searchQuery.isBlank())
-                                    "No saved albums yet"
-                                else "No albums found",
-                                fontFamily = NothingFont,
-                                color = Color.Gray,
-                                textAlign = TextAlign.Center
+                            Spacer(Modifier.height(32.dp))
+                            Icon(
+                                imageVector = Icons.Default.Bookmark,
+                                contentDescription = "Saved Albums",
+                                modifier = Modifier.size(100.dp),
+                                tint = textColor
+                            )
+                            Spacer(Modifier.height(24.dp))
+                        }
+                    }
+
+                    stickyHeader {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() }
+                                ) { }
+                                .background(bgColor)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Saved Albums (${savedAlbums.size})",
+                                    fontFamily = NothingFont,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = textColor
+                                )
+                            }
+                            DashedDivider(
+                                modifier = Modifier.fillMaxWidth(),
+                                isDarkMode = isDarkMode,
+                                scrollProgress = scrollProgress.value
                             )
                         }
                     }
-                } else {
-                    val displayedAlbums = if (reorderEnabled) liveAlbums else filteredAlbums
-                    itemsIndexed(
-                        items = displayedAlbums,
-                        key = { _, album -> album.id }
-                    ) { index, album ->
-                        val armed = reorderEnabled && draggingIndex == index
-                        if (reorderEnabled) {
-                            ReorderableItem(
-                                state = reorderableState,
-                                key = album.id
-                            ) { isActivelyDragging ->
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
-                                        .graphicsLayer {
-                                            val scale = if (isActivelyDragging) 1.02f else 1f
-                                            scaleX = scale
-                                            scaleY = scale
-                                            alpha = if (isActivelyDragging) 0.9f else 1f
-                                        }
-                                        .then(
-                                            if (armed) {
-                                                Modifier.longPressDraggableHandle(
-                                                    onDragStarted = {
-                                                        HapticUtils.performStrongHaptic(context)
-                                                    }
-                                                )
-                                            } else Modifier
-                                        )
-                                        .background(
-                                            when {
-                                                isActivelyDragging -> if (isDarkMode)
-                                                    Color.White.copy(alpha = 0.1f)
-                                                else Color.Black.copy(alpha = 0.06f)
-                                                armed -> if (isDarkMode)
-                                                    Color.White.copy(alpha = 0.06f)
-                                                else Color.Black.copy(alpha = 0.05f)
-                                                else -> Color.Transparent
-                                            }
-                                        )
-                                ) {
-                                    AlbumItem(
-                                        album = album,
-                                        isDarkMode = isDarkMode,
-                                        hapticsEnabled = hapticsEnabled,
-                                        context = context,
-                                        isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
-                                        onClick = {
-                                            if (draggingIndex == null) onAlbumClick(album)
-                                        },
-                                        isDragging = armed,
-                                        onReorder = {
-                                            draggingIndex = if (armed) null else index
-                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                        },
-                                        onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
-                                    )
-                                }
+
+                    if (filteredAlbums.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 80.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (searchQuery.isBlank())
+                                        "No saved albums yet"
+                                    else "No albums found",
+                                    fontFamily = NothingFont,
+                                    color = Color.Gray,
+                                    textAlign = TextAlign.Center
+                                )
                             }
-                        } else {
-                            AlbumItem(
-                                album = album,
-                                isDarkMode = isDarkMode,
-                                hapticsEnabled = hapticsEnabled,
-                                context = context,
-                                isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
-                                onClick = { onAlbumClick(album) },
-                                onRemoveFromSave = { draggingIndex = null; vm.unsaveAlbum(album) }
-                            )
+                        }
+                    } else {
+                        val displayedAlbums = if (reorderEnabled) liveAlbums else filteredAlbums
+                        itemsIndexed(
+                            items = displayedAlbums,
+                            key = { _, album -> album.id }
+                        ) { index, album ->
+                            val armed = reorderEnabled && draggingIndex == index
+                            if (reorderEnabled) {
+                                ReorderableItem(
+                                    state = reorderableState,
+                                    key = album.id
+                                ) { isActivelyDragging ->
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
+                                            .graphicsLayer {
+                                                val scale = if (isActivelyDragging) 1.02f else 1f
+                                                scaleX = scale
+                                                scaleY = scale
+                                                alpha = if (isActivelyDragging) 0.9f else 1f
+                                            }
+                                            .then(
+                                                if (armed) {
+                                                    Modifier.longPressDraggableHandle(
+                                                        onDragStarted = {
+                                                            HapticUtils.performStrongHaptic(context)
+                                                        }
+                                                    )
+                                                } else Modifier
+                                            )
+                                            .background(
+                                                when {
+                                                    isActivelyDragging -> if (isDarkMode)
+                                                        Color.White.copy(alpha = 0.1f)
+                                                    else Color.Black.copy(alpha = 0.06f)
+                                                    armed -> if (isDarkMode)
+                                                        Color.White.copy(alpha = 0.06f)
+                                                    else Color.Black.copy(alpha = 0.05f)
+                                                    else -> Color.Transparent
+                                                }
+                                            )
+                                    ) {
+                                        AlbumItem(
+                                            album = album,
+                                            isDarkMode = isDarkMode,
+                                            hapticsEnabled = hapticsEnabled,
+                                            context = context,
+                                            isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
+                                            onClick = {
+                                                if (draggingIndex == null) onAlbumClick(album)
+                                            },
+                                            isDragging = armed,
+                                            onReorder = {
+                                                draggingIndex = if (armed) null else index
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            },
+                                            onRemoveFromSave = { draggingIndex = null; removeConfirm = album }
+                                        )
+                                    }
+                                }
+                            } else {
+                                AlbumItem(
+                                    album = album,
+                                    isDarkMode = isDarkMode,
+                                    hapticsEnabled = hapticsEnabled,
+                                    context = context,
+                                    isExplicit = album.isExplicit || savedAlbumSongs[album.id]?.any { it.isExplicit } == true,
+                                    onClick = { onAlbumClick(album) },
+                                    onRemoveFromSave = { draggingIndex = null; removeConfirm = album }
+                                )
+                            }
                         }
                     }
                 }
@@ -332,6 +343,19 @@ fun SavedAlbumsScreen(
 
 
         }
+    }
+
+    // ── Remove confirmation ────────────────────────────────────────────────
+    // Same design as the song removal confirmations: Yes spins until the account (and then
+    // this device) has actually changed; outside tap and back do nothing while it spins.
+    removeConfirm?.let { album ->
+        MorphConfirmDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            message = "Remove \"${album.title}\" from \"Saved Albums\"?",
+            onDismiss = { removeConfirm = null },
+            onConfirm = { vm.unsaveAlbumAwait(album) }
+        )
     }
 }
 

@@ -37,17 +37,21 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
+import com.rkd.audiobasics.ui.LocalHapticsEnabled
 import com.rkd.audiobasics.ui.LocalMorphOverlay
 import com.rkd.audiobasics.ui.MonochromeExcept
+import com.rkd.audiobasics.ui.MorphAlertDialog
 import com.rkd.audiobasics.ui.MorphOverlayHost
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.MorphOverlayState
 import com.rkd.audiobasics.ui.MorphPlacement
 import com.rkd.audiobasics.ui.MorphPopup
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -96,6 +100,9 @@ import com.rkd.audiobasics.ui.EngineInfoScreen
 import com.rkd.audiobasics.ui.HomeScreen
 import com.rkd.audiobasics.ui.LibraryScreen
 import com.rkd.audiobasics.ui.LikedScreen
+import com.rkd.audiobasics.api.account.LibraryUpload
+import com.rkd.audiobasics.ui.LibraryRefresh
+import com.rkd.audiobasics.ui.LibraryRefreshOverlay
 import com.rkd.audiobasics.ui.MusicViewModel
 import com.rkd.audiobasics.ui.PlayerBar
 import com.rkd.audiobasics.ui.PlayerDialog
@@ -111,6 +118,7 @@ import com.rkd.audiobasics.ui.SmartInputsDialog
 import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.ui.UpdaterScreen
 import com.rkd.audiobasics.ui.fetchLatestAppVersion
+import com.rkd.audiobasics.ui.resetAllCustomPlaylistScroll
 import com.rkd.audiobasics.ui.resetCustomPlaylistScroll
 import com.rkd.audiobasics.ui.resetLikedScreenScroll
 import com.rkd.audiobasics.ui.theme.AmoledBlack
@@ -191,6 +199,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // The saved list positions live in memory, which survives the app being cleared from
+        // recents while the player service keeps the process alive. A fresh start (not a
+        // rotation) must open Liked and playlists at the top.
+        if (savedInstanceState == null) {
+            resetLikedScreenScroll()
+            resetAllCustomPlaylistScroll()
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     this, Manifest.permission.POST_NOTIFICATIONS
@@ -227,6 +243,10 @@ class MainActivity : ComponentActivity() {
                 // One-time nudge toward manually enabling Audiobasics Link handling in
                 // Settings, in case automatic verification didn't take effect.
                 vm.checkAppLinksNudge(this@MainActivity)
+                // Pull the account library once per app start (only if an account is linked);
+                // shows the same indicator as pull-to-refresh.
+                LibraryRefresh.refreshOnLaunch(vm, this@MainActivity)
+                LibraryUpload.launchNotice(this@MainActivity)
             }
 
             val lifecycleOwner = LocalLifecycleOwner.current
@@ -456,13 +476,17 @@ fun AudiobasicsApp(
     CompositionLocalProvider(LocalMorphOverlay provides morphOverlay) {
 
     if (showStorageLow) {
-        AlertDialog(
+        val lowTextColor = if (isDarkMode) Color.White else Color.Black
+        MorphAlertDialog(
             onDismissRequest = { vm.dismissStorageLow() },
-            title = { Text("Storage Low", fontFamily = NothingFont) },
-            text = { Text("Cannot download song — less than 1GB storage available.", fontFamily = NothingFont) },
+            isDarkMode = isDarkMode,
+            title = {
+                Text("Storage Low", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = lowTextColor)
+            },
+            text = { Text("Cannot download song — less than 1GB storage available.", fontFamily = NothingFont, color = lowTextColor) },
             confirmButton = {
                 TextButton(onClick = { vm.dismissStorageLow() }) {
-                    Text("OK", fontFamily = NothingFont, color = Color.Red)
+                    Text("OK", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
                 }
             }
         )
@@ -564,10 +588,7 @@ fun AudiobasicsApp(
             isDarkMode = isDarkMode,
             hapticsEnabled = hapticsEnabled,
             onDismiss = { showCreatePlaylistFromSheet = false },
-            onCreate = { name, emoji ->
-                vm.createPlaylist(name, emoji)
-                showCreatePlaylistFromSheet = false
-            }
+            onCreate = { name, emoji -> vm.createPlaylistAwait(name, emoji) }
         )
     }
 
@@ -637,6 +658,7 @@ fun AudiobasicsApp(
             .imePadding()
     ) {
         Box(modifier = Modifier.weight(1f)) {
+            CompositionLocalProvider(LocalHapticsEnabled provides vm.hapticsEnabled.collectAsState().value) {
             NavDisplay(
                 backStack = backStack,
                 modifier = Modifier.fillMaxSize(),
@@ -666,6 +688,7 @@ fun AudiobasicsApp(
                                 onNavigateSearch = { push(SearchKey) },
                                 onNavigateQueue = { push(QueueKey) },
                                 onNavigateSettings = { push(SettingsKey()) },
+                                onNavigateLogin = { push(SettingsKey(openAccount = true)) },
                                 onNavigateLiked = { push(LikedKey) },
                                 onNavigateAlbums = { push(AlbumsKey) },
                                 onNavigateLibrary = { push(LibraryKey) }
@@ -696,6 +719,8 @@ fun AudiobasicsApp(
                                 isDarkMode = isDarkModeNow,
                                 openCache = key.openCache,
                                 openLibrary = key.openLibrary,
+                                openLogin = key.openLogin,
+                                openAccount = key.openAccount,
                                 onBack = { navigateBack() },
                                 onNavigateUpdater = { push(UpdaterKey) }
                             )
@@ -808,6 +833,16 @@ fun AudiobasicsApp(
                         else -> error("Unknown nav key: $key")
                     }
                 }
+            )
+            }
+            // Launch refresh on a screen that has no pull gesture of its own (Home, Queue, ...).
+            val libraryRefreshing by LibraryRefresh.refreshing.collectAsState()
+            val screenHasLibraryPull = topKey is LikedKey || topKey is AlbumsKey ||
+                topKey is LibraryKey || topKey is CustomPlaylistKey
+            LibraryRefreshOverlay(
+                visible = libraryRefreshing && !screenHasLibraryPull,
+                isDarkMode = isDarkMode,
+                modifier = Modifier.align(Alignment.TopCenter)
             )
         }
 

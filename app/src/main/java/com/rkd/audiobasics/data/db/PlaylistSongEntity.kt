@@ -20,5 +20,8 @@ data class PlaylistSongEntity(
     // the ...Ids pair). Added in DB v4 so artist-tap can use real YTM channel IDs for
     // custom-playlist songs instead of falling back to a name search.
     val artistNames: String = "[]",
-    val artistIds: String = "[]"
+    val artistIds: String = "[]",
+    // The cloud's per-entry ID for this song in a linked playlist (needed to edit or remove it
+    // there). Null for local-only playlists. Added in DB v5.
+    val setVideoId: String? = null
 )

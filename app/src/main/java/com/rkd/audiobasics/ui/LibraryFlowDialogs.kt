@@ -1,0 +1,290 @@
+package com.rkd.audiobasics.ui
+
+import android.app.Application
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.api.account.CloudSnapshot
+import com.rkd.audiobasics.api.account.LibraryCounts
+import com.rkd.audiobasics.api.account.CloudPlaylist
+import com.rkd.audiobasics.api.account.LibraryDiff
+import com.rkd.audiobasics.api.account.LibraryFlow
+import com.rkd.audiobasics.api.account.LibraryFlowState
+import com.rkd.audiobasics.api.account.LocalLibraryForUpload
+import com.rkd.audiobasics.api.account.LocalLibraryStore
+import com.rkd.audiobasics.api.account.LocalPlaylistForUpload
+import com.rkd.audiobasics.api.account.PlaylistAccess
+import com.rkd.audiobasics.api.account.PlaylistNameCodec
+import com.rkd.audiobasics.data.Song
+import com.rkd.audiobasics.data.db.AppDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.rkd.audiobasics.ui.theme.NothingFont
+
+/** Connects the library flow to this device's library, which lives in the ViewModel. */
+internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStore {
+    override suspend fun counts(): LibraryCounts = vm.libraryCounts()
+
+    override suspend fun albumIds(): Set<String> = withContext(Dispatchers.IO) {
+        vm.savedAlbums.value.map { it.id }.toSet()
+    }
+
+    override suspend fun songIds(): Set<String> = withContext(Dispatchers.IO) {
+        buildSet {
+            vm.likedSongs.value.forEach { add(it.id) }
+            addAll(AppDatabase.getInstance(vm.getApplication<Application>()).playlistDao().getAllPlaylistSongIds())
+            vm.savedAlbumSongs.value.values.forEach { songs -> songs.forEach { add(it.id) } }
+        }
+    }
+
+    override suspend fun replaceWithCloud(snapshot: CloudSnapshot, wipeLocalOnly: Boolean) {
+        vm.replaceLibraryWithCloud(snapshot, wipeLocalOnly)
+        // Which of these playlists this account can't edit (for the menus); only after a successful apply.
+        PlaylistAccess.updateFrom(snapshot)
+    }
+
+    override suspend fun clearAll() {
+        vm.clearLocalLibrary()
+        PlaylistAccess.clear()
+    }
+
+    override suspend fun adoptUnlinkedPlaylists(cloud: List<CloudPlaylist>): Int = withContext(Dispatchers.IO) {
+        val dao = AppDatabase.getInstance(vm.getApplication<Application>()).playlistDao()
+        val all = dao.getPlaylists()
+        val unlinked = all.filter { it.cloudId == null }
+        if (unlinked.isEmpty()) return@withContext 0
+        val linkedCloudIds = all.mapNotNull { it.cloudId }.toSet()
+        val localsByTitle = unlinked.groupBy { PlaylistNameCodec.compose(it.emoji, it.name) }
+        val cloudByTitle = cloud.filter { it.owned }.groupBy { it.title }
+        var changed = 0
+        for ((title, locals) in localsByTitle) {
+            val twins = cloudByTitle[title] ?: continue
+            // Only a clear one-to-one match; anything ambiguous is left alone.
+            if (locals.size != 1 || twins.size != 1) continue
+            val local = locals[0]
+            val twin = twins[0]
+            if (twin.id in linkedCloudIds) {
+                // The account copy is already on this device (a refresh imported it); this one is
+                // the leftover duplicate from the upload.
+                dao.clearPlaylist(local.id)
+                dao.deletePlaylist(local.id)
+            } else {
+                dao.setPlaylistCloudId(local.id, twin.id)
+            }
+            changed++
+        }
+        changed
+    }
+
+    override suspend fun diffAgainst(snapshot: CloudSnapshot): LibraryDiff = withContext(Dispatchers.IO) {
+        val dao = AppDatabase.getInstance(vm.getApplication<Application>()).playlistDao()
+        val details = ArrayList<String>()
+
+        val localLiked = vm.likedSongs.value.map { it.id }.toSet()
+        val cloudLiked = snapshot.liked.map { it.song.id }.toSet()
+        val likedChanged = (localLiked - cloudLiked).size + (cloudLiked - localLiked).size
+
+        val localAlbums = vm.savedAlbums.value.map { it.id }.toSet()
+        val cloudAlbums = snapshot.albums.map { it.id }.toSet()
+        val albumsChanged = (localAlbums - cloudAlbums).size + (cloudAlbums - localAlbums).size
+
+        val locals = dao.getPlaylists()
+        val byCloudId = locals.filter { it.cloudId != null }.associateBy { it.cloudId!! }
+        var changed = 0
+        var added = 0
+        for (c in snapshot.playlists) {
+            val l = byCloudId[c.playlist.id]
+            if (l == null) {
+                added++
+                details += "new on this device: ${c.playlist.title} (${c.songs.size} songs)"
+                continue
+            }
+            val localIds = dao.getPlaylistSongs(l.id).map { it.songId }
+            val cloudIds = c.songs.map { it.song.id }
+            if (localIds != cloudIds) {
+                changed++
+                val orderOnly = localIds.toSet() == cloudIds.toSet() && localIds.size == cloudIds.size
+                details += "${c.playlist.title}: ${localIds.size} here, ${cloudIds.size} in the account" +
+                    if (orderOnly) " (same songs, different order)" else ""
+            }
+        }
+        val cloudPlaylistIds = snapshot.playlists.map { it.playlist.id }.toSet()
+        val removed = byCloudId.keys.count { it !in cloudPlaylistIds }
+        byCloudId.filterKeys { it !in cloudPlaylistIds }.values.forEach { details += "gone from the account: ${it.name}" }
+
+        LibraryDiff(likedChanged, albumsChanged, changed, added, removed, details)
+    }
+
+    override suspend fun readForUpload(): LocalLibraryForUpload = withContext(Dispatchers.IO) {
+        val dao = AppDatabase.getInstance(vm.getApplication<Application>()).playlistDao()
+        // Only playlists that aren't linked to an account (all of them, on an account's first upload).
+        val playlists = dao.getPlaylists().filter { it.cloudId == null }.map { p ->
+            LocalPlaylistForUpload(
+                localId = p.id,
+                name = p.name,
+                emoji = p.emoji,
+                songs = dao.getPlaylistSongs(p.id).map {
+                    Song(id = it.songId, title = it.title, artist = it.artist, thumbnail = it.thumbnail)
+                }
+            )
+        }
+        LocalLibraryForUpload(vm.likedSongs.value, vm.savedAlbums.value, playlists)
+    }
+
+    override suspend fun detachFromCloud() {
+        vm.detachLocalLibraryFromCloud()
+        PlaylistAccess.clear()
+    }
+}
+
+private fun LibraryCounts.describe(): String =
+    "$liked liked ${if (liked == 1) "song" else "songs"}, " +
+        "$albums ${if (albums == 1) "album" else "albums"} and " +
+        "$playlists ${if (playlists == 1) "playlist" else "playlists"}"
+
+/**
+ * Shows whichever question or message the library flow currently has for the user. The
+ * questions can't be dismissed by tapping outside: each one needs an answer, and every
+ * answer is explicit about what it does.
+ */
+@Composable
+internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
+    val state by LibraryFlow.state.collectAsState()
+    val store = remember(vm) { VmLibraryStore(vm) }
+
+    val textColor = if (isDarkMode) Color.White else Color.Black
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
+    val container = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
+    val danger = Color(0xFFE57373)
+
+    @Composable
+    fun Title(text: String) {
+        Text(text, fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
+    }
+
+    @Composable
+    fun Body(text: String) {
+        Text(text, fontFamily = NothingFont, fontSize = 14.sp, color = subTextColor)
+    }
+
+    when (val s = state) {
+        is LibraryFlowState.Idle -> Unit
+
+        is LibraryFlowState.Working -> MorphAlertDialog(
+            onDismissRequest = {},
+            isDarkMode = isDarkMode,
+            dismissOnOutsideTap = false,
+            isLocked = { true },
+            title = { Title("Please wait") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = textColor
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Body(s.message)
+                }
+            }
+        )
+
+        is LibraryFlowState.ConfirmOverride -> MorphAlertDialog(
+            onDismissRequest = {},
+            isDarkMode = isDarkMode,
+            dismissOnOutsideTap = false,
+            isLocked = { true },
+            title = { Title("Replace this device's library?") },
+            text = {
+                Column {
+                    Body("This account already has a library: ${s.cloud.describe()}.")
+                    Spacer(Modifier.height(10.dp))
+                    Body("Signing in replaces what is on this device (${s.local.describe()}) with the account's library.")
+                    Spacer(Modifier.height(10.dp))
+                    Body("To combine the two instead, sign in with a new, empty account. To keep a copy first, use Export Library in Settings.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { LibraryFlow.replaceLocalWithCloud(store, expectAccountEmpty = false) }) {
+                    Text("Replace library", fontFamily = NothingFont, color = danger)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { LibraryFlow.declineAndLogout() }) {
+                    Text("Log out instead", fontFamily = NothingFont, color = textColor)
+                }
+            }
+        )
+
+        is LibraryFlowState.ChooseForEmptyAccount -> MorphAlertDialog(
+            onDismissRequest = {},
+            isDarkMode = isDarkMode,
+            dismissOnOutsideTap = false,
+            isLocked = { true },
+            title = { Title("This account is empty") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Body("This device has ${s.local.describe()}. What should happen to them?")
+                    Body("Upload library to cloud and sync: copies them into the account slowly, so it isn't flagged for bulk activity. It can take a while, can be paused, and keeps going where it left off. Songs YouTube refuses are listed at the end.")
+                    Body("Empty local library: removes them from this device and starts from the empty account.")
+                }
+            },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    if (LibraryFlow.UPLOAD_AVAILABLE) {
+                        TextButton(onClick = { LibraryFlow.beginUpload(store) }) {
+                            Text("Upload library to cloud and sync", fontFamily = NothingFont, color = textColor)
+                        }
+                    }
+                    TextButton(onClick = { LibraryFlow.replaceLocalWithCloud(store, expectAccountEmpty = true) }) {
+                        Text("Empty local library", fontFamily = NothingFont, color = danger)
+                    }
+                    TextButton(onClick = { LibraryFlow.declineAndLogout() }) {
+                        Text("Log out instead", fontFamily = NothingFont, color = textColor)
+                    }
+                }
+            }
+        )
+
+        is LibraryFlowState.Failed -> MorphAlertDialog(
+            onDismissRequest = { LibraryFlow.dismiss() },
+            isDarkMode = isDarkMode,
+            title = { Title("Nothing was changed") },
+            text = { Body(s.message) },
+            confirmButton = {
+                TextButton(onClick = { LibraryFlow.dismiss() }) {
+                    Text("Close", fontFamily = NothingFont, color = textColor)
+                }
+            }
+        )
+
+        is LibraryFlowState.Done -> MorphAlertDialog(
+            onDismissRequest = { LibraryFlow.dismiss() },
+            isDarkMode = isDarkMode,
+            title = { Title("Done") },
+            text = { Body(s.message) },
+            confirmButton = {
+                TextButton(onClick = { LibraryFlow.dismiss() }) {
+                    Text("Close", fontFamily = NothingFont, color = textColor)
+                }
+            }
+        )
+    }
+}

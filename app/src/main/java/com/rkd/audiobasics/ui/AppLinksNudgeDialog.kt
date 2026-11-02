@@ -11,8 +11,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -33,17 +31,17 @@ fun AppLinksNudgeDialog(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
 
-    Dialog(
+    // Must be answered: a tap outside AND the back button are both ignored (isLocked).
+    MorphPopup(
         onDismissRequest = {},
-        properties = DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false
-        )
-    ) {
+        placement = MorphPlacement.Center,
+        containerColor = bgColor,
+        dismissOnOutsideTap = false,
+        isLocked = { true }
+    ) { _ ->
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(bgColor, RoundedCornerShape(16.dp))
                 .padding(20.dp)
         ) {
             Column {

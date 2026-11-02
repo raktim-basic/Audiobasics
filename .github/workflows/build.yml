@@ -2,7 +2,6 @@ name: Build YT Lite APK
 
 on:
   push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:

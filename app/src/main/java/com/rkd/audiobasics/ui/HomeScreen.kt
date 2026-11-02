@@ -24,11 +24,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.api.account.AccountManager
+import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 import com.rkd.audiobasics.utils.MigrationMessageProvider
+import com.rkd.audiobasics.utils.NightOwl
 
 @Composable
 fun rememberScrollProgress(listState: LazyListState, totalItems: Int): Float {
@@ -45,6 +50,7 @@ fun HomeScreen(
     onNavigateSearch: () -> Unit,
     onNavigateQueue: () -> Unit,
     onNavigateSettings: () -> Unit,
+    onNavigateLogin: () -> Unit,
     onNavigateLiked: () -> Unit,
     onNavigateAlbums: () -> Unit,
     onNavigateLibrary: () -> Unit
@@ -54,6 +60,34 @@ fun HomeScreen(
     val updateAvailable by vm.updateAvailable.collectAsState()
     val homeHeaderReady by vm.homeHeaderReady.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+    val accountState by AccountManager.state.collectAsState()
+
+    // The built-in header is a time-of-day greeting. Whatever is set remotely
+    // (ab-configs/header.json) still takes over from it, line by line.
+    val knownProfile = (accountState as? AccountState.LoggedIn)?.profile
+        ?: (accountState as? AccountState.SessionExpired)?.profile
+    // First name only; falls back to the start of the email if the account has no name.
+    // Null when nobody is signed in.
+    val firstName = knownProfile?.let { p ->
+        p.name.trim().substringBefore(' ')
+            .ifBlank { p.email?.substringBefore('@').orEmpty() }
+            .ifBlank { "friend" }
+    }
+    val slot = NightOwl.slot()
+    val (greetingLine1, greetingLine2) = when (slot) {
+        NightOwl.Slot.LATE_NIGHT ->
+            if (NightOwl.monstersNearby) "There aren't any" to "Monsters nearby.."
+            else "Up late...." to "${firstName ?: "Musichead"}?"
+        NightOwl.Slot.EARLY_MORNING -> "So early!!" to "${firstName ?: "Early bird"}.."
+        else -> {
+            val hello = when (slot) {
+                NightOwl.Slot.MORNING -> "Good morning"
+                NightOwl.Slot.AFTERNOON -> "Good afternoon"
+                else -> "Good evening"
+            }
+            if (firstName == null) "$hello, uhh..." to "What's your name?" else hello to firstName
+        }
+    }
 
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val bodyColor = if (isDarkMode) AmoledBlack else bgColor
@@ -112,14 +146,14 @@ fun HomeScreen(
                     // rather than only showing fresh text on the next screen visit.
                     @Suppress("UNUSED_EXPRESSION") homeHeaderReady
                     Text(
-                        text = MigrationMessageProvider.homeHeaderLine1(),
+                        text = MigrationMessageProvider.remoteHomeHeaderLine1() ?: greetingLine1,
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
                         color = textColor
                     )
                     Text(
-                        text = MigrationMessageProvider.homeHeaderLine2(),
+                        text = MigrationMessageProvider.remoteHomeHeaderLine2() ?: greetingLine2,
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
@@ -130,6 +164,40 @@ fun HomeScreen(
 
             StaticDashedDivider(modifier = Modifier.fillMaxWidth(), isDarkMode = isDarkMode)
           }
+
+            // ── Sign-in link (signed out, or session expired) ──────────────────
+            // Opens the Account page (where signing in lives). While an account is linked and working,
+            // nothing is shown here; the account lives in Settings > Account.
+            val needsSignIn = accountState is AccountState.LoggedOut ||
+                accountState is AccountState.SessionExpired
+            if (needsSignIn) {
+                val linkColor = if (isDarkMode) Color(0xFF4A9EFF) else Color(0xFF1A73E8)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 24.dp, end = 24.dp, top = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = if (accountState is AccountState.SessionExpired) {
+                            "Session expired. Sign in again"
+                        } else {
+                            "Sign in with your YouTube account"
+                        },
+                        fontSize = 16.sp,
+                        color = linkColor,
+                        textDecoration = TextDecoration.Underline,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                onNavigateLogin()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
 
             Spacer(Modifier.weight(1f))
 

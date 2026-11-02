@@ -119,7 +119,13 @@ object MigrationMessageProvider {
             // waiting on the network. Only overwrite disk cache when the fetch actually
             // returned a header value — a header.json that's missing line1/line2 (but
             // still parses) shouldn't erase a previously cached header.
-            if (remote.homeHeaderLine1 != null || remote.homeHeaderLine2 != null) {
+            //
+            // A line that is present in header.json but blank ("line1": "") is an explicit
+            // clear: the cached copy is dropped so the app's own greeting shows again. A line
+            // that is simply missing keeps the cache, so an editing mistake never wipes it.
+            val clearLine1 = json.has("line1") && remote.homeHeaderLine1 == null
+            val clearLine2 = json.has("line2") && remote.homeHeaderLine2 == null
+            if (remote.homeHeaderLine1 != null || remote.homeHeaderLine2 != null || clearLine1 || clearLine2) {
                 val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 prefs.edit().apply {
                     remote.homeHeaderLine1?.let {
@@ -129,6 +135,14 @@ object MigrationMessageProvider {
                     remote.homeHeaderLine2?.let {
                         putString(KEY_HOME_HEADER_LINE2, it)
                         diskCachedHeaderLine2 = it
+                    }
+                    if (clearLine1) {
+                        remove(KEY_HOME_HEADER_LINE1)
+                        diskCachedHeaderLine1 = null
+                    }
+                    if (clearLine2) {
+                        remove(KEY_HOME_HEADER_LINE2)
+                        diskCachedHeaderLine2 = null
                     }
                 }.apply()
             }
@@ -148,6 +162,13 @@ object MigrationMessageProvider {
     fun sloganFooter(): String = cachedRemote?.sloganFooter ?: SLOGAN_FOOTER_DEFAULT
     fun updaterWarning(): String = cachedRemote?.updaterWarning ?: UPDATER_WARNING_DEFAULT
     fun popupWarning(): String = cachedRemote?.popupWarning ?: POPUP_WARNING_DEFAULT
+
+    /**
+     * The remotely set header lines, or null when none is set. The Home screen shows its own
+     * time-of-day greeting for any line that is null.
+     */
+    fun remoteHomeHeaderLine1(): String? = cachedRemote?.homeHeaderLine1 ?: diskCachedHeaderLine1
+    fun remoteHomeHeaderLine2(): String? = cachedRemote?.homeHeaderLine2 ?: diskCachedHeaderLine2
 
     fun homeHeaderLine1(): String =
         cachedRemote?.homeHeaderLine1 ?: diskCachedHeaderLine1 ?: HOME_HEADER_LINE1_DEFAULT

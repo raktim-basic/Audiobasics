@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
@@ -58,6 +59,8 @@ fun LibraryScreen(
     onNavigateQueue: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val libraryRefreshing by LibraryRefresh.refreshing.collectAsState()
+    val access by PlaylistAccess.flags.collectAsState()
     val isDarkMode by vm.isDarkMode.collectAsState()
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val likedSongs by vm.likedSongs.collectAsState()
@@ -187,198 +190,207 @@ fun LibraryScreen(
             modifier = Modifier.fillMaxSize().background(bodyColor)
         ) {
             // ── List ───────────────────────────────────────────────────────────
-            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), state = listState, contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)) {
-                stickyHeader {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { }
-                            .background(bgColor)
-                    ) {
-                        Row(
+            RefreshBox(
+                isRefreshing = libraryRefreshing,
+                onRefresh = { LibraryRefresh.pull(vm, context) },
+                isDarkMode = isDarkMode,
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            ) {
+                LazyColumn(modifier = Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = if (isSearching) FloatingBarClearance else 0.dp)) {
+                    stickyHeader {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 24.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() }
+                                ) { }
+                                .background(bgColor)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Your Library",
-                                    fontFamily = NothingFont,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 22.sp,
-                                    color = textColor
-                                )
-                                if (draggingIndex != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 24.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "Drag and drop",
+                                        text = "Your Library",
                                         fontFamily = NothingFont,
-                                        fontSize = 14.sp,
-                                        color = Color.Gray
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 22.sp,
+                                        color = textColor
                                     )
-                                } else if (cacheSize.isNotBlank()) {
+                                    if (draggingIndex != null) {
+                                        Text(
+                                            text = "Drag and drop",
+                                            fontFamily = NothingFont,
+                                            fontSize = 14.sp,
+                                            color = Color.Gray
+                                        )
+                                    } else if (cacheSize.isNotBlank()) {
+                                        Text(
+                                            text = cacheSize,
+                                            fontFamily = NothingFont,
+                                            fontSize = 14.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                                // + button in header
+                                IconButton(onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    showCreateDialog = true
+                                }) {
                                     Text(
-                                        text = cacheSize,
+                                        text = "+",
                                         fontFamily = NothingFont,
-                                        fontSize = 14.sp,
-                                        color = Color.Gray
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 28.sp,
+                                        color = textColor
                                     )
                                 }
                             }
-                            // + button in header
-                            IconButton(onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                showCreateDialog = true
-                            }) {
-                                Text(
-                                    text = "+",
-                                    fontFamily = NothingFont,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 28.sp,
-                                    color = textColor
-                                )
-                            }
+
+                            DashedDivider(
+                                modifier = Modifier.fillMaxWidth(),
+                                isDarkMode = isDarkMode,
+                                scrollProgress = scrollProgress.value
+                            )
                         }
-
-                        DashedDivider(
-                            modifier = Modifier.fillMaxWidth(),
-                            isDarkMode = isDarkMode,
-                            scrollProgress = scrollProgress.value
-                        )
                     }
-                }
 
-                if (showLiked) {
-                    item {
-                        LibraryRow(
-                            emoji = null,
-                            icon = {
-                                Icon(Icons.Default.Favorite, contentDescription = null,
-                                    tint = Color.Red, modifier = Modifier.size(40.dp))
-                            },
-                            label = "Liked songs (${likedSongs.size})",
-                            isDarkMode = isDarkMode,
-                            hapticsEnabled = hapticsEnabled,
-                            context = context,
-                            showMenu = false,
-                            onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onNavigateLiked()
-                            }
-                        )
+                    if (showLiked) {
+                        item {
+                            LibraryRow(
+                                emoji = null,
+                                icon = {
+                                    Icon(Icons.Default.Favorite, contentDescription = null,
+                                        tint = Color.Red, modifier = Modifier.size(40.dp))
+                                },
+                                label = "Liked songs (${likedSongs.size})",
+                                isDarkMode = isDarkMode,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
+                                showMenu = false,
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    onNavigateLiked()
+                                }
+                            )
+                        }
                     }
-                }
 
-                if (showAlbums) {
-                    item {
-                        LibraryRow(
-                            emoji = null,
-                            icon = {
-                                Icon(Icons.Default.Bookmark, contentDescription = null,
-                                    tint = textColor, modifier = Modifier.size(40.dp))
-                            },
-                            label = "Saved albums (${savedAlbums.size})",
-                            isDarkMode = isDarkMode,
-                            hapticsEnabled = hapticsEnabled,
-                            context = context,
-                            showMenu = false,
-                            onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onNavigateAlbums()
-                            }
-                        )
+                    if (showAlbums) {
+                        item {
+                            LibraryRow(
+                                emoji = null,
+                                icon = {
+                                    Icon(Icons.Default.Bookmark, contentDescription = null,
+                                        tint = textColor, modifier = Modifier.size(40.dp))
+                                },
+                                label = "Saved albums (${savedAlbums.size})",
+                                isDarkMode = isDarkMode,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
+                                showMenu = false,
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    onNavigateAlbums()
+                                }
+                            )
+                        }
                     }
-                }
 
-                val displayedPlaylists = if (reorderEnabled) livePlaylists else filteredCustom
-                itemsIndexed(
-                    items = displayedPlaylists,
-                    key = { _, playlist -> playlist.id }
-                ) { index, playlist ->
-                    val armed = reorderEnabled && draggingIndex == index
+                    val displayedPlaylists = if (reorderEnabled) livePlaylists else filteredCustom
+                    itemsIndexed(
+                        items = displayedPlaylists,
+                        key = { _, playlist -> playlist.id }
+                    ) { index, playlist ->
+                        val armed = reorderEnabled && draggingIndex == index
 
-                    if (reorderEnabled) {
-                        ReorderableItem(
-                            state = reorderableState,
-                            key = playlist.id
-                        ) { isActivelyDragging ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
-                                    .graphicsLayer {
-                                        val s = if (isActivelyDragging) 1.02f else 1f
-                                        scaleX = s
-                                        scaleY = s
-                                        alpha = if (isActivelyDragging) 0.9f else 1f
-                                    }
-                                    .then(
-                                        if (armed) {
-                                            Modifier.longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    HapticUtils.performStrongHaptic(context)
-                                                }
-                                            )
-                                        } else Modifier
-                                    )
-                                    .background(
-                                        when {
-                                            isActivelyDragging -> if (isDarkMode)
-                                                Color.White.copy(alpha = 0.1f)
-                                            else Color.Black.copy(alpha = 0.06f)
-                                            armed -> if (isDarkMode)
-                                                Color.White.copy(alpha = 0.06f)
-                                            else Color.Black.copy(alpha = 0.05f)
-                                            else -> Color.Transparent
+                        if (reorderEnabled) {
+                            ReorderableItem(
+                                state = reorderableState,
+                                key = playlist.id
+                            ) { isActivelyDragging ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .then(if (reorderEnabled) Modifier.animateItem() else Modifier)
+                                        .graphicsLayer {
+                                            val s = if (isActivelyDragging) 1.02f else 1f
+                                            scaleX = s
+                                            scaleY = s
+                                            alpha = if (isActivelyDragging) 0.9f else 1f
                                         }
-                                    )
-                            ) {
-                                LibraryRow(
-                                    emoji = playlist.emoji,
-                                    icon = null,
-                                    label = playlist.name,
-                                    hapticsEnabled = hapticsEnabled,
-                                    context = context,
-                                    isDarkMode = isDarkMode,
-                                    showMenu = true,
-                                    onClick = {
-                                        // While any playlist is armed for reorder, taps must not
-                                        // navigate — a press-and-release-without-moving can
-                                        // otherwise race the drag gesture and fire as a normal click.
-                                        if (draggingIndex == null) {
+                                        .then(
+                                            if (armed) {
+                                                Modifier.longPressDraggableHandle(
+                                                    onDragStarted = {
+                                                        HapticUtils.performStrongHaptic(context)
+                                                    }
+                                                )
+                                            } else Modifier
+                                        )
+                                        .background(
+                                            when {
+                                                isActivelyDragging -> if (isDarkMode)
+                                                    Color.White.copy(alpha = 0.1f)
+                                                else Color.Black.copy(alpha = 0.06f)
+                                                armed -> if (isDarkMode)
+                                                    Color.White.copy(alpha = 0.06f)
+                                                else Color.Black.copy(alpha = 0.05f)
+                                                else -> Color.Transparent
+                                            }
+                                        )
+                                ) {
+                                    LibraryRow(
+                                        emoji = playlist.emoji,
+                                        icon = null,
+                                        label = playlist.name,
+                                        hapticsEnabled = hapticsEnabled,
+                                        context = context,
+                                        isDarkMode = isDarkMode,
+                                        showMenu = true,
+                                        onClick = {
+                                            // While any playlist is armed for reorder, taps must not
+                                            // navigate — a press-and-release-without-moving can
+                                            // otherwise race the drag gesture and fire as a normal click.
+                                            if (draggingIndex == null) {
+                                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                                onNavigatePlaylist(playlist)
+                                            }
+                                        },
+                                        onRename = if (access.isReadOnly(playlist.cloudId)) null else ({ renameTarget = playlist }),
+                                        onDelete = if (access.isSpecial(playlist.cloudId)) null else ({ deleteTarget = playlist }),
+                                        deleteLabel = if (access.isReadOnly(playlist.cloudId)) "Remove" else "Delete",
+                                        isDragging = armed,
+                                        onReorder = {
+                                            draggingIndex = if (armed) null else index
                                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                            onNavigatePlaylist(playlist)
                                         }
-                                    },
-                                    onRename = { renameTarget = playlist },
-                                    onDelete = { deleteTarget = playlist },
-                                    isDragging = armed,
-                                    onReorder = {
-                                        draggingIndex = if (armed) null else index
-                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    }
-                                )
+                                    )
+                                }
                             }
+                        } else {
+                            LibraryRow(
+                                emoji = playlist.emoji,
+                                icon = null,
+                                label = playlist.name,
+                                hapticsEnabled = hapticsEnabled,
+                                context = context,
+                                isDarkMode = isDarkMode,
+                                showMenu = true,
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    onNavigatePlaylist(playlist)
+                                },
+                                onRename = if (access.isReadOnly(playlist.cloudId)) null else ({ renameTarget = playlist }),
+                                onDelete = if (access.isSpecial(playlist.cloudId)) null else ({ deleteTarget = playlist }),
+                                deleteLabel = if (access.isReadOnly(playlist.cloudId)) "Remove" else "Delete"
+                            )
                         }
-                    } else {
-                        LibraryRow(
-                            emoji = playlist.emoji,
-                            icon = null,
-                            label = playlist.name,
-                            hapticsEnabled = hapticsEnabled,
-                            context = context,
-                            isDarkMode = isDarkMode,
-                            showMenu = true,
-                            onClick = {
-                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                onNavigatePlaylist(playlist)
-                            },
-                            onRename = { renameTarget = playlist },
-                            onDelete = { deleteTarget = playlist }
-                        )
                     }
                 }
             }
@@ -391,29 +403,30 @@ fun LibraryScreen(
         CreatePlaylistDialog(isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled,
             existingNames = customPlaylists.map { it.name },
             onDismiss = { showCreateDialog = false },
-            onCreate = { name, emoji -> vm.createPlaylist(name, emoji); showCreateDialog = false })
+            onCreate = { name, emoji -> vm.createPlaylistAwait(name, emoji) })
     }
     renameTarget?.let { target ->
         CreatePlaylistDialog(isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled, initialName = target.name,
             initialEmoji = target.emoji, title = "Rename playlist", confirmLabel = "Save",
             existingNames = customPlaylists.filter { it.id != target.id }.map { it.name },
             onDismiss = { renameTarget = null },
-            onCreate = { name, emoji -> vm.renamePlaylist(target.id, name, emoji); renameTarget = null })
+            onCreate = { name, emoji -> vm.renamePlaylistAwait(target.id, name, emoji) })
     }
     deleteTarget?.let { target ->
-        AlertDialog(onDismissRequest = { deleteTarget = null },
-            title = { Text("Delete \"${target.name}\"?", fontFamily = NothingFont) },
-            text = { Text("Are you sure you want to remove the songs in the playlist?", fontFamily = NothingFont) },
-            confirmButton = {
-                TextButton(onClick = { vm.deletePlaylist(target.id); deleteTarget = null }) {
-                    Text("Delete", color = Color.Red, fontFamily = NothingFont)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text("Cancel", fontFamily = NothingFont)
-                }
-            })
+        val savedOnly = access.isReadOnly(target.cloudId)
+        // Same design as the other confirmations; the button spins until the account (and then
+        // this device) has actually changed, and nothing can dismiss it meanwhile.
+        MorphConfirmDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            title = if (savedOnly) "Remove \"${target.name}\"?" else "Delete \"${target.name}\"?",
+            message = if (savedOnly) "This removes it from your YouTube Music library. The playlist itself stays on YouTube."
+            else "Are you sure you want to remove the songs in the playlist?",
+            cancelLabel = "Cancel",
+            confirmLabel = if (savedOnly) "Remove" else "Delete",
+            onDismiss = { deleteTarget = null },
+            onConfirm = { vm.deletePlaylistAwait(target.id) }
+        )
     }
 }
 
@@ -429,6 +442,7 @@ private fun LibraryRow(
     onClick: () -> Unit,
     onRename: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    deleteLabel: String = "Delete",
     isDragging: Boolean = false,
     onReorder: (() -> Unit)? = null
 ) {
@@ -482,13 +496,15 @@ private fun LibraryRow(
                         highlightBounds = rowAnchor.bounds()
                     ) { close ->
                         MorphMenuColumn {
-                            MorphMenuItem(
-                                text = "Rename",
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    close(); onRename?.invoke()
-                                }
-                            )
+                            if (onRename != null) {
+                                MorphMenuItem(
+                                    text = "Rename",
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close(); onRename.invoke()
+                                    }
+                                )
+                            }
                             if (onReorder != null) {
                                 MorphMenuItem(
                                     text = if (isDragging) "Cancel reorder" else "Reorder",
@@ -498,14 +514,16 @@ private fun LibraryRow(
                                     }
                                 )
                             }
-                            MorphMenuItem(
-                                text = "Delete",
-                                textColor = Color.Red,
-                                onClick = {
-                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    close(); onDelete?.invoke()
-                                }
-                            )
+                            if (onDelete != null) {
+                                MorphMenuItem(
+                                    text = deleteLabel,
+                                    textColor = Color.Red,
+                                    onClick = {
+                                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                        close(); onDelete.invoke()
+                                    }
+                                )
+                            }
                         }
                     }
                 },

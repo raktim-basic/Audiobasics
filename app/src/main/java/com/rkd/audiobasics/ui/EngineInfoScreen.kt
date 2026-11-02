@@ -4,6 +4,8 @@ import com.rkd.audiobasics.ui.theme.AmoledBlack
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -61,10 +63,15 @@ fun EngineInfoScreen(
     val cardColor = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)
     val subTextColor = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF444444)
 
+    // The whole page scrolls (so a small / low-dpi screen can reach the button), yet on a tall
+    // screen the button still sits at the bottom: the column is at least as tall as the screen.
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(bodyColor)) {
+    val minContentHeight = maxHeight
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .background(bodyColor),
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .heightIn(min = minContentHeight),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -204,5 +211,6 @@ fun EngineInfoScreen(
         }
 
         Spacer(Modifier.height(40.dp))
+    }
     }
 }

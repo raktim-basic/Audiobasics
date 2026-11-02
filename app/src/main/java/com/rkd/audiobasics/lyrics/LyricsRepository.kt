@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
@@ -19,107 +20,181 @@ data class LyricsResult(
     val hasSynced: Boolean
 )
 
+/**
+ * How a lyrics lookup ended. Telling these apart is the point: "Not found" means the lyrics
+ * server answered and has nothing for this song; "Error" means we never got a proper answer
+ * (offline, timed out, server trouble), so the lyrics may well exist.
+ */
+sealed interface LyricsOutcome {
+    data class Found(val result: LyricsResult) : LyricsOutcome
+    data object NotFound : LyricsOutcome
+    data object Error : LyricsOutcome
+}
+
 object LyricsRepository {
 
     private const val BASE_URL = "https://lrclib.net/api"
 
-    suspend fun getLyrics(title: String, artist: String, duration: Long): LyricsResult? {
+    /** Connect and read timeout, each. A dead connection ends in an Error instead of hanging. */
+    private const val TIMEOUT_MS = 6_000
+
+    // What one request came back with.
+    private sealed interface Http {
+        class Ok(val body: String) : Http
+        data object NotFound : Http                       // HTTP 404: the server has nothing
+        class Failed(val unreachable: Boolean) : Http     // no answer (true) / other HTTP error (false)
+    }
+
+    // What one lookup step (an endpoint) concluded.
+    private sealed interface Step {
+        class Found(val result: LyricsResult) : Step
+        data object NotFound : Step
+        class Failed(val unreachable: Boolean) : Step
+    }
+
+    /**
+     * Looks the song up: synced lyrics first (/get), then the fuzzy plain-text /search.
+     * It is only "not found" when every lookup that ran got a real "nothing" answer; if one
+     * failed, we can't be sure, so it is an error.
+     */
+    suspend fun fetchLyrics(title: String, artist: String, duration: Long): LyricsOutcome {
         return withContext(Dispatchers.IO) {
             try {
-                Timber.tag("LyricsRepository").d("getLyrics: title='$title' artist='$artist' durationMs=$duration")
+                Timber.tag("LyricsRepository").d("fetchLyrics: title='$title' artist='$artist' durationMs=$duration")
 
-                // Try synced lyrics first
                 val synced = fetchSynced(title, artist, duration)
-                if (synced != null) {
-                    Timber.tag("LyricsRepository").d("getLyrics: fetchSynced returned hasSynced=${synced.hasSynced} for title='$title' artist='$artist'")
-                    return@withContext synced
+                if (synced is Step.Found) {
+                    Timber.tag("LyricsRepository").d("fetchLyrics: synced step found lyrics (hasSynced=${synced.result.hasSynced})")
+                    return@withContext LyricsOutcome.Found(synced.result)
+                }
+                // The server couldn't be reached at all: a second request would only wait out
+                // another timeout, so say so now.
+                if (synced is Step.Failed && synced.unreachable) {
+                    return@withContext LyricsOutcome.Error
                 }
 
-                // Fall back to plain lyrics
                 val plain = fetchPlain(title, artist)
-                if (plain != null) {
-                    Timber.tag("LyricsRepository").d("getLyrics: fetchSynced found nothing, fetchPlain succeeded (unsynced) for title='$title' artist='$artist'")
-                    return@withContext plain
+                if (plain is Step.Found) {
+                    Timber.tag("LyricsRepository").d("fetchLyrics: /get had nothing, /search found plain lyrics")
+                    return@withContext LyricsOutcome.Found(plain.result)
                 }
 
-                Timber.tag("LyricsRepository").d("getLyrics: no result from either endpoint for title='$title' artist='$artist'")
-                null
+                if (synced is Step.NotFound && plain is Step.NotFound) {
+                    Timber.tag("LyricsRepository").d("fetchLyrics: not found (both endpoints answered with nothing)")
+                    LyricsOutcome.NotFound
+                } else {
+                    Timber.tag("LyricsRepository").d("fetchLyrics: error (a lookup failed, so not-found can't be claimed)")
+                    LyricsOutcome.Error
+                }
             } catch (e: Exception) {
                 Timber.tag("LyricsRepository").e("Error fetching lyrics: ${e.message}")
-                null
+                LyricsOutcome.Error
             }
         }
     }
 
-    private fun fetchSynced(title: String, artist: String, duration: Long): LyricsResult? {
+    /** The old entry point: just the lyrics, or null for both "not found" and "error". */
+    suspend fun getLyrics(title: String, artist: String, duration: Long): LyricsResult? =
+        (fetchLyrics(title, artist, duration) as? LyricsOutcome.Found)?.result
+
+    private fun httpGet(url: String): Http {
+        var conn: HttpURLConnection? = null
         return try {
-            val encodedTitle = URLEncoder.encode(title, "UTF-8")
-            val encodedArtist = URLEncoder.encode(artist, "UTF-8")
-            val durationSecs = duration / 1000
-            val url = "$BASE_URL/get?track_name=$encodedTitle&artist_name=$encodedArtist&duration=$durationSecs"
-            Timber.tag("LyricsRepository").d("fetchSynced: GET $url")
-
-            val response = URL(url).readText()
-            Timber.tag("LyricsRepository").d("fetchSynced: response=${response.take(300)}")
-            val json = JSONObject(response)
-
-            val syncedLyrics = json.optString("syncedLyrics", "")
-            if (syncedLyrics.isNotBlank()) {
-                val lines = parseLrc(syncedLyrics)
-                return LyricsResult(
-                    syncedLines = lines,
-                    plainText = lines.joinToString("\n") { it.text },
-                    hasSynced = true
-                )
+            conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                requestMethod = "GET"
             }
-
-            val plainLyrics = json.optString("plainLyrics", "")
-            if (plainLyrics.isNotBlank()) {
-                Timber.tag("LyricsRepository").d("fetchSynced: /get matched a track but it has no syncedLyrics, only plainLyrics")
-                return LyricsResult(
-                    syncedLines = emptyList(),
-                    plainText = plainLyrics,
-                    hasSynced = false
-                )
+            when (val code = conn.responseCode) {
+                HttpURLConnection.HTTP_OK ->
+                    Http.Ok(conn.inputStream.bufferedReader().use { it.readText() })
+                HttpURLConnection.HTTP_NOT_FOUND -> Http.NotFound
+                else -> {
+                    Timber.tag("LyricsRepository").e("GET failed with HTTP $code: $url")
+                    Http.Failed(unreachable = false)
+                }
             }
-
-            null
         } catch (e: Exception) {
-            // A 404 from /get (no exact match found) also lands here, since HttpURLConnection
-            // (via URL.readText()) throws FileNotFoundException on a non-2xx response rather
-            // than returning the error body — so "no match" and "network error" both currently
-            // log the same generic message. That's the most likely explanation for a well-known
-            // song coming back unsynced: an exact track_name/artist_name/duration match failed
-            // on LRCLIB's side, so this whole function returned null and the caller fell back to
-            // the fuzzy /search endpoint below, which never returns synced lyrics at all.
-            Timber.tag("LyricsRepository").e("Synced fetch failed (likely a 404 = no exact match): ${e.message}")
-            null
+            // Offline, DNS failure, connect/read timeout...
+            Timber.tag("LyricsRepository").e("GET could not reach the server: ${e.message}")
+            Http.Failed(unreachable = true)
+        } finally {
+            conn?.disconnect()
         }
     }
 
-    private fun fetchPlain(title: String, artist: String): LyricsResult? {
-        return try {
-            val encodedTitle = URLEncoder.encode(title, "UTF-8")
-            val encodedArtist = URLEncoder.encode(artist, "UTF-8")
-            val url = "$BASE_URL/search?q=$encodedTitle+$encodedArtist"
-            Timber.tag("LyricsRepository").d("fetchPlain: GET $url")
+    private fun fetchSynced(title: String, artist: String, duration: Long): Step {
+        val encodedTitle = URLEncoder.encode(title, "UTF-8")
+        val encodedArtist = URLEncoder.encode(artist, "UTF-8")
+        val durationSecs = duration / 1000
+        val url = "$BASE_URL/get?track_name=$encodedTitle&artist_name=$encodedArtist&duration=$durationSecs"
+        Timber.tag("LyricsRepository").d("fetchSynced: GET $url")
 
-            val response = URL(url).readText()
-            val arr = JSONArray(response)
-            if (arr.length() == 0) return null
+        return when (val http = httpGet(url)) {
+            is Http.Failed -> Step.Failed(http.unreachable)
+            Http.NotFound -> Step.NotFound // no exact track_name/artist_name/duration match
+            is Http.Ok -> try {
+                val json = JSONObject(http.body)
 
-            val json = arr.getJSONObject(0)
-            val plainLyrics = json.optString("plainLyrics", "")
-            if (plainLyrics.isBlank()) return null
+                val syncedLyrics = json.optString("syncedLyrics", "")
+                if (syncedLyrics.isNotBlank()) {
+                    val lines = parseLrc(syncedLyrics)
+                    return Step.Found(
+                        LyricsResult(
+                            syncedLines = lines,
+                            plainText = lines.joinToString("\n") { it.text },
+                            hasSynced = true
+                        )
+                    )
+                }
 
-            LyricsResult(
-                syncedLines = emptyList(),
-                plainText = plainLyrics,
-                hasSynced = false
-            )
-        } catch (e: Exception) {
-            Timber.tag("LyricsRepository").e("Plain fetch failed: ${e.message}")
-            null
+                val plainLyrics = json.optString("plainLyrics", "")
+                if (plainLyrics.isNotBlank()) {
+                    Timber.tag("LyricsRepository").d("fetchSynced: /get matched a track but it has no syncedLyrics, only plainLyrics")
+                    return Step.Found(
+                        LyricsResult(
+                            syncedLines = emptyList(),
+                            plainText = plainLyrics,
+                            hasSynced = false
+                        )
+                    )
+                }
+
+                Step.NotFound // the track exists but carries no lyrics
+            } catch (e: Exception) {
+                Timber.tag("LyricsRepository").e("Synced response could not be read: ${e.message}")
+                Step.Failed(unreachable = false)
+            }
+        }
+    }
+
+    private fun fetchPlain(title: String, artist: String): Step {
+        val encodedTitle = URLEncoder.encode(title, "UTF-8")
+        val encodedArtist = URLEncoder.encode(artist, "UTF-8")
+        val url = "$BASE_URL/search?q=$encodedTitle+$encodedArtist"
+        Timber.tag("LyricsRepository").d("fetchPlain: GET $url")
+
+        return when (val http = httpGet(url)) {
+            is Http.Failed -> Step.Failed(http.unreachable)
+            Http.NotFound -> Step.NotFound
+            is Http.Ok -> try {
+                val arr = JSONArray(http.body)
+                if (arr.length() == 0) return Step.NotFound
+
+                val plainLyrics = arr.getJSONObject(0).optString("plainLyrics", "")
+                if (plainLyrics.isBlank()) return Step.NotFound
+
+                Step.Found(
+                    LyricsResult(
+                        syncedLines = emptyList(),
+                        plainText = plainLyrics,
+                        hasSynced = false
+                    )
+                )
+            } catch (e: Exception) {
+                Timber.tag("LyricsRepository").e("Plain response could not be read: ${e.message}")
+                Step.Failed(unreachable = false)
+            }
         }
     }
 

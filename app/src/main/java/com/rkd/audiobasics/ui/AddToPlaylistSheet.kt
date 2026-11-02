@@ -16,12 +16,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
+/**
+ * Tapping a row only SELECTS it. Nothing is added or removed until Done, which applies every
+ * difference in one go and shows a spinner on the button until the last one is finished.
+ * The dialog can't be dismissed by tapping outside it, and not at all while it is saving.
+ */
 @Composable
 fun AddToPlaylistSheet(
     song: Song,
@@ -33,14 +39,20 @@ fun AddToPlaylistSheet(
     onCreateNew: () -> Unit
 ) {
     val likedSongs by vm.likedSongs.collectAsState()
-    val customPlaylists by vm.customPlaylists.collectAsState()
+    val allCustomPlaylists by vm.customPlaylists.collectAsState()
+    val access by PlaylistAccess.flags.collectAsState()
+    // Playlists someone else made (and YouTube's built-in lists) can't take new songs.
+    val customPlaylists = allCustomPlaylists.filter { !access.isReadOnly(it.cloudId) }
+    // Changes currently waiting on the account; their rows show a spinner too.
+    val cloudBusy by vm.cloudBusy.collectAsState()
     val scope = rememberCoroutineScope()
 
-    // Track which playlists already contain the song
+    // What is true right now: which lists already contain the song.
     val containsMap = remember { mutableStateMapOf<String, Boolean>() }
-
-    // Remove confirmation state
-    var removeConfirm by remember { mutableStateOf<Pair<String, String>?>(null) } // (playlistId, playlistName)
+    // What the user has ticked. Differences from containsMap are applied by Done.
+    val selection = remember { mutableStateMapOf<String, Boolean>() }
+    var loaded by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
 
     val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color.White
     val textColor = if (isDarkMode) Color.White else Color.Black
@@ -52,17 +64,25 @@ fun AddToPlaylistSheet(
         customPlaylists.forEach { pl ->
             containsMap[pl.id] = vm.isSongInPlaylistAsync(song.id, pl.id)
         }
+        selection.clear()
+        selection.putAll(containsMap)
+        loaded = true
     }
 
-    // Update liked state reactively
+    // Keep "what is true now" current (a like can land while the sheet is open)
     LaunchedEffect(likedSongs) {
         containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = likedSongs.any { it.id == song.id }
     }
 
     MorphPopup(
-        onDismissRequest = onDismiss,
+        // Back can close it when idle, never while changes are being made.
+        onDismissRequest = { if (!saving) onDismiss() },
         placement = MorphPlacement.Center,
-        containerColor = bgColor
+        containerColor = bgColor,
+        dismissOnOutsideTap = false,
+        // Back is ignored (not just un-wired) while changes are being made, so the popup
+        // can't vanish mid-write.
+        isLocked = { saving }
     ) { close ->
         Column(modifier = Modifier.fillMaxWidth()) {
             // Title
@@ -83,20 +103,18 @@ fun AddToPlaylistSheet(
             LazyColumn(modifier = Modifier.fillMaxWidth()) {
                 // Liked songs row
                 item {
-                    val isIn = containsMap[MusicViewModel.LIKED_PLAYLIST_ID] == true
                     PlaylistPickerRow(
                         emoji = null,
                         emojiIcon = "❤️",
                         label = "Liked songs",
-                        isSelected = isIn,
+                        isSelected = selection[MusicViewModel.LIKED_PLAYLIST_ID] == true,
                         isDarkMode = isDarkMode,
+                        busy = "song:${song.id}" in cloudBusy,
                         onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            if (isIn) {
-                                removeConfirm = Pair(MusicViewModel.LIKED_PLAYLIST_ID, "Liked songs")
-                            } else {
-                                vm.toggleLike(song)
-                                containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = true
+                            if (loaded && !saving) {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                selection[MusicViewModel.LIKED_PLAYLIST_ID] =
+                                    selection[MusicViewModel.LIKED_PLAYLIST_ID] != true
                             }
                         }
                     )
@@ -104,22 +122,17 @@ fun AddToPlaylistSheet(
 
                 // Custom playlists
                 items(customPlaylists) { pl ->
-                    val isIn = containsMap[pl.id] == true
                     PlaylistPickerRow(
                         emoji = pl.emoji,
                         emojiIcon = null,
                         label = pl.name,
-                        isSelected = isIn,
+                        isSelected = selection[pl.id] == true,
                         isDarkMode = isDarkMode,
+                        busy = "pl:${pl.id}:${song.id}" in cloudBusy,
                         onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            if (isIn) {
-                                removeConfirm = Pair(pl.id, pl.name)
-                            } else {
-                                scope.launch {
-                                    val added = vm.toggleSongInPlaylist(song, pl.id)
-                                    containsMap[pl.id] = added
-                                }
+                            if (loaded && !saving) {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                selection[pl.id] = selection[pl.id] != true
                             }
                         }
                     )
@@ -136,10 +149,13 @@ fun AddToPlaylistSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = {
-                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    onCreateNew()
-                }) {
+                TextButton(
+                    enabled = !saving,
+                    onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        onCreateNew()
+                    }
+                ) {
                     Text(
                         "+ New playlist",
                         fontFamily = NothingFont,
@@ -147,68 +163,46 @@ fun AddToPlaylistSheet(
                         fontSize = 14.sp
                     )
                 }
-                Button(
-                    onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        close()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Text("Done", fontFamily = NothingFont, color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-
-    // Remove confirmation dialog
-    removeConfirm?.let { (playlistId, playlistName) ->
-        val confirmTextColor = if (isDarkMode) Color.White else Color.Black
-        MorphPopup(
-            onDismissRequest = { removeConfirm = null },
-            placement = MorphPlacement.Center,
-            containerColor = bgColor
-        ) { close ->
-            Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-                Text(
-                    "Are you sure?",
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = confirmTextColor
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Remove \"${song.title}\" from \"$playlistName\"?",
-                    fontFamily = NothingFont,
-                    color = confirmTextColor
-                )
-                Spacer(Modifier.height(20.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        close()
-                    }) {
-                        Text("No", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
-                    }
-                    TextButton(onClick = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        if (playlistId == MusicViewModel.LIKED_PLAYLIST_ID) {
-                            vm.toggleLike(song)
-                            containsMap[MusicViewModel.LIKED_PLAYLIST_ID] = false
-                        } else {
-                            scope.launch {
-                                vm.toggleSongInPlaylist(song, playlistId)
-                                containsMap[playlistId] = false
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        enabled = loaded && !saving,
+                        onClick = {
+                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                            // Everything whose ticked state differs from what is true now.
+                            val wanted = selection.toMap()
+                            val changes = wanted.filter { (id, want) -> (containsMap[id] == true) != want }.keys.toList()
+                            if (changes.isEmpty()) {
+                                close()
+                            } else {
+                                scope.launch {
+                                    saving = true
+                                    for (id in changes) {
+                                        // Returns what is true afterwards, so a refused change
+                                        // puts the row back to how it really is.
+                                        val now = vm.toggleSongInPlaylist(song, id)
+                                        containsMap[id] = now
+                                        selection[id] = now
+                                    }
+                                    saving = false
+                                    if (changes.all { containsMap[it] == wanted[it] }) close()
+                                }
                             }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Red,
+                            disabledContainerColor = Color.Red.copy(alpha = 0.6f)
+                        ),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        if (saving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                        } else {
+                            Text("Done", fontFamily = NothingFont, color = Color.White, fontWeight = FontWeight.Bold)
                         }
-                        close()
-                    }) {
-                        Text("Yes", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
                     }
                 }
             }
@@ -223,6 +217,7 @@ private fun PlaylistPickerRow(
     label: String,
     isSelected: Boolean,
     isDarkMode: Boolean,
+    busy: Boolean = false,
     onClick: () -> Unit
 ) {
     val textColor = if (isSelected) Color.Red else (if (isDarkMode) Color.White else Color.Black)
@@ -254,7 +249,16 @@ private fun PlaylistPickerRow(
             fontFamily = NothingFont,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
-            color = textColor
+            color = textColor,
+            modifier = Modifier.weight(1f)
         )
+
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = textColor
+            )
+        }
     }
 }

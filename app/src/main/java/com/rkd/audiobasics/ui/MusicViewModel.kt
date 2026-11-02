@@ -23,6 +23,16 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.rkd.audiobasics.api.Innertube
+import com.rkd.audiobasics.api.account.AccountManager
+import com.rkd.audiobasics.api.account.AccountResult
+import com.rkd.audiobasics.api.account.AccountSession
+import com.rkd.audiobasics.api.account.AccountState
+import com.rkd.audiobasics.api.account.CloudSnapshot
+import com.rkd.audiobasics.api.account.CloudWriter
+import com.rkd.audiobasics.api.account.LibraryCounts
+import com.rkd.audiobasics.api.account.LibraryUpload
+import com.rkd.audiobasics.api.account.PlaylistAccess
+import com.rkd.audiobasics.api.account.PlaylistNameCodec
 import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.lyrics.LyricsCache
 import com.rkd.audiobasics.lyrics.LyricsRepository
@@ -37,13 +47,17 @@ import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.utils.EasterEggUtils
 import com.rkd.audiobasics.utils.MigrationMessageProvider
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -66,6 +80,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var artistBackfillJob: Job? = null
 
     private val cacheSemaphore = Semaphore(3)
+    private val autoCacheMutex = Mutex()
     private val _cachingSongIds = MutableStateFlow<Set<String>>(emptySet())
     /** Song IDs currently being actively downloaded, across every download source (like, retry, download-all, etc). */
     val cachingSongIds: StateFlow<Set<String>> = _cachingSongIds
@@ -658,6 +673,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             { it.run() }
         )
         refreshCacheSize()
+        // Once per start: drop downloaded files nothing in the library points at any more.
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(3_000)
+            sweepOrphanedCacheNow()
+        }
         checkForUpdate()
         MigrationMessageProvider.loadCache(app)
         fetchHomeHeader()
@@ -689,7 +709,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         val buffering = ctrl.playbackState == Player.STATE_BUFFERING
         if (_isPlaying.value != playing) _isPlaying.value = playing
         if (_isLoading.value != buffering) _isLoading.value = buffering
-        val dur = ctrl.duration.takeIf { it > 0 } ?: 0L
+        // A restored (not yet prepared) player doesn't know its duration; use the song's own.
+        val dur = ctrl.duration.takeIf { it > 0 }
+            ?: _currentSong.value?.duration?.takeIf { it > 0 && ctrl.playbackState == Player.STATE_IDLE }
+            ?: 0L
         if (_duration.value != dur) _duration.value = dur
         _currentPosition.value = ctrl.currentPosition.coerceAtLeast(0L)
         val mappedRepeat = when (ctrl.repeatMode) {
@@ -1318,7 +1341,29 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     fun isLiked(songId: String) = _likedSongs.value.any { it.id == songId }
 
     fun toggleLike(song: Song) {
-        if (isLiked(song.id)) unlike(song) else like(song)
+        when (writeMode()) {
+            WriteMode.LOCAL -> if (isLiked(song.id)) unlike(song) else like(song)
+            WriteMode.REFUSED -> refuseExpired()
+            WriteMode.CLOUD -> viewModelScope.launch { toggleLikeCloud(song) }
+        }
+    }
+
+    /**
+     * Removes [song] from Liked Songs and returns true once it is gone. With an account linked
+     * it is removed there first; any failure returns false and nothing changes on this device
+     * (the reason has already been shown).
+     */
+    suspend fun unlikeSongAwait(song: Song): Boolean = when (writeMode()) {
+        WriteMode.LOCAL -> {
+            if (isLiked(song.id)) unlike(song)
+            true
+        }
+        WriteMode.REFUSED -> {
+            refuseExpired()
+            false
+        }
+        // Already gone (a refresh may have just removed it): nothing left to do.
+        WriteMode.CLOUD -> if (!isLiked(song.id)) true else toggleLikeCloud(song) == false
     }
 
     private fun like(song: Song) {
@@ -1333,12 +1378,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private fun unlike(song: Song) {
         _likedSongs.value = _likedSongs.value.filter { it.id != song.id }
         saveLikedSongs()
-        // Only remove cache if not in any custom playlist
+        // Its files go too, unless a playlist or a saved album still has the song.
         viewModelScope.launch(Dispatchers.IO) {
-            val inCustomPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
-            if (!inCustomPlaylist) {
-                CacheManager.removeCachedSong(getApplication(), song.id)
-            }
+            sweepOrphanedCacheNow()
             refreshCacheSize()
         }
     }
@@ -1363,6 +1405,76 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 updateLikedSongCacheStatus(song.id, isCached = CacheManager.isCached(getApplication(), song.id), cacheFailed = false)
             }
             refreshCacheSize()
+        }
+    }
+
+    /** Automatically cache a small batch of songs newly discovered during an account refresh. */
+    internal fun cacheNewLibrarySongs(
+        songs: List<Song>,
+        albums: List<Album>,
+        existingSongIds: Set<String>
+    ) {
+        if (songs.isEmpty() && albums.isEmpty()) return
+
+        viewModelScope.launch {
+            autoCacheMutex.withLock {
+                // Resolve newly saved albums before applying the 25-track threshold. Reuse any
+                // tracklist already persisted for an album; fetch only when it is not available.
+                val albumTracks = mutableListOf<Song>()
+                for (album in albums.distinctBy { it.id }) {
+                    val tracks = _savedAlbumSongs.value[album.id] ?: try {
+                        Innertube.getAlbumSongs(album.id, album.artist, caller = "autoCacheNewLibraryAlbums").second
+                    } catch (e: Exception) {
+                        Log.e("YTLite", "Auto-cache: couldn't load ${album.title}: ${e.message}")
+                        emptyList()
+                    }
+                    // An unresolved album makes the batch size unknowable; don't partially cache.
+                    if (tracks.isEmpty()) return@withLock
+                    _savedAlbumSongs.value = _savedAlbumSongs.value + (album.id to tracks)
+                    albumTracks += tracks
+                }
+                if (albums.isNotEmpty()) saveSavedAlbumSongs()
+
+                // The threshold applies to unique tracks across liked songs, playlists and newly
+                // saved albums, excluding anything already represented in this device's library.
+                val batch = (songs + albumTracks)
+                    .distinctBy { it.id }
+                    .filter { it.id !in existingSongIds }
+                if (batch.size !in 1..25) return@withLock
+
+                // Don't replace the progress state/notification of a download already in progress.
+                while (_cacheProgress.value != null) delay(250)
+
+                val uncached = withContext(Dispatchers.IO) {
+                    batch.filter { !CacheManager.isCached(getApplication(), it.id) }
+                }
+                if (uncached.isEmpty()) return@withLock
+
+                createCacheNotificationChannel()
+                val total = uncached.size
+                var done = 0
+                _cacheProgress.value = Pair(0, total)
+                updateCacheNotification(0, total)
+                try {
+                    coroutineScope {
+                        uncached.map { song ->
+                            async {
+                                cacheSemaphore.withPermit { cacheSongSilently(song) }
+                                synchronized(this@MusicViewModel) { done++ }
+                                _cacheProgress.value = Pair(done, total)
+                                updateCacheNotification(done, total)
+                            }
+                        }.forEach { it.await() }
+                    }
+                } finally {
+                    _cacheProgress.value = null
+                    refreshCacheSize()
+                    cancelCacheNotification()
+                    if (_openPlaylistId.value != null) {
+                        _openPlaylistSongs.value = playlistDao.getPlaylistSongs(_openPlaylistId.value!!)
+                    }
+                }
+            }
         }
     }
 
@@ -1588,29 +1700,386 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             }
         } finally {
             _cachingSongIds.value = _cachingSongIds.value - song.id
+            // The song may have been removed from the library while it was downloading; its
+            // file would otherwise stay on this device with nothing pointing at it.
+            withContext(NonCancellable + Dispatchers.IO) {
+                if (!isInLibrary(song.id)) {
+                    CacheManager.removeCachedSong(getApplication(), song.id)
+                    refreshCacheSize()
+                }
+            }
         }
     }
 
     fun dismissStorageLow() { _showStorageLow.value = false }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Cloud-first writes (v2.8). While an account is linked, every change to liked songs,
+    // saved albums and playlists goes to the account FIRST and is applied here only once the
+    // account confirmed it. Any failure (offline, rejected, unclear answer) means the change
+    // is simply not made, so this device and the account can't drift apart.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private enum class WriteMode { LOCAL, CLOUD, REFUSED }
+
+    private fun writeMode(): WriteMode = when (val st = AccountManager.state.value) {
+        is AccountState.LoggedOut -> WriteMode.LOCAL
+        // While an upload is unfinished the account holds only part of the library, so changing
+        // the local library now would leave the two out of step. Refused until it's finished.
+        is AccountState.LoggedIn ->
+            if (st.libraryLinked) WriteMode.CLOUD
+            else if (LibraryUpload.isActive()) WriteMode.REFUSED
+            else WriteMode.LOCAL
+        is AccountState.SessionExpired ->
+            if (st.libraryLinked || LibraryUpload.isActive()) WriteMode.REFUSED else WriteMode.LOCAL
+    }
+
+    private val _cloudBusy = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Changes currently waiting on the account ("song:ID", "pl:PLAYLIST:SONG", "album:ID", ...). */
+    val cloudBusy: StateFlow<Set<String>> = _cloudBusy
+
+    private fun toast(message: String) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun refuseExpired() =
+        if (LibraryUpload.isActive()) {
+            toast("Your library is being uploaded. Finish the upload before changing it.")
+        } else {
+            toast("Your session expired. Sign in again to change your library.")
+        }
+
+    /**
+     * Runs one account change. Returns its result on a confirmed success, or null when the change
+     * was not made (and tells the user why). A change with the same [key] already in flight is
+     * ignored, so double taps can't send it twice.
+     */
+    private suspend fun <T> cloudCall(key: String, call: (AccountSession) -> AccountResult<T>): T? {
+        if (key in _cloudBusy.value) return null
+        val session = AccountManager.activeSession()
+        if (session == null) {
+            refuseExpired()
+            return null
+        }
+        _cloudBusy.update { it + key }
+        try {
+            return when (val r = withContext(Dispatchers.IO) { call(session) }) {
+                is AccountResult.Success -> r.value
+                is AccountResult.SessionExpired -> {
+                    AccountManager.reportSessionRejected()
+                    refuseExpired()
+                    null
+                }
+                is AccountResult.NetworkError -> {
+                    toast("No connection. Nothing was changed.")
+                    null
+                }
+                is AccountResult.ServerError -> {
+                    toast("YouTube didn't accept the change (${r.code}). Nothing was changed.")
+                    null
+                }
+                is AccountResult.ParseError -> {
+                    toast("YouTube's answer wasn't understood. Nothing was changed.")
+                    null
+                }
+            }
+        } finally {
+            _cloudBusy.update { it - key }
+        }
+    }
+
+    /**
+     * Runs a whole change (account first, then this device) on the ViewModel's own scope. If the
+     * caller goes away halfway (a dialog closing), the change still finishes, so the account is
+     * never changed without this device following.
+     */
+    private suspend fun <T> inVmScope(block: suspend () -> T): T =
+        viewModelScope.async(Dispatchers.IO) { block() }.await()
+
+    private suspend fun refreshOpenPlaylist(playlistId: String) {
+        if (_openPlaylistId.value == playlistId) {
+            _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+        }
+    }
+
+    /** Likes or unlikes through the account. Returns the new liked state, or null if not changed. */
+    private suspend fun toggleLikeCloud(song: Song): Boolean? = inVmScope {
+        val wantLike = !isLiked(song.id)
+        cloudCall("song:${song.id}") { s -> CloudWriter.likeSong(s, song.id, wantLike) }
+            ?: return@inVmScope null
+        if (wantLike) like(song) else unlike(song)
+        wantLike
+    }
+
+    /** Adds or removes a song in an account-linked playlist. Returns whether it is in it afterwards. */
+    private suspend fun toggleSongInLinkedPlaylist(song: Song, playlistId: String, cloudId: String): Boolean =
+        inVmScope {
+            val key = "pl:$playlistId:${song.id}"
+            val already = playlistDao.isSongInPlaylist(playlistId, song.id)
+            if (already) {
+                val entryId = playlistDao.getPlaylistSongs(playlistId)
+                    .firstOrNull { it.songId == song.id }?.setVideoId
+                cloudCall(key) { s -> CloudWriter.removeSong(s, cloudId, song.id, entryId) }
+                    ?: return@inVmScope already
+                playlistDao.removeSong(playlistId, song.id)
+                sweepOrphanedCacheNow()
+                refreshOpenPlaylist(playlistId)
+                false
+            } else {
+                val added = cloudCall(key) { s -> CloudWriter.addSong(s, cloudId, song.id) }
+                    ?: return@inVmScope already
+                val topAddedAt = (playlistDao.getMinAddedAt(playlistId) ?: System.currentTimeMillis()) - 1
+                playlistDao.insertSong(
+                    PlaylistSongEntity(
+                        playlistId = playlistId,
+                        songId = song.id,
+                        title = song.title,
+                        artist = song.artist,
+                        thumbnail = song.thumbnail,
+                        isExplicit = song.isExplicit,
+                        albumId = song.albumId,
+                        duration = song.duration,
+                        addedAt = topAddedAt,
+                        artistNames = Song.encodeArtistNames(song.artistNames),
+                        artistIds = Song.encodeArtistIds(song.artistIds),
+                        setVideoId = added.setVideoId
+                    )
+                )
+                viewModelScope.launch { cacheSemaphore.withPermit { cacheSongSilently(song) } }
+                refreshOpenPlaylist(playlistId)
+                true
+            }
+        }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Account library (v2.8): applying a signed-in account's library to this device.
+    // Called only through the library flow, which has already read the whole account
+    // successfully; nothing here talks to the network.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    internal suspend fun libraryCounts(): LibraryCounts = withContext(Dispatchers.IO) {
+        LibraryCounts(
+            liked = _likedSongs.value.size,
+            albums = _savedAlbums.value.size,
+            playlists = playlistDao.getPlaylists().size,
+            playlistSongs = playlistDao.countAllPlaylistSongs()
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Downloaded files follow the library. One rule, in one place: a song's audio, thumbnail
+    // and lyrics stay on this device only while the song is liked, in a playlist, or in a
+    // saved album. Everything else is removed — after a sync pull, after any removal, after a
+    // download that finishes for a song that was just removed, and once when the app starts
+    // (which also clears anything left behind by older versions).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private val cacheSweepMutex = Mutex()
+
+    /** True if [songId] is liked, in any playlist, or in the tracklist of any saved album. */
+    private suspend fun isInLibrary(songId: String): Boolean {
+        if (isLiked(songId)) return true
+        if (_savedAlbumSongs.value.values.any { songs -> songs.any { it.id == songId } }) return true
+        return playlistDao.countPlaylistsContainingSong(songId) > 0
+    }
+
+    /**
+     * Deletes every downloaded file (audio, thumbnail, lyrics, half-finished download) whose
+     * song is no longer in the library. Songs being downloaded right now are left alone, and so
+     * is the one playing. If anything goes wrong reading the library, nothing is deleted.
+     */
+    private suspend fun sweepOrphanedCacheNow() {
+        cacheSweepMutex.withLock {
+            withContext(Dispatchers.IO) {
+                try {
+                    val app = getApplication<Application>()
+                    val keep = HashSet<String>()
+                    _likedSongs.value.forEach { keep += it.id }
+                    keep += playlistDao.getAllPlaylistSongIds()
+                    _savedAlbumSongs.value.values.forEach { songs -> songs.forEach { keep += it.id } }
+                    keep += _cachingSongIds.value
+                    _currentSong.value?.id?.let { keep += it }
+
+                    var removed = 0
+                    for (id in CacheManager.listCachedSongIds(app)) {
+                        if (id.isBlank() || id in keep) continue
+                        CacheManager.removeCachedSong(app, id)
+                        removed++
+                    }
+                    if (removed > 0) {
+                        Timber.tag("Cache").i("Removed files of $removed songs that are no longer in the library")
+                        refreshCacheSize()
+                    }
+                } catch (e: Exception) {
+                    Log.e("YTLite", "Cache sweep failed, nothing was deleted: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Makes this device's library match [snapshot]. Playlists are written in one database
+     * transaction (all or nothing); liked songs and saved albums are replaced afterwards.
+     * Songs are NOT downloaded here: they show as not cached, exactly like an imported library.
+     */
+    internal suspend fun replaceLibraryWithCloud(snapshot: CloudSnapshot, wipeLocalOnly: Boolean) {
+        withContext(Dispatchers.IO) {
+            val app = getApplication<Application>()
+
+            // ── Playlists ──
+            val existing = playlistDao.getPlaylists()
+            val existingByCloudId = existing.filter { it.cloudId != null }.associateBy { it.cloudId!! }
+            val cloudIds = snapshot.playlists.map { it.playlist.id }.toSet()
+
+            val deleteIds = existing.filter {
+                (it.cloudId != null && it.cloudId !in cloudIds) || (wipeLocalOnly && it.cloudId == null)
+            }.map { it.id }
+
+            val keptSortOrders = existing
+                .filter { it.id !in deleteIds && it.cloudId != null && it.cloudId in cloudIds }
+                .map { it.sortOrder }
+            val newPlaylistCount = snapshot.playlists.count { existingByCloudId[it.playlist.id] == null }
+            // New playlists go above everything already there, keeping the account's own order.
+            var nextNewSortOrder = (keptSortOrders.minOrNull() ?: 0) - newPlaylistCount
+
+            val playlistEntities = ArrayList<PlaylistEntity>()
+            val songEntities = ArrayList<PlaylistSongEntity>()
+            for (cloud in snapshot.playlists) {
+                val parsed = PlaylistNameCodec.parse(cloud.playlist.title)
+                val emoji = parsed.emoji ?: "\uD83C\uDFB5"   // the app's default playlist icon
+                val local = existingByCloudId[cloud.playlist.id]
+                val localId = local?.id ?: cloud.playlist.id
+                playlistEntities += PlaylistEntity(
+                    id = localId,
+                    name = parsed.name.ifBlank { cloud.playlist.title },
+                    emoji = emoji,
+                    createdAt = local?.createdAt ?: System.currentTimeMillis(),
+                    sortOrder = local?.sortOrder ?: nextNewSortOrder++,
+                    cloudId = cloud.playlist.id
+                )
+                // The account's order is kept: first song in the account = first in the app
+                // (the app lists songs by ascending addedAt).
+                cloud.songs.forEachIndexed { index, c ->
+                    val song = c.song
+                    songEntities += PlaylistSongEntity(
+                        playlistId = localId,
+                        songId = song.id,
+                        title = song.title,
+                        artist = song.artist,
+                        thumbnail = song.thumbnail,
+                        isExplicit = song.isExplicit,
+                        albumId = song.albumId,
+                        duration = song.duration,
+                        addedAt = index.toLong(),
+                        artistNames = Song.encodeArtistNames(song.artistNames),
+                        artistIds = Song.encodeArtistIds(song.artistIds),
+                        setVideoId = c.setVideoId
+                    )
+                }
+            }
+            playlistDao.applyCloudPlaylists(deleteIds, playlistEntities, songEntities)
+
+            // ── Liked songs ──
+            _likedSongs.value = snapshot.liked.map { c ->
+                val cached = CacheManager.isCached(app, c.song.id)
+                c.song.copy(isCached = cached, cacheFailed = !cached)
+            }
+            saveLikedSongs()
+
+            // ── Saved albums (keep details the account's list doesn't carry) ──
+            val oldAlbums = _savedAlbums.value.associateBy { it.id }
+            _savedAlbums.value = snapshot.albums.map { a ->
+                val old = oldAlbums[a.id]
+                if (old == null) a else a.copy(
+                    duration = old.duration,
+                    songCount = old.songCount,
+                    youtubeUrl = old.youtubeUrl
+                )
+            }
+            saveSavedAlbums()
+
+            // Tracklists kept for albums that are no longer saved would keep those songs' audio
+            // alive. An album counts as still saved if its id OR its title matches (the account
+            // can list the same album under a different browse id).
+            val keptIds = _savedAlbums.value.map { it.id }.toSet()
+            val keptTitles = _savedAlbums.value.map { normalizeAlbumTitle(it.title) }.toSet()
+            val staleKeys = _savedAlbumSongs.value.keys.filter { key ->
+                key !in keptIds && oldAlbums[key]?.let { normalizeAlbumTitle(it.title) in keptTitles } != true
+            }
+            if (staleKeys.isNotEmpty()) {
+                _savedAlbumSongs.value = _savedAlbumSongs.value - staleKeys.toSet()
+                saveSavedAlbumSongs()
+            }
+
+            // ── Audio no longer referenced by anything ──
+            sweepOrphanedCacheNow()
+            refreshCacheSize()
+            _openPlaylistId.value?.let { _openPlaylistSongs.value = playlistDao.getPlaylistSongs(it) }
+        }
+    }
+
+    /** Empties liked songs, saved albums and playlists on this device, and their cached audio. */
+    internal suspend fun clearLocalLibrary() {
+        withContext(Dispatchers.IO) {
+            playlistDao.clearAllLocalPlaylists()
+            _likedSongs.value = emptyList()
+            saveLikedSongs()
+            _savedAlbums.value = emptyList()
+            saveSavedAlbums()
+            _savedAlbumSongs.value = emptyMap()
+            saveSavedAlbumSongs()
+            sweepOrphanedCacheNow()
+            refreshCacheSize()
+            _openPlaylistSongs.value = emptyList()
+        }
+    }
+
+    /** Turns every account-linked playlist into a plain local one. Nothing is removed. */
+    internal suspend fun detachLocalLibraryFromCloud() {
+        withContext(Dispatchers.IO) { playlistDao.detachAllFromCloud() }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Custom Playlists (Room)
     // ─────────────────────────────────────────────────────────────────────────
 
     fun createPlaylist(name: String, emoji: String) {
+        viewModelScope.launch { createPlaylistAwait(name, emoji) }
+    }
+
+    /**
+     * Creates a playlist and returns true once it exists. With an account linked it is created
+     * there first (private) and its ID becomes the local ID; any failure returns false and
+     * nothing is created. Finishes even if the caller goes away.
+     */
+    suspend fun createPlaylistAwait(name: String, emoji: String): Boolean = inVmScope {
         val trimmed = name.trim()
         val isDuplicate = customPlaylists.value.any { it.name.equals(trimmed, ignoreCase = true) }
-        if (isDuplicate) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val entity = PlaylistEntity(
-                id = UUID.randomUUID().toString(),
-                name = trimmed,
-                emoji = emoji,
-                // New playlists go to the TOP of the list (lowest sortOrder sorts first).
-                sortOrder = (playlistDao.getMinSortOrder() ?: 0) - 1
-            )
-            playlistDao.insertPlaylist(entity)
+        if (isDuplicate) return@inVmScope false
+        val mode = writeMode()
+        if (mode == WriteMode.REFUSED) {
+            refuseExpired()
+            return@inVmScope false
         }
+        var cloudId: String? = null
+        if (mode == WriteMode.CLOUD) {
+            cloudId = cloudCall("create:$trimmed") { s ->
+                CloudWriter.createPlaylist(s, PlaylistNameCodec.compose(emoji, trimmed))
+            } ?: return@inVmScope false
+        }
+        val entity = PlaylistEntity(
+            id = cloudId ?: UUID.randomUUID().toString(),
+            name = trimmed,
+            emoji = emoji,
+            // New playlists go to the TOP of the list (lowest sortOrder sorts first).
+            sortOrder = (playlistDao.getMinSortOrder() ?: 0) - 1,
+            cloudId = cloudId
+        )
+        playlistDao.insertPlaylist(entity)
+        true
     }
 
     fun reorderPlaylists(fromIndex: Int, toIndex: Int) {
@@ -1624,36 +2093,95 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * True (with a message) when [playlistId] is a playlist this account can't edit: one someone else
+     * made, or a YouTube built-in list. Nothing is sent to YouTube for it.
+     */
+    private suspend fun refuseReadOnly(playlistId: String): Boolean {
+        val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (!PlaylistAccess.flags.value.isReadOnly(cloudId)) return false
+        toast("This playlist can't be edited.")
+        return true
+    }
+
     fun deletePlaylist(playlistId: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            // Get songs before deletion to check cache cleanup
-            val songs = playlistDao.getPlaylistSongs(playlistId)
-            playlistDao.clearPlaylist(playlistId)
-            playlistDao.deletePlaylist(playlistId)
-            // For each song, remove cache only if it's not liked and not in other playlists
-            songs.forEach { entity ->
-                val liked = isLiked(entity.songId)
-                val inOther = playlistDao.countPlaylistsContainingSong(entity.songId) > 0
-                if (!liked && !inOther) {
-                    CacheManager.removeCachedSong(getApplication(), entity.songId)
-                }
+        viewModelScope.launch { deletePlaylistAwait(playlistId) }
+    }
+
+    /**
+     * Deletes (or, for someone else's playlist, un-saves) a playlist and returns true once it is
+     * gone. With an account linked the account is changed first; any failure returns false and
+     * nothing changes on this device (the reason has already been shown).
+     */
+    suspend fun deletePlaylistAwait(playlistId: String): Boolean = inVmScope {
+        val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (cloudId != null) {
+            val access = PlaylistAccess.flags.value
+            if (access.isSpecial(cloudId)) {
+                toast("This list can't be removed.")
+                return@inVmScope false
             }
-            refreshCacheSize()
+            // Someone else's playlist is only taken out of the library; it stays on YouTube.
+            val savedOnly = access.isReadOnly(cloudId)
+            when (writeMode()) {
+                WriteMode.REFUSED -> {
+                    refuseExpired()
+                    return@inVmScope false
+                }
+                WriteMode.CLOUD -> {
+                    cloudCall("pl:$playlistId") { s ->
+                        if (savedOnly) CloudWriter.removeSavedPlaylist(s, cloudId)
+                        else CloudWriter.deletePlaylist(s, cloudId)
+                    } ?: return@inVmScope false
+                }
+                WriteMode.LOCAL -> Unit
+            }
         }
+        playlistDao.clearPlaylist(playlistId)
+        playlistDao.deletePlaylist(playlistId)
+        // Songs that were only in this playlist lose their files too.
+        sweepOrphanedCacheNow()
+        refreshCacheSize()
+        true
     }
 
     fun renamePlaylist(playlistId: String, name: String, emoji: String) {
+        viewModelScope.launch { renamePlaylistAwait(playlistId, name, emoji) }
+    }
+
+    /** Renames / re-icons a playlist and returns true once done. Account first when linked. */
+    suspend fun renamePlaylistAwait(playlistId: String, name: String, emoji: String): Boolean = inVmScope {
+        if (refuseReadOnly(playlistId)) return@inVmScope false
         val trimmed = name.trim()
         val isDuplicate = customPlaylists.value.any {
             it.id != playlistId && it.name.equals(trimmed, ignoreCase = true)
         }
-        if (isDuplicate) return
-        viewModelScope.launch(Dispatchers.IO) {
-            playlistDao.renamePlaylist(playlistId, trimmed, emoji)
+        if (isDuplicate) return@inVmScope false
+        val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (cloudId != null) {
+            when (writeMode()) {
+                WriteMode.REFUSED -> {
+                    refuseExpired()
+                    return@inVmScope false
+                }
+                WriteMode.CLOUD -> {
+                    // The icon lives in the account's playlist name, so changing it renames the playlist there.
+                    cloudCall("pl:$playlistId") { s ->
+                        CloudWriter.renamePlaylist(s, cloudId, PlaylistNameCodec.compose(emoji, trimmed))
+                    } ?: return@inVmScope false
+                }
+                WriteMode.LOCAL -> Unit
+            }
         }
+        playlistDao.renamePlaylist(playlistId, trimmed, emoji)
+        true
     }
 
     fun loadPlaylistSongs(playlistId: String) {
+        // Switching to another playlist: drop the previous one's songs now, so nothing can read
+        // them as this playlist's (isSongInPlaylist trusts the list once the id matches) while
+        // the database read is in flight. Reopening the same playlist keeps its list.
+        if (_openPlaylistId.value != playlistId) _openPlaylistSongs.value = emptyList()
         _openPlaylistId.value = playlistId
         viewModelScope.launch(Dispatchers.IO) {
             _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
@@ -1692,16 +2220,42 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
      * sheet closing, exactly like liking a song already does.
      */
     suspend fun toggleSongInPlaylist(song: Song, playlistId: String): Boolean {
+        if (playlistId != LIKED_PLAYLIST_ID && refuseReadOnly(playlistId)) return false
         // The sheet may have captured the initial link placeholder. Prefer the current resolved
         // song when it represents the same video, so adding after resolution stores real data.
         val songToSave = _currentSong.value?.takeIf {
             it.id == song.id && it.title.isNotBlank() && !it.title.equals("Loading...", ignoreCase = true)
         } ?: song
-        return if (playlistId == LIKED_PLAYLIST_ID) {
+        if (playlistId == LIKED_PLAYLIST_ID) {
             val wasLiked = isLiked(songToSave.id)
-            toggleLike(songToSave)
-            !wasLiked
-        } else {
+            return when (writeMode()) {
+                WriteMode.LOCAL -> {
+                    toggleLike(songToSave)
+                    !wasLiked
+                }
+                WriteMode.REFUSED -> {
+                    refuseExpired()
+                    wasLiked
+                }
+                // The answer is what is true afterwards, so a refused change reads as "unchanged".
+                WriteMode.CLOUD -> toggleLikeCloud(songToSave) ?: wasLiked
+            }
+        }
+
+        // A playlist linked to the account is changed there first.
+        val linkedCloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (linkedCloudId != null) {
+            when (writeMode()) {
+                WriteMode.CLOUD -> return toggleSongInLinkedPlaylist(songToSave, playlistId, linkedCloudId)
+                WriteMode.REFUSED -> {
+                    refuseExpired()
+                    return playlistDao.isSongInPlaylist(playlistId, songToSave.id)
+                }
+                WriteMode.LOCAL -> Unit
+            }
+        }
+
+        return run {
             withContext(Dispatchers.IO) {
                 val already = playlistDao.isSongInPlaylist(playlistId, songToSave.id)
                 val added: Boolean
@@ -1774,18 +2328,41 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeSongFromCustomPlaylist(playlistId: String, song: Song) {
-        viewModelScope.launch(Dispatchers.IO) {
-            playlistDao.removeSong(playlistId, song.id)
-            val liked = isLiked(song.id)
-            val inOther = playlistDao.countPlaylistsContainingSong(song.id) > 0
-            if (!liked && !inOther) {
-                CacheManager.removeCachedSong(getApplication(), song.id)
-                refreshCacheSize()
-            }
-            if (_openPlaylistId.value == playlistId) {
-                _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+        viewModelScope.launch { removeSongFromCustomPlaylistAwait(playlistId, song) }
+    }
+
+    /**
+     * Removes a song from a playlist and returns true once it is gone. With an account linked
+     * it is removed there first; any failure returns false and nothing changes on this device
+     * (the reason has already been shown).
+     */
+    suspend fun removeSongFromCustomPlaylistAwait(playlistId: String, song: Song): Boolean = inVmScope {
+        if (refuseReadOnly(playlistId)) return@inVmScope false
+        val cloudId = playlistDao.getPlaylists().firstOrNull { it.id == playlistId }?.cloudId
+        if (cloudId != null) {
+            when (writeMode()) {
+                WriteMode.REFUSED -> {
+                    refuseExpired()
+                    return@inVmScope false
+                }
+                WriteMode.CLOUD -> {
+                    val entryId = playlistDao.getPlaylistSongs(playlistId)
+                        .firstOrNull { it.songId == song.id }?.setVideoId
+                    cloudCall("pl:$playlistId:${song.id}") { s ->
+                        CloudWriter.removeSong(s, cloudId, song.id, entryId)
+                    } ?: return@inVmScope false
+                }
+                WriteMode.LOCAL -> Unit
             }
         }
+        playlistDao.removeSong(playlistId, song.id)
+        // The song's files go too, unless it is liked, in another playlist or in a saved album.
+        sweepOrphanedCacheNow()
+        refreshCacheSize()
+        if (_openPlaylistId.value == playlistId) {
+            _openPlaylistSongs.value = playlistDao.getPlaylistSongs(playlistId)
+        }
+        true
     }
 
     fun playCustomPlaylist(playlistId: String) {
@@ -1836,6 +2413,19 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // ─────────────────────────────────────────────────────────────────────────
 
     fun saveAlbum(album: Album) {
+        when (writeMode()) {
+            WriteMode.LOCAL -> saveAlbumLocal(album)
+            WriteMode.REFUSED -> refuseExpired()
+            WriteMode.CLOUD -> viewModelScope.launch {
+                if (isAlbumSaved(album.id, album.title)) return@launch
+                cloudCall("album:${album.id}") { s -> CloudWriter.likeAlbum(s, album.id, true) }
+                    ?: return@launch
+                saveAlbumLocal(album)
+            }
+        }
+    }
+
+    private fun saveAlbumLocal(album: Album) {
         if (!isAlbumSaved(album.id, album.title)) {
             _savedAlbums.value = listOf(album) + _savedAlbums.value
             saveSavedAlbums()
@@ -1887,6 +2477,35 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun unsaveAlbum(album: Album) {
+        viewModelScope.launch { unsaveAlbumAwait(album) }
+    }
+
+    /**
+     * Removes a saved album and returns true once it is gone. With an account linked it is
+     * removed there first; any failure returns false and nothing changes on this device (the
+     * reason has already been shown). Runs on the ViewModel's own scope, so the account and
+     * this device always finish together even if the caller goes away halfway.
+     */
+    suspend fun unsaveAlbumAwait(album: Album): Boolean = viewModelScope.async {
+        when (writeMode()) {
+            WriteMode.LOCAL -> {
+                unsaveAlbumLocal(album)
+                true
+            }
+            WriteMode.REFUSED -> {
+                refuseExpired()
+                false
+            }
+            WriteMode.CLOUD -> {
+                cloudCall("album:${album.id}") { s -> CloudWriter.likeAlbum(s, album.id, false) }
+                    ?: return@async false
+                unsaveAlbumLocal(album)
+                true
+            }
+        }
+    }.await()
+
+    private fun unsaveAlbumLocal(album: Album) {
         // Remove by id OR by matching title, so unsaving works even if this screen was
         // opened via a different browse id than the one the album was originally saved under.
         val toRemove = _savedAlbums.value.filter {
@@ -1896,28 +2515,15 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         _savedAlbums.value = _savedAlbums.value.filterNot { it in toRemove }
         saveSavedAlbums()
         Toast.makeText(getApplication(), "Album removed", Toast.LENGTH_SHORT).show()
-        // Remove cached songs that aren't liked or in custom playlists, using the persisted
-        // tracklist (falls back to a live lookup only if we never had one cached).
+        // Forget the removed albums' tracklists, then delete the files of songs nothing else
+        // (a like, a playlist, another saved album) still needs.
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 toRemove.forEach { removedAlbum ->
-                    val songs = _savedAlbumSongs.value[removedAlbum.id]
-                        ?: try {
-                            Innertube.getAlbumSongs(removedAlbum.id, removedAlbum.artist, caller = "unsaveAlbum").second
-                        } catch (e: Exception) {
-                            Log.e("YTLite", "unsaveAlbum: live lookup failed: ${e.message}")
-                            emptyList()
-                        }
-                    songs.forEach { song ->
-                        val liked = isLiked(song.id)
-                        val inPlaylist = playlistDao.countPlaylistsContainingSong(song.id) > 0
-                        if (!liked && !inPlaylist) {
-                            CacheManager.removeCachedSong(getApplication(), song.id)
-                        }
-                    }
                     _savedAlbumSongs.value = _savedAlbumSongs.value - removedAlbum.id
                 }
                 saveSavedAlbumSongs()
+                sweepOrphanedCacheNow()
                 refreshCacheSize()
             } catch (e: Exception) {
                 Log.e("YTLite", "Failed to clean album cache: ${e.message}")
@@ -2491,6 +3097,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun importData(context: Context, uri: Uri) {
+        // A backup import would silently diverge from the account, so it is only allowed
+        // while signed out (the Settings row is disabled too; this is the backstop).
+        if (AccountManager.state.value !is AccountState.LoggedOut) return
         viewModelScope.launch {
             try {
                 val text = context.contentResolver
