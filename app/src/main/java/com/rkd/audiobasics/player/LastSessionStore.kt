@@ -125,8 +125,7 @@ class LastSessionStore(context: Context) {
         val id = o.getString("id")
         // Same rule the app uses when it starts a song: the downloaded file if there is one,
         // otherwise the stream, which the service resolves when playback actually starts.
-        val cached = CacheManager.getCachedFilePath(appContext, id)
-        val uri = if (cached != null) "file://$cached" else "https://www.youtube.com/watch?v=$id"
+        val uri = uriFor(appContext, id)
         val cachedThumb = CacheManager.getCachedThumbPath(appContext, id)
         val art = if (cachedThumb != null) Uri.parse("file://$cachedThumb")
         else o.optString("art").takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
@@ -161,15 +160,21 @@ class LastSessionStore(context: Context) {
             .build()
     }
 
-    private companion object {
-        const val FILE_NAME = "last_session.json"
+    companion object {
+        private const val FILE_NAME = "last_session.json"
+
+        /** The downloaded file if there is one, otherwise the stream (resolved when playback starts). */
+        fun uriFor(context: Context, id: String): String {
+            val cached = CacheManager.getCachedFilePath(context.applicationContext, id)
+            return if (cached != null) "file://$cached" else "https://www.youtube.com/watch?v=$id"
+        }
 
         // Must match the keys MusicViewModel.buildMediaItem writes (its SongExtraKeys).
-        const val ALBUM_ID = "albumId"
-        const val ALBUM_TITLE = "albumTitle"
-        const val YEAR = "year"
-        const val IS_EXPLICIT = "isExplicit"
-        const val ARTIST_NAMES = "artistNames"
-        const val ARTIST_IDS = "artistIds"
+        private const val ALBUM_ID = "albumId"
+        private const val ALBUM_TITLE = "albumTitle"
+        private const val YEAR = "year"
+        private const val IS_EXPLICIT = "isExplicit"
+        private const val ARTIST_NAMES = "artistNames"
+        private const val ARTIST_IDS = "artistIds"
     }
 }
