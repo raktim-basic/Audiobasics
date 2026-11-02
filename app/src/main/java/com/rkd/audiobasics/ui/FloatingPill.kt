@@ -172,7 +172,7 @@ class FloatingBarState {
 }
 
 /** How long the screen must sit untouched and still (after any scroll animation ends) before a hidden bar comes back. */
-private const val AUTO_SHOW_IDLE_MS = 1000L
+private const val AUTO_SHOW_IDLE_MS = 500L
 
 /**
  * Lays [content] out full-size and floats [bar] over its bottom edge (just above the mini

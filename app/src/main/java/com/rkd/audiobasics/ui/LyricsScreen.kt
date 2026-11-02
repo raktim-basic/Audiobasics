@@ -205,11 +205,8 @@ fun LyricsCardContent(
                 hasError || lyricsResult == null -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            text = if (hasError) {
-                                "Couldn't load lyrics.\nCheck your connection and tap refresh."
-                            } else {
-                                "Lyrics not found.\nPerhaps listen to it the old school way :)"
-                            },
+                            // A failed fetch and "no lyrics exist" can't be told apart, so one message covers both.
+                            text = "Couldn't load lyrics.\nPerhaps listen the old school way :)\nTap refresh to try again.",
                             fontFamily = NothingFont,
                             fontSize = 16.sp,
                             color = Color.Gray,
