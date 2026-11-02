@@ -708,7 +708,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         val buffering = ctrl.playbackState == Player.STATE_BUFFERING
         if (_isPlaying.value != playing) _isPlaying.value = playing
         if (_isLoading.value != buffering) _isLoading.value = buffering
-        val dur = ctrl.duration.takeIf { it > 0 } ?: 0L
+        // A restored (not yet prepared) player doesn't know its duration; use the song's own.
+        val dur = ctrl.duration.takeIf { it > 0 }
+            ?: _currentSong.value?.duration?.takeIf { it > 0 && ctrl.playbackState == Player.STATE_IDLE }
+            ?: 0L
         if (_duration.value != dur) _duration.value = dur
         _currentPosition.value = ctrl.currentPosition.coerceAtLeast(0L)
         val mappedRepeat = when (ctrl.repeatMode) {

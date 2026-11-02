@@ -45,11 +45,17 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 private var savedLikedIndex = 0
 private var savedLikedOffset = 0
 
+// Bumped every time the saved position is reset. A screen instance only saves while its
+// generation is current, so a scroll still gliding while the screen animates away can't
+// write its end position back after the reset.
+private var likedScrollGeneration = 0
+
 // Called from MainActivity's navigateBack() specifically when Liked is the screen being
 // popped (i.e. the user is leaving it, not just returning to it from something pushed on
 // top like Queue or Song Info). Keeps the existing "resume where I left off" behavior for
 // forward navigation while making an actual back-out start fresh at the top next time.
 internal fun resetLikedScreenScroll() {
+    likedScrollGeneration++
     savedLikedIndex = 0
     savedLikedOffset = 0
 }
@@ -74,6 +80,7 @@ fun LikedScreen(
     var isSearching by remember { mutableStateOf(false) }
     var removeConfirm by remember { mutableStateOf<Song?>(null) }
 
+    val scrollGeneration = remember { likedScrollGeneration }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = savedLikedIndex,
         initialFirstVisibleItemScrollOffset = savedLikedOffset
@@ -141,7 +148,7 @@ fun LikedScreen(
     }
 
     LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
-        if (filteredSongs.isNotEmpty()) {
+        if (filteredSongs.isNotEmpty() && scrollGeneration == likedScrollGeneration) {
             savedLikedIndex = listState.firstVisibleItemIndex
             savedLikedOffset = listState.firstVisibleItemScrollOffset
         }

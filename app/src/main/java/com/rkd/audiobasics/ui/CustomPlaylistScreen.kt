@@ -47,8 +47,19 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private val savedPlaylistScroll = mutableMapOf<String, Pair<Int, Int>>()
 
+// See likedScrollGeneration in LikedScreen: stops a glide that is still running while the
+// screen animates away from writing its end position back after the reset.
+private var playlistScrollGeneration = 0
+
 internal fun resetCustomPlaylistScroll(playlistId: String) {
+    playlistScrollGeneration++
     savedPlaylistScroll.remove(playlistId)
+}
+
+/** A fresh app start: every playlist opens at the top, including after the app was cleared from recents. */
+internal fun resetAllCustomPlaylistScroll() {
+    playlistScrollGeneration++
+    savedPlaylistScroll.clear()
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -87,6 +98,7 @@ fun CustomPlaylistScreen(
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    val scrollGeneration = remember(playlist.id) { playlistScrollGeneration }
     val (savedIndex, savedOffset) = remember(playlist.id) {
         savedPlaylistScroll[playlist.id] ?: (0 to 0)
     }
@@ -156,7 +168,7 @@ fun CustomPlaylistScreen(
     }
 
     LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
-        if (filteredSongs.isNotEmpty()) {
+        if (filteredSongs.isNotEmpty() && scrollGeneration == playlistScrollGeneration) {
             savedPlaylistScroll[playlist.id] =
                 listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
         }
