@@ -3,6 +3,9 @@ package com.rkd.audiobasics.player
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import androidx.media3.common.Timeline
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
@@ -38,6 +41,28 @@ import java.util.concurrent.ConcurrentHashMap
 class MusicService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+
+    // Keeps the last queue / song / position on disk so a cleared app comes back where it was.
+    private var lastSession: LastSessionStore? = null
+    private val saveHandler = Handler(Looper.getMainLooper())
+    private val saveNowTask = Runnable { saveSession() }
+    private val periodicSaveTask = object : Runnable {
+        override fun run() {
+            saveSession()
+            saveHandler.postDelayed(this, 10_000)
+        }
+    }
+
+    private fun saveSession() {
+        val player = mediaSession?.player ?: return
+        lastSession?.save(player)
+    }
+
+    // Queue edits and seeks come in bursts; write once things settle.
+    private fun saveSessionSoon() {
+        saveHandler.removeCallbacks(saveNowTask)
+        saveHandler.postDelayed(saveNowTask, 1_000)
+    }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Cache: videoId -> Pair(streamUrl, expiryTimeMs)
@@ -181,11 +206,48 @@ class MusicService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
+        // Bring back the previous queue, song and position, paused. Nothing is prepared, so no
+        // network is touched until the user presses play (the session prepares on demand).
+        val store = LastSessionStore(this)
+        lastSession = store
+        store.load()?.let { restored ->
+            player.setMediaItems(restored.items, restored.index, restored.positionMs)
+            Timber.d("LastSession: restored ${restored.items.size} songs at index ${restored.index}")
+        }
+
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                saveHandler.removeCallbacks(periodicSaveTask)
+                if (isPlaying) {
+                    // Keep the saved position fresh while playing, in case the system ends the service.
+                    saveHandler.postDelayed(periodicSaveTask, 10_000)
+                } else {
+                    saveHandler.removeCallbacks(saveNowTask)
+                    saveSession()
+                }
+            }
+
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) = saveSessionSoon()
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) saveSessionSoon()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) saveSession()
+            }
+        })
+
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(
                 mediaItem: androidx.media3.common.MediaItem?,
                 reason: Int
             ) {
+                saveSessionSoon()
                 val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
                 val videoId = extractVideoId(uri) ?: return
                 preResolveUrl(videoId, force = false)
@@ -279,7 +341,18 @@ class MusicService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Whatever happens next (the service may stop if nothing is playing), keep the latest state.
+        saveHandler.removeCallbacks(saveNowTask)
+        saveSession()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        saveHandler.removeCallbacks(periodicSaveTask)
+        saveHandler.removeCallbacks(saveNowTask)
+        saveSession()
+        lastSession?.flush()
         mediaSession?.run {
             player.release()
             release()
