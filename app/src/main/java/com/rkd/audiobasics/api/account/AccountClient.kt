@@ -71,7 +71,15 @@ internal object AccountClient {
         body: JSONObject = JSONObject(),
         continuation: String? = null
     ): AccountResult<JSONObject> =
-        postRaw(session.cookie, session.visitorData, session.authUser, endpoint, body, continuation)
+        postRaw(
+            session.cookie,
+            session.visitorData,
+            session.authUser,
+            endpoint,
+            body,
+            continuation,
+            session.dataSyncId
+        )
 
     fun postRaw(
         cookie: String,
@@ -79,11 +87,14 @@ internal object AccountClient {
         authUser: String,
         endpoint: String,
         body: JSONObject = JSONObject(),
-        continuation: String? = null
+        continuation: String? = null,
+        dataSyncId: String? = null
     ): AccountResult<JSONObject> {
         val authorization = SapisidAuth.authorizationHeader(cookie)
             ?: return AccountResult.SessionExpired
 
+        val user = JSONObject().put("lockedSafetyMode", false)
+        normalizeDataSyncId(dataSyncId)?.let { user.put("onBehalfOfUser", it) }
         body.put(
             "context",
             JSONObject()
@@ -96,13 +107,18 @@ internal object AccountClient {
                         .put("gl", "US")
                         .put("visitorData", visitorData)
                 )
-                .put("user", JSONObject().put("lockedSafetyMode", false))
+                .put("user", user)
+                .put("request", JSONObject().put("useSsl", true))
         )
+        // Match BitChord's WEB_REMIX continuation request: send the same token in
+        // both places. YouTube currently accepts either form, but some responses
+        // are only returned consistently when the body field is present too.
+        continuation?.let { body.put("continuation", it) }
 
-        // A continuation token rides in the query string (as the web client does); the body
-        // stays a plain context-only request.
         val url = "$BASE/$endpoint".toHttpUrl().newBuilder()
             .addQueryParameter("key", API_KEY)
+            .addQueryParameter("hl", "en")
+            .addQueryParameter("prettyPrint", "false")
             .apply {
                 if (continuation != null) {
                     addQueryParameter("ctoken", continuation)
@@ -163,13 +179,22 @@ internal object AccountClient {
         return AccountResult.Success(json)
     }
 
+    /** BitChord's normalizeDataSyncId: use the active delegated identity after `||` when present. */
+    private fun normalizeDataSyncId(raw: String?): String? {
+        val value = raw?.takeIf { it.isNotBlank() } ?: return null
+        if (!value.contains("||")) return value
+        return value.substringAfter("||").takeIf { it.isNotBlank() }
+            ?: value.substringBefore("||").takeIf { it.isNotBlank() }
+    }
+
     /** Who is signed in, according to YouTube — also the cheapest "is this session alive?" check. */
     fun fetchAccountInfo(
         cookie: String,
         visitorData: String,
-        authUser: String
+        authUser: String,
+        dataSyncId: String? = null
     ): AccountResult<AccountInfo> =
-        postRaw(cookie, visitorData, authUser, "account/account_menu")
+        postRaw(cookie, visitorData, authUser, "account/account_menu", dataSyncId = dataSyncId)
             .flatMap { parseAccountInfo(it) }
 
     private fun parseAccountInfo(json: JSONObject): AccountResult<AccountInfo> {

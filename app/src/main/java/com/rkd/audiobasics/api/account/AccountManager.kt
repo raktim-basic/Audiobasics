@@ -112,7 +112,7 @@ object AccountManager {
         opLock.withLock {
             val current = session ?: return@withLock
             val result = withContext(Dispatchers.IO) {
-                AccountClient.fetchAccountInfo(current.cookie, current.visitorData, current.authUser)
+                AccountClient.fetchAccountInfo(current.cookie, current.visitorData, current.authUser, current.dataSyncId)
             }
             when (result) {
                 is AccountResult.Success -> {
@@ -153,7 +153,7 @@ object AccountManager {
         }
 
         val result = withContext(Dispatchers.IO) {
-            AccountClient.fetchAccountInfo(captured.cookie, captured.visitorData, captured.authUser)
+            AccountClient.fetchAccountInfo(captured.cookie, captured.visitorData, captured.authUser, captured.dataSyncId)
         }
         val info = when (result) {
             is AccountResult.Success -> result.value

@@ -136,7 +136,7 @@ internal object CloudLibrary {
             } else {
                 AccountClient.post(session, "browse", JSONObject(), continuation = token)
             }
-            val json = when (response) {
+            var json = when (response) {
                 is AccountResult.Success -> response.value
                 is AccountResult.SessionExpired -> return response
                 is AccountResult.NetworkError -> return response
@@ -144,7 +144,26 @@ internal object CloudLibrary {
                 is AccountResult.ParseError -> return response
             }
 
-            val parsed = if (token == null) parseFirst(json) else parseNext(json)
+            var parsed = if (token == null) parseFirst(json) else parseNext(json)
+            // A continuation occasionally arrives as a 200 response containing only
+            // responseContext/trackingParams. It is not a valid empty final page: YouTube
+            // had already advertised another page. Retry that exact token once before
+            // refusing the snapshot, so a transient bare response cannot poison sync.
+            if (token != null && parsed is AccountResult.ParseError && isMetadataOnly(json)) {
+                Timber.tag(TAG).w("$label: page ${pages + 1} returned metadata only; retrying the same continuation once")
+                Thread.sleep(500L)
+                val retry = AccountClient.post(session, "browse", JSONObject(), continuation = token)
+                when (retry) {
+                    is AccountResult.Success -> {
+                        json = retry.value
+                        parsed = parseNext(json)
+                    }
+                    is AccountResult.SessionExpired -> return retry
+                    is AccountResult.NetworkError -> return retry
+                    is AccountResult.ServerError -> return retry
+                    is AccountResult.ParseError -> return retry
+                }
+            }
             val page = when (parsed) {
                 is AccountResult.Success -> parsed.value
                 is AccountResult.SessionExpired -> return parsed
@@ -185,11 +204,20 @@ internal object CloudLibrary {
         return AccountResult.Success(CloudList(items, pages, advertised, rows, skipped, editable))
     }
 
+    /** A successful HTTP response with no payload beyond response metadata. */
+    private fun isMetadataOnly(json: JSONObject): Boolean {
+        val keys = json.keys().asSequence().toSet()
+        return keys.isNotEmpty() && keys.all { it == "responseContext" || it == "trackingParams" }
+    }
+
     // ─── Song pages (liked songs, playlists) ─────────────────────────────────
 
     private fun parseSongPage(json: JSONObject, first: Boolean): AccountResult<Page<CloudSong>> {
-        val shelf = (if (first) playlistShelf(json) else continuationShelf(json))
+        val shelf = (if (first) playlistShelf(json) else playlistContinuationShelf(json))
         if (shelf == null) {
+            if (!first && isMetadataOnly(json)) {
+                return AccountResult.ParseError("YouTube returned a metadata-only continuation page (${shapeOf(json)})")
+            }
             // An empty playlist arrives as a song-list shelf that has no "contents" at all. That
             // is only believed when the page header doesn't contradict it; a header that claims
             // songs while the list is missing stays an error (never "empty" by guesswork).
@@ -210,19 +238,24 @@ internal object CloudLibrary {
         val songs = ArrayList<CloudSong>()
         val unknownKinds = LinkedHashSet<String>()
         var unknown = 0
-        for (i in 0 until shelf.contents.length()) {
-            val entry = shelf.contents.optJSONObject(i) ?: continue
-            val item = entry.optJSONObject("musicResponsiveListItemRenderer")
-            if (item == null) {
+        val rowRenderers = collectObjects(shelf.source, "musicResponsiveListItemRenderer")
+        if (rowRenderers.isNotEmpty()) {
+            // BitChord walks the selected playlist shelf recursively. YouTube has
+            // moved row renderers under extra wrapper objects in some continuation
+            // responses, so a direct-child-only scan silently loses those pages.
+            for (item in rowRenderers) {
+                rows++
+                val song = parseSongRow(item)
+                if (song == null) skipped++ else songs += song
+            }
+        } else {
+            for (i in 0 until shelf.contents.length()) {
+                val entry = shelf.contents.optJSONObject(i) ?: continue
                 if (!entry.has("continuationItemRenderer")) {
                     unknown++
                     for (k in entry.keys()) unknownKinds += k
                 }
-                continue
             }
-            rows++
-            val song = parseSongRow(item)
-            if (song == null) skipped++ else songs += song
         }
         // Entries that are neither songs nor a "load more" marker mean the layout isn't what we
         // think it is. Reading that as "no songs" would look like an empty library.
@@ -234,7 +267,7 @@ internal object CloudLibrary {
                 items = songs,
                 rows = rows,
                 skipped = skipped,
-                continuation = nextToken(shelf),
+                continuation = nextToken(shelf.source),
                 advertised = if (first) advertisedSongCount(json) else null,
                 editable = if (first) editableSignal(json) else null
             )
@@ -392,8 +425,11 @@ internal object CloudLibrary {
         first: Boolean,
         parseItem: (JSONObject) -> T?
     ): AccountResult<Page<T>> {
-        val shelf = if (first) libraryShelf(json) else continuationShelf(json)
+        val shelf = if (first) libraryShelf(json) else libraryContinuationShelf(json)
         if (shelf == null) {
+            if (!first && isMetadataOnly(json)) {
+                return AccountResult.ParseError("YouTube returned a metadata-only library continuation (${shapeOf(json)})")
+            }
             // A genuinely empty library has a message instead of a grid. Anything else we don't
             // recognise is NOT treated as empty.
             if (first && hasEmptyMessage(json)) {
@@ -401,29 +437,52 @@ internal object CloudLibrary {
             }
             return AccountResult.ParseError("Unrecognised library layout (${shapeOf(json)})")
         }
-        var rows = 0
-        var unknown = 0
-        val unknownKinds = LinkedHashSet<String>()
-        val out = ArrayList<T>()
-        for (i in 0 until shelf.contents.length()) {
-            val entry = shelf.contents.optJSONObject(i) ?: continue
-            val renderer = entry.optJSONObject("musicTwoRowItemRenderer")
-            if (renderer == null) {
+
+        val source = shelf.source
+        val gridRows = collectObjects(source, "musicTwoRowItemRenderer")
+        val listRows = collectObjects(source, "musicResponsiveListItemRenderer")
+        val rows = gridRows.size + listRows.size
+        val out = ArrayList<T>(rows)
+        gridRows.forEach { renderer -> parseItem(renderer)?.let(out::add) }
+        // BitChord's library parser reads both the grid and list presentation modes.
+        // Normalize list cards into the two-row card shape consumed by parseAlbum/parsePlaylist.
+        listRows.forEach { renderer ->
+            responsiveLibraryCard(renderer)?.let(parseItem)?.let(out::add)
+        }
+
+        if (rows == 0) {
+            var unknown = 0
+            val unknownKinds = LinkedHashSet<String>()
+            for (i in 0 until shelf.contents.length()) {
+                val entry = shelf.contents.optJSONObject(i) ?: continue
                 if (!entry.has("continuationItemRenderer")) {
                     unknown++
-                    for (k in entry.keys()) unknownKinds += k
+                    for (key in entry.keys()) unknownKinds += key
                 }
-                continue
             }
-            rows++
-            parseItem(renderer)?.let { out += it }
+            if (unknown > 0) {
+                return AccountResult.ParseError("Library had $unknown entries in an unrecognised format ($unknownKinds)")
+            }
         }
-        // The library can be shown as a list instead of a grid. Entries we don't read must never
-        // turn into "this library is empty".
-        if (rows == 0 && unknown > 0) {
-            return AccountResult.ParseError("Library had $unknown entries in an unrecognised format ($unknownKinds)")
-        }
-        return AccountResult.Success(Page(out, rows, 0, nextToken(shelf), null))
+        return AccountResult.Success(Page(out, rows, 0, nextToken(source), null))
+    }
+
+    /** Convert BitChord's musicResponsiveListItemRenderer library card to our card parser shape. */
+    private fun responsiveLibraryCard(renderer: JSONObject): JSONObject? {
+        val columns = renderer.optJSONArray("flexColumns") ?: return null
+        val title = columns.optJSONObject(0)
+            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+            ?.optJSONObject("text") ?: return null
+        val subtitle = columns.optJSONObject(1)
+            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+            ?.optJSONObject("text") ?: JSONObject()
+        return JSONObject()
+            .put("navigationEndpoint", renderer.optJSONObject("navigationEndpoint") ?: JSONObject())
+            .put("title", title)
+            .put("subtitle", subtitle)
+            .put("thumbnailRenderer", renderer.optJSONObject("thumbnail") ?: JSONObject())
+            .put("menu", renderer.optJSONObject("menu") ?: JSONObject())
+            .put("subtitleBadges", renderer.optJSONArray("badges") ?: renderer.optJSONArray("subtitleBadges") ?: JSONArray())
     }
 
     private fun parseAlbum(r: JSONObject): Album? {
@@ -512,10 +571,11 @@ internal object CloudLibrary {
 
     // ─── Layout helpers ──────────────────────────────────────────────────────
 
-    private class Shelf(val contents: JSONArray, val continuations: JSONArray?)
+    /** [source] is the scoped renderer (playlist) or whole response (library) used for deep parsing. */
+    private class Shelf(val contents: JSONArray, val source: Any?)
 
     private fun shelfOf(o: JSONObject, key: String): Shelf? =
-        o.optJSONArray(key)?.let { Shelf(it, o.optJSONArray("continuations")) }
+        o.optJSONArray(key)?.let { Shelf(it, o) }
 
     private fun shelfIn(section: JSONObject?): Shelf? {
         section ?: return null
@@ -567,45 +627,129 @@ internal object CloudLibrary {
             ?: json.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
                 ?.optJSONArray("tabs")?.optJSONObject(0)?.optJSONObject("tabRenderer")
                 ?.optJSONObject("content")?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
-            ?: return null
-        for (i in 0 until sections.length()) shelfIn(sections.optJSONObject(i))?.let { return it }
+        if (sections != null) {
+            for (i in 0 until sections.length()) {
+                shelfIn(sections.optJSONObject(i))?.let { return Shelf(it.contents, json) }
+            }
+        }
+        // BitChord parses library cards recursively from the complete browse response. The
+        // current account parser's section path is retained above, but a card-bearing response
+        // is still valid when YouTube moves the grid outside the tabs/section-list wrapper.
+        val hasCards = collectObjects(json, "musicTwoRowItemRenderer").isNotEmpty() ||
+            collectObjects(json, "musicResponsiveListItemRenderer").isNotEmpty()
+        return if (hasCards) Shelf(JSONArray(), json) else null
+    }
+
+    /**
+     * Playlist continuation parsing follows BitChord's scope: only the playlist shelf is read.
+     * In particular, a `musicShelfContinuation` titled "Suggestions" is not part of the user's
+     * playlist and must not be merged into the mirrored track list.
+     */
+    private fun playlistContinuationShelf(json: JSONObject): Shelf? {
+        val cc = json.optJSONObject("continuationContents")
+        if (cc != null) {
+            collectObjects(cc, "musicPlaylistShelfContinuation").firstOrNull()?.let { continuation ->
+                return Shelf(continuation.optJSONArray("contents") ?: JSONArray(), continuation)
+            }
+            collectObjects(cc, "musicPlaylistShelfRenderer").firstOrNull()?.let { renderer ->
+                return Shelf(renderer.optJSONArray("contents") ?: JSONArray(), renderer)
+            }
+            // Some playlist-shaped responses use musicShelfContinuation instead. Do not
+            // confuse an owned playlist's separate Suggestions shelf with its real tracks.
+            collectObjects(cc, "musicShelfContinuation").firstOrNull()?.let { continuation ->
+                val title = continuation.optJSONObject("header")
+                    ?.optJSONObject("musicShelfHeaderRenderer")
+                    ?.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)
+                    ?.optString("text").orEmpty()
+                val hasPlaylistEntryIds = collectObjects(continuation, "musicResponsiveListItemRenderer")
+                    .any { row ->
+                        row.optJSONObject("playlistItemData")?.optString("playlistSetVideoId")
+                            ?.isNotBlank() == true
+                    }
+                if (!title.equals("Suggestions", ignoreCase = true) && hasPlaylistEntryIds) {
+                    return Shelf(continuation.optJSONArray("contents") ?: JSONArray(), continuation)
+                }
+            }
+        }
+        val actions = json.optJSONArray("onResponseReceivedActions")
+        if (actions != null) {
+            for (i in 0 until actions.length()) {
+                val items = actions.optJSONObject(i)?.optJSONObject("appendContinuationItemsAction")
+                    ?.optJSONArray("continuationItems") ?: continue
+                if (collectObjects(items, "musicResponsiveListItemRenderer").isNotEmpty()) {
+                    return Shelf(items, items)
+                }
+            }
+        }
+        if (nextToken(json) != null) return Shelf(JSONArray(), json)
         return null
     }
 
-    private fun continuationShelf(json: JSONObject): Shelf? {
+    /** Library feed continuations can return a grid, a section list, or either card layout. */
+    private fun libraryContinuationShelf(json: JSONObject): Shelf? {
         val cc = json.optJSONObject("continuationContents")
         if (cc != null) {
-            for (key in listOf("musicPlaylistShelfContinuation", "musicShelfContinuation")) {
-                cc.optJSONObject(key)?.let { shelfOf(it, "contents")?.let { s -> return s } }
+            cc.optJSONObject("gridContinuation")?.let { continuation ->
+                return Shelf(continuation.optJSONArray("items") ?: JSONArray(), json)
             }
-            cc.optJSONObject("gridContinuation")?.let { shelfOf(it, "items")?.let { s -> return s } }
             cc.optJSONObject("sectionListContinuation")?.optJSONArray("contents")?.let { sections ->
-                for (i in 0 until sections.length()) shelfIn(sections.optJSONObject(i))?.let { return it }
+                for (i in 0 until sections.length()) {
+                    shelfIn(sections.optJSONObject(i))?.let { return Shelf(it.contents, json) }
+                }
             }
         }
         val actions = json.optJSONArray("onResponseReceivedActions")
         if (actions != null) {
             for (i in 0 until actions.length()) {
                 actions.optJSONObject(i)?.optJSONObject("appendContinuationItemsAction")
-                    ?.optJSONArray("continuationItems")?.let { return Shelf(it, null) }
+                    ?.optJSONArray("continuationItems")?.let { return Shelf(it, json) }
             }
         }
+        val hasCards = collectObjects(json, "musicTwoRowItemRenderer").isNotEmpty() ||
+            collectObjects(json, "musicResponsiveListItemRenderer").isNotEmpty()
+        if (hasCards || nextToken(json) != null) return Shelf(JSONArray(), json)
         return null
     }
 
-    private fun nextToken(shelf: Shelf): String? {
-        shelf.continuations?.let { list ->
-            for (i in 0 until list.length()) {
-                list.optJSONObject(i)?.optJSONObject("nextContinuationData")?.optString("continuation")
-                    ?.takeIf { it.isNotBlank() }?.let { return it }
+    /**
+     * The WEB_REMIX parser in BitChord prioritises the current continuation renderer over the
+     * legacy `continuations` array, and supports commandExecutorCommand as well as the old direct
+     * continuationCommand. The old Audiobasics order could select a stale token when both forms
+     * were present, then walk into an empty response several pages later.
+     */
+    private fun nextToken(source: Any?): String? {
+        val renderer = collectObjects(source, "continuationItemRenderer").firstOrNull()
+        val endpoint = renderer?.optJSONObject("continuationEndpoint")
+        val direct = endpoint?.optJSONObject("continuationCommand")?.optString("token")
+            ?.takeIf { it.isNotBlank() }
+        if (direct != null) return direct
+        val commands = endpoint?.optJSONObject("commandExecutorCommand")?.optJSONArray("commands")
+        if (commands != null) {
+            for (i in 0 until commands.length()) {
+                val token = commands.optJSONObject(i)?.optJSONObject("continuationCommand")
+                    ?.optString("token")?.takeIf { it.isNotBlank() }
+                if (token != null) return token
             }
         }
-        for (i in 0 until shelf.contents.length()) {
-            shelf.contents.optJSONObject(i)?.optJSONObject("continuationItemRenderer")
-                ?.optJSONObject("continuationEndpoint")?.optJSONObject("continuationCommand")
-                ?.optString("token")?.takeIf { it.isNotBlank() }?.let { return it }
+        return collectObjects(source, "nextContinuationData").firstOrNull()
+            ?.optString("continuation")?.takeIf { it.isNotBlank() }
+    }
+
+    /** Depth-first renderer collection, matching BitChord's response traversal. */
+    private fun collectObjects(root: Any?, targetKey: String): List<JSONObject> {
+        val out = ArrayList<JSONObject>()
+        fun walk(node: Any?) {
+            when (node) {
+                is JSONObject -> {
+                    node.optJSONObject(targetKey)?.let(out::add)
+                    val keys = node.keys()
+                    while (keys.hasNext()) walk(node.opt(keys.next()))
+                }
+                is JSONArray -> for (i in 0 until node.length()) walk(node.opt(i))
+            }
         }
-        return null
+        walk(root)
+        return out
     }
 
     private fun hasEmptyMessage(json: JSONObject): Boolean {
