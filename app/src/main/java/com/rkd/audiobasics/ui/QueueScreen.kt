@@ -325,6 +325,7 @@ fun QueueScreen(
                                     },
                                     onRetryCache = { vm.retryCache(song) },
                                     onRemoveLike = { vm.toggleLike(song) },
+                                    showRemoveInHeartDialog = false,
                                     onAddTo = { onAddTo(song) },
                                     isDragging = armed,
                                     isCaching = song.id in cachingSongIds
