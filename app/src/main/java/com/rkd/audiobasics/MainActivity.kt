@@ -118,6 +118,7 @@ import com.rkd.audiobasics.ui.SmartInputsDialog
 import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.ui.UpdaterScreen
 import com.rkd.audiobasics.ui.fetchLatestAppVersion
+import com.rkd.audiobasics.ui.resetAllCustomPlaylistScroll
 import com.rkd.audiobasics.ui.resetCustomPlaylistScroll
 import com.rkd.audiobasics.ui.resetLikedScreenScroll
 import com.rkd.audiobasics.ui.theme.AmoledBlack
@@ -197,6 +198,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // The saved list positions live in memory, which survives the app being cleared from
+        // recents while the player service keeps the process alive. A fresh start (not a
+        // rotation) must open Liked and playlists at the top.
+        if (savedInstanceState == null) {
+            resetLikedScreenScroll()
+            resetAllCustomPlaylistScroll()
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
