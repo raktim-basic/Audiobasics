@@ -135,6 +135,11 @@ object LibraryRefresh {
         Timber.tag(TAG).i("Library refresh: $result")
         return when (result) {
             is RefreshResult.Updated -> {
+                // Only small additions are downloaded automatically. Existing local song IDs
+                // were excluded by LibraryFlow before the cloud snapshot was applied.
+                if (result.newSongs.isNotEmpty() || result.newAlbums.isNotEmpty()) {
+                    vm.cacheNewLibrarySongs(result.newSongs, result.newAlbums, result.existingSongIds)
+                }
                 // Shown for the launch refresh too, so it's clear that it ran.
                 val text = describe(result.diff)
                 Outcome(text, text)

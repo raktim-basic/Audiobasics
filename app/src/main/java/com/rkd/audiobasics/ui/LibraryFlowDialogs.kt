@@ -42,6 +42,18 @@ import com.rkd.audiobasics.ui.theme.NothingFont
 internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStore {
     override suspend fun counts(): LibraryCounts = vm.libraryCounts()
 
+    override suspend fun albumIds(): Set<String> = withContext(Dispatchers.IO) {
+        vm.savedAlbums.value.map { it.id }.toSet()
+    }
+
+    override suspend fun songIds(): Set<String> = withContext(Dispatchers.IO) {
+        buildSet {
+            vm.likedSongs.value.forEach { add(it.id) }
+            addAll(AppDatabase.getInstance(vm.getApplication<Application>()).playlistDao().getAllPlaylistSongIds())
+            vm.savedAlbumSongs.value.values.forEach { songs -> songs.forEach { add(it.id) } }
+        }
+    }
+
     override suspend fun replaceWithCloud(snapshot: CloudSnapshot, wipeLocalOnly: Boolean) {
         vm.replaceLibraryWithCloud(snapshot, wipeLocalOnly)
         // Which of these playlists this account can't edit (for the menus); only after a successful apply.

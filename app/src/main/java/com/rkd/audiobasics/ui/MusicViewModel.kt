@@ -80,6 +80,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var artistBackfillJob: Job? = null
 
     private val cacheSemaphore = Semaphore(3)
+    private val autoCacheMutex = Mutex()
     private val _cachingSongIds = MutableStateFlow<Set<String>>(emptySet())
     /** Song IDs currently being actively downloaded, across every download source (like, retry, download-all, etc). */
     val cachingSongIds: StateFlow<Set<String>> = _cachingSongIds
@@ -1404,6 +1405,76 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                 updateLikedSongCacheStatus(song.id, isCached = CacheManager.isCached(getApplication(), song.id), cacheFailed = false)
             }
             refreshCacheSize()
+        }
+    }
+
+    /** Automatically cache a small batch of songs newly discovered during an account refresh. */
+    internal fun cacheNewLibrarySongs(
+        songs: List<Song>,
+        albums: List<Album>,
+        existingSongIds: Set<String>
+    ) {
+        if (songs.isEmpty() && albums.isEmpty()) return
+
+        viewModelScope.launch {
+            autoCacheMutex.withLock {
+                // Resolve newly saved albums before applying the 25-track threshold. Reuse any
+                // tracklist already persisted for an album; fetch only when it is not available.
+                val albumTracks = mutableListOf<Song>()
+                for (album in albums.distinctBy { it.id }) {
+                    val tracks = _savedAlbumSongs.value[album.id] ?: try {
+                        Innertube.getAlbumSongs(album.id, album.artist, caller = "autoCacheNewLibraryAlbums").second
+                    } catch (e: Exception) {
+                        Log.e("YTLite", "Auto-cache: couldn't load ${album.title}: ${e.message}")
+                        emptyList()
+                    }
+                    // An unresolved album makes the batch size unknowable; don't partially cache.
+                    if (tracks.isEmpty()) return@withLock
+                    _savedAlbumSongs.value = _savedAlbumSongs.value + (album.id to tracks)
+                    albumTracks += tracks
+                }
+                if (albums.isNotEmpty()) saveSavedAlbumSongs()
+
+                // The threshold applies to unique tracks across liked songs, playlists and newly
+                // saved albums, excluding anything already represented in this device's library.
+                val batch = (songs + albumTracks)
+                    .distinctBy { it.id }
+                    .filter { it.id !in existingSongIds }
+                if (batch.size !in 1..25) return@withLock
+
+                // Don't replace the progress state/notification of a download already in progress.
+                while (_cacheProgress.value != null) delay(250)
+
+                val uncached = withContext(Dispatchers.IO) {
+                    batch.filter { !CacheManager.isCached(getApplication(), it.id) }
+                }
+                if (uncached.isEmpty()) return@withLock
+
+                createCacheNotificationChannel()
+                val total = uncached.size
+                var done = 0
+                _cacheProgress.value = Pair(0, total)
+                updateCacheNotification(0, total)
+                try {
+                    coroutineScope {
+                        uncached.map { song ->
+                            async {
+                                cacheSemaphore.withPermit { cacheSongSilently(song) }
+                                synchronized(this@MusicViewModel) { done++ }
+                                _cacheProgress.value = Pair(done, total)
+                                updateCacheNotification(done, total)
+                            }
+                        }.forEach { it.await() }
+                    }
+                } finally {
+                    _cacheProgress.value = null
+                    refreshCacheSize()
+                    cancelCacheNotification()
+                    if (_openPlaylistId.value != null) {
+                        _openPlaylistSongs.value = playlistDao.getPlaylistSongs(_openPlaylistId.value!!)
+                    }
+                }
+            }
         }
     }
 
