@@ -60,7 +60,10 @@ class MusicService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            val id = if (params?.isRecent == true) RECENT_ROOT_ID else BROWSE_ROOT_ID
+            val isRecent = params?.isRecent == true ||
+                params?.extras?.getBoolean("android.service.media.extra.RECENT") == true ||
+                params?.extras?.getBoolean("androidx.media.MediaBrowserCompat.EXTRA_RECENT") == true
+            val id = if (isRecent) RECENT_ROOT_ID else BROWSE_ROOT_ID
             val root = MediaItem.Builder()
                 .setMediaId(id)
                 .setMediaMetadata(
@@ -135,6 +138,19 @@ class MusicService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             isForPlayback: Boolean
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            // Prefer the queue already restored into the live player. SystemUI can request
+            // resumption while the player is idle but still has its playlist loaded.
+            val player = mediaSession.player
+            if (player.mediaItemCount > 0) {
+                val items = (0 until player.mediaItemCount).map(player::getMediaItemAt)
+                val index = player.currentMediaItemIndex.coerceIn(0, items.lastIndex)
+                val positionMs = player.currentPosition.coerceAtLeast(0L)
+                return Futures.immediateFuture(
+                    MediaSession.MediaItemsWithStartPosition(items, index, positionMs)
+                )
+            }
+
+            // If the service has no live queue, recover the last persisted session.
             val saved = lastSession?.load()
                 ?: return Futures.immediateFailedFuture(UnsupportedOperationException("Nothing to resume"))
             return Futures.immediateFuture(
