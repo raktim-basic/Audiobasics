@@ -202,7 +202,7 @@ fun ArtistScreen(
                         // ── Hero image ─────────────────────────────────────────────────
                         item {
                             val clear = artistVm.clearView
-                            val dim by animateFloatAsState(if (clear) 0f else 0.45f, tween(300), label = "heroDim")
+                            val dim by animateFloatAsState(if (clear) 0f else 0.35f, tween(300), label = "heroDim")
                             val nameAlpha by animateFloatAsState(if (clear) 0f else 1f, tween(300), label = "heroName")
 
                             Box(

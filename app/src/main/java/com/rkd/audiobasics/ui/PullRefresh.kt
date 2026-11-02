@@ -20,6 +20,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +37,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import com.rkd.audiobasics.utils.HapticUtils
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -42,6 +47,9 @@ import androidx.compose.ui.unit.dp
 // One look for every refresh indicator in the app: a round chip with the red accent spinner.
 
 private val RefreshAccent = Color.Red
+
+/** Mirrors the app's haptics setting so every refresh box can respect it without extra parameters. */
+val LocalHapticsEnabled = compositionLocalOf { true }
 
 private fun refreshChipColor(isDarkMode: Boolean): Color =
     if (isDarkMode) Color(0xFF2A2A2A) else Color.White
@@ -61,6 +69,17 @@ fun RefreshBox(
     content: @Composable BoxScope.() -> Unit
 ) {
     val state = rememberPullToRefreshState()
+    val context = LocalContext.current
+    val hapticsOn by rememberUpdatedState(LocalHapticsEnabled.current)
+    val refreshingNow by rememberUpdatedState(isRefreshing)
+    // One tick when the pull passes the point where letting go will refresh.
+    LaunchedEffect(state) {
+        var armed = false
+        snapshotFlow { state.distanceFraction >= 1f }.collect { past ->
+            if (past && !armed && !refreshingNow && hapticsOn) HapticUtils.performSubtleHaptic(context)
+            armed = past
+        }
+    }
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = onRefresh,
@@ -100,6 +119,9 @@ fun BottomRefreshBox(
     val maxPullPx = thresholdPx * 1.5f
     val currentOnRefresh by rememberUpdatedState(onRefresh)
     val refreshingNow by rememberUpdatedState(isRefreshing)
+    val context = LocalContext.current
+    val hapticsOn by rememberUpdatedState(LocalHapticsEnabled.current)
+    var armed by remember { mutableStateOf(false) }
 
     // Tracked synchronously from the scroll callbacks (no coroutine per drag event), so the
     // value is always current when the finger lifts.
@@ -113,6 +135,7 @@ fun BottomRefreshBox(
                 if (source == NestedScrollSource.UserInput && pull > 0f && available.y > 0f) {
                     val take = minOf(pull, available.y)
                     pull -= take
+                    if (pull < thresholdPx) armed = false
                     return Offset(0f, take)
                 }
                 return Offset.Zero
@@ -123,6 +146,10 @@ fun BottomRefreshBox(
                 if (source == NestedScrollSource.UserInput && available.y < 0f && !refreshingNow) {
                     dragging = true
                     pull = (pull - available.y * 0.5f).coerceAtMost(maxPullPx)
+                    if (pull >= thresholdPx && !armed) {
+                        armed = true
+                        if (hapticsOn) HapticUtils.performSubtleHaptic(context)
+                    }
                     return Offset(0f, available.y)
                 }
                 return Offset.Zero
@@ -133,6 +160,7 @@ fun BottomRefreshBox(
                 val fire = pull >= thresholdPx && !refreshingNow
                 dragging = false
                 pull = 0f
+                armed = false
                 if (fire) currentOnRefresh()
                 return available
             }

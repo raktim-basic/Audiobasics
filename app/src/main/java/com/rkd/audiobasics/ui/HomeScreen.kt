@@ -166,7 +166,7 @@ fun HomeScreen(
           }
 
             // ── Sign-in link (signed out, or session expired) ──────────────────
-            // Goes straight to the sign-in page. While an account is linked and working,
+            // Opens the Account page (where signing in lives). While an account is linked and working,
             // nothing is shown here; the account lives in Settings > Account.
             val needsSignIn = accountState is AccountState.LoggedOut ||
                 accountState is AccountState.SessionExpired

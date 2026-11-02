@@ -80,6 +80,7 @@ fun SettingsScreen(
     openCache: Boolean = false,
     openLibrary: Boolean = false,
     openLogin: Boolean = false,
+    openAccount: Boolean = false,
     onBack: () -> Unit,
     onNavigateUpdater: () -> Unit
 ) {
@@ -87,12 +88,15 @@ fun SettingsScreen(
     // Opened from the Home screen's sign-in link: back leaves Settings (to Home) rather than
     // stepping through the Settings pages.
     val loginFirst = remember { openLogin }
+    // Opened from the Home banner straight onto the Account page: back leaves Settings too.
+    val accountFirst = remember { openAccount }
     var currentPage by remember { 
         mutableStateOf<SettingsPage>(
             // Downloads settings live inside the merged Library management page now, so
             // both deep links land there.
             when {
                 openLogin -> SettingsPage.Login
+                openAccount -> SettingsPage.Account
                 openCache || openLibrary -> SettingsPage.Library
                 else -> SettingsPage.Main
             }
@@ -120,7 +124,7 @@ fun SettingsScreen(
         when (currentPage) {
             SettingsPage.EngineInfo -> goBack(SettingsPage.DevTools)
             SettingsPage.Login -> if (loginFirst) onBack() else goBack(SettingsPage.Account)
-            SettingsPage.Account -> if (loginFirst) onBack() else goBack(SettingsPage.Main)
+            SettingsPage.Account -> if (loginFirst || accountFirst) onBack() else goBack(SettingsPage.Main)
             else -> goBack(SettingsPage.Main)
         }
     }
@@ -162,7 +166,7 @@ fun SettingsScreen(
             is SettingsPage.Account -> AccountPage(
                 vm = vm,
                 isDarkMode = isDarkMode,
-                onBack = { if (loginFirst) onBack() else goBack(SettingsPage.Main) },
+                onBack = { if (loginFirst || accountFirst) onBack() else goBack(SettingsPage.Main) },
                 onNavigateLogin = { goTo(SettingsPage.Login) }
             )
             is SettingsPage.Login -> LoginPage(
