@@ -91,11 +91,9 @@ private fun StreamErrorContent(
         else -> "Couldn't download ${state.entries.size} songs"
     }
     val loginMessage = if (loginEntries.size == 1) {
-        "This song requires login to play, since login in Audiobasics is planned and not yet " +
-            "implemented. You can listen to the video version :)"
+        "Sign in to play this song, YouTube requires it"
     } else {
-        "These songs require login to play, since login in Audiobasics is planned and not yet " +
-            "implemented. You can listen to the video versions :)"
+        "These songs require login to play, YouTube requires it"
     }
 
     Box(
