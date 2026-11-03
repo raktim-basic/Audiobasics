@@ -72,6 +72,11 @@ internal object CloudLibrary {
      *  header count and change constantly, so the sync leaves them out instead of failing on them. */
     fun isPersonalMix(playlistId: String): Boolean = playlistId.startsWith("RDTMAK5uy_")
 
+    /** True only for the initial song-list response shape that has been retried and still has no content. */
+    fun isMetadataOnlyInitialPlaylistResponse(result: AccountResult<*>): Boolean =
+        (result as? AccountResult.ParseError)?.kind ==
+            AccountResult.ParseError.Kind.METADATA_ONLY_INITIAL_SONG_LIST
+
     fun fetchLikedSongs(session: AccountSession): AccountResult<CloudList<CloudSong>> =
         fetchPaged(
             session, "liked songs", "VLLM",
@@ -150,18 +155,23 @@ internal object CloudLibrary {
             }
 
             var parsed = if (token == null) parseFirst(json) else parseNext(json)
-            // A continuation occasionally arrives as a 200 response containing only
-            // responseContext/trackingParams. It is not a valid empty final page: YouTube
-            // had already advertised another page. Retry that exact token once before
-            // refusing the snapshot, so a transient bare response cannot poison sync.
-            if (token != null && parsed is AccountResult.ParseError && isMetadataOnly(json)) {
-                Timber.tag(TAG).w("$label: page ${pages + 1} returned metadata only; retrying the same continuation once")
+            // YouTube can return HTTP 200 with only response metadata instead of a browse
+            // payload. This is not an empty song/library page. Retry the exact same request
+            // once (including the initial browse request, not just continuations) before
+            // refusing the snapshot. A persistent metadata-only continuation is handled
+            // below using the advertised-count safety check.
+            if (parsed is AccountResult.ParseError && isMetadataOnly(json)) {
+                Timber.tag(TAG).w("$label: page ${pages + 1} returned metadata only; retrying the same browse request once")
                 Thread.sleep(500L)
-                val retry = AccountClient.post(session, "browse", JSONObject(), continuation = token)
+                val retry = if (token == null) {
+                    AccountClient.post(session, "browse", JSONObject().put("browseId", browseId))
+                } else {
+                    AccountClient.post(session, "browse", JSONObject(), continuation = token)
+                }
                 when (retry) {
                     is AccountResult.Success -> {
                         json = retry.value
-                        parsed = parseNext(json)
+                        parsed = if (token == null) parseFirst(json) else parseNext(json)
                     }
                     is AccountResult.SessionExpired -> return retry
                     is AccountResult.NetworkError -> return retry
@@ -228,10 +238,17 @@ internal object CloudLibrary {
         return AccountResult.Success(CloudList(items, pages, advertised, rows, skipped, editable))
     }
 
-    /** A successful HTTP response with no payload beyond response metadata. */
+    /**
+     * A successful HTTP response with no browse payload beyond response metadata.
+     * YouTube may include `microformat` alongside responseContext/trackingParams even
+     * when a continuation has no usable contents. Keep this allowlist narrow: an actual
+     * error/status field must not be mistaken for an empty continuation.
+     */
     private fun isMetadataOnly(json: JSONObject): Boolean {
         val keys = json.keys().asSequence().toSet()
-        return keys.isNotEmpty() && keys.all { it == "responseContext" || it == "trackingParams" }
+        return keys.isNotEmpty() && keys.all {
+            it == "responseContext" || it == "trackingParams" || it == "microformat"
+        }
     }
 
     // ─── Song pages (liked songs, playlists) ─────────────────────────────────
@@ -239,8 +256,13 @@ internal object CloudLibrary {
     private fun parseSongPage(json: JSONObject, first: Boolean): AccountResult<Page<CloudSong>> {
         val shelf = (if (first) playlistShelf(json) else playlistContinuationShelf(json))
         if (shelf == null) {
-            if (!first && isMetadataOnly(json)) {
-                return AccountResult.ParseError("YouTube returned a metadata-only continuation page (${shapeOf(json)})")
+            if (isMetadataOnly(json)) {
+                val kind = if (first) "initial song-list response" else "song-list continuation page"
+                return AccountResult.ParseError(
+                    "YouTube returned a metadata-only $kind (${shapeOf(json)})",
+                    if (first) AccountResult.ParseError.Kind.METADATA_ONLY_INITIAL_SONG_LIST
+                    else AccountResult.ParseError.Kind.OTHER
+                )
             }
             // An empty playlist arrives as a song-list shelf that has no "contents" at all. That
             // is only believed when the page header doesn't contradict it; a header that claims
@@ -451,8 +473,9 @@ internal object CloudLibrary {
     ): AccountResult<Page<T>> {
         val shelf = if (first) libraryShelf(json) else libraryContinuationShelf(json)
         if (shelf == null) {
-            if (!first && isMetadataOnly(json)) {
-                return AccountResult.ParseError("YouTube returned a metadata-only library continuation (${shapeOf(json)})")
+            if (isMetadataOnly(json)) {
+                val kind = if (first) "initial library response" else "library continuation page"
+                return AccountResult.ParseError("YouTube returned a metadata-only $kind (${shapeOf(json)})")
             }
             // A genuinely empty library has a message instead of a grid. Anything else we don't
             // recognise is NOT treated as empty.

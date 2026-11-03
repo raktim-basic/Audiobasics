@@ -19,13 +19,19 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class CloudPlaylistData(val playlist: CloudPlaylist, val songs: List<CloudSong>)
 
-/** The whole account library, fetched completely. Never partial. */
+/**
+ * The importable account library. Supported playlists are fetched completely; generated playlists
+ * whose initial song-list response remains metadata-only after retry are omitted and recorded in
+ * [preservedPlaylistIds] so an older local copy is not mistaken for a cloud deletion.
+ */
 internal data class CloudSnapshot(
     val liked: List<CloudSong>,
     val albums: List<Album>,
     val playlists: List<CloudPlaylistData>,
-    /** Personalised mixes (Replay Mix and similar) that were left out of the sync. */
-    val skippedMixes: Int = 0
+    /** Generated playlists left out because their contents aren't available to this client. */
+    val skippedGeneratedPlaylists: Int = 0,
+    /** Cloud IDs skipped during this read; existing local copies must not be deleted or rewritten. */
+    val preservedPlaylistIds: Set<String> = emptySet()
 ) {
     val counts: LibraryCounts
         get() = LibraryCounts(liked.size, albums.size, playlists.size, playlists.sumOf { it.songs.size })
@@ -50,7 +56,8 @@ internal interface LocalLibraryStore {
     /**
      * Makes this device's library match [snapshot]. When [wipeLocalOnly] is true, playlists that
      * were never linked to an account are removed too (the user confirmed a full replace).
-     * Must be all-or-nothing for the playlists.
+     * IDs in [CloudSnapshot.preservedPlaylistIds] are neither rewritten nor deleted. Must be
+     * all-or-nothing for the playlists.
      */
     suspend fun replaceWithCloud(snapshot: CloudSnapshot, wipeLocalOnly: Boolean)
 
@@ -84,7 +91,8 @@ private fun <B> AccountResult<*>.asFailure(): AccountResult<B> = when (this) {
 internal object CloudSnapshotFetcher {
     private const val STEP_PAUSE_MS = 400L
 
-    /** Reads everything, or fails as a whole. A part that can't be read fails the snapshot. */
+    /** Reads the importable library. Ordinary unreadable entries fail the snapshot; the known
+     * metadata-only generated-playlist response is intentionally omitted after its retry. */
     fun fetch(session: AccountSession): AccountResult<CloudSnapshot> {
         val liked = when (val r = CloudLibrary.fetchLikedSongs(session)) {
             is AccountResult.Success -> r.value.items.distinctBy { it.song.id }
@@ -102,10 +110,12 @@ internal object CloudSnapshotFetcher {
             is AccountResult.Success -> r.value.items.distinctBy { it.id }
             else -> return r.asFailure()
         }
-        // Personalised mixes have no fixed length, so they can't be checked for completeness.
+        // Keep the established exclusion for known dynamic mix IDs. Also retain their cloud IDs
+        // so a previously imported local copy isn't deleted just because this sync omits the mix.
+        val knownMixes = allTiles.filter { CloudLibrary.isPersonalMix(it.id) }
         val tiles = allTiles.filterNot { CloudLibrary.isPersonalMix(it.id) }
-        val skippedMixes = allTiles.size - tiles.size
-        if (skippedMixes > 0) Timber.tag("Sync").i("Leaving out $skippedMixes personalised mix(es)")
+        var skippedGeneratedPlaylists = knownMixes.size
+        val preservedPlaylistIds = knownMixes.mapTo(linkedSetOf()) { it.id }
 
         // Every playlist in the library is mirrored: the user's own, other people's that they saved,
         // and YouTube's built-in lists. Each one's page says whether the account can edit it
@@ -124,9 +134,24 @@ internal object CloudSnapshotFetcher {
                     continue
                 }
                 is AccountResult.ParseError -> {
-                    // YouTube's built-in lists (episodes, ...) use other layouts; those are left out rather
-                    // than shown empty. An ordinary playlist that can't be read still fails the refresh.
-                    if (!p.special) return r.asFailure()
+                    // A persistent metadata-only initial song-list response is the known failure
+                    // mode for generated playlists. Omit it from this import, but carry its ID in
+                    // the snapshot so an older local copy is preserved rather than deleted.
+                    if (CloudLibrary.isMetadataOnlyInitialPlaylistResponse(r)) {
+                        skippedGeneratedPlaylists++
+                        preservedPlaylistIds += p.id
+                        Timber.tag("Sync").w(
+                            "Generated playlist \"${p.title}\" (VL${p.id}) returned metadata only after retry; skipping import"
+                        )
+                        continue
+                    }
+                    // YouTube's built-in lists (episodes, ...) use other layouts; those are left out
+                    // rather than shown empty. An ordinary playlist that can't be read still fails the refresh.
+                    if (!p.special) {
+                        return AccountResult.ParseError(
+                            "Playlist \"${p.title}\" (VL${p.id}) could not be read: ${r.message}"
+                        )
+                    }
                     Timber.tag("Sync").w("Built-in list \"${p.title}\" couldn't be read (${r.message}); leaving it out")
                     continue
                 }
@@ -135,7 +160,12 @@ internal object CloudSnapshotFetcher {
             Timber.tag("Sync").i("\"${p.title}\": ${list.items.size} songs, ${if (editable) "editable" else "read-only"} (page=${list.editable}, tile-hint=${p.owned})")
             playlists += CloudPlaylistData(p.copy(owned = editable), list.items.distinctBy { it.song.id })
         }
-        return AccountResult.Success(CloudSnapshot(liked, albums, playlists, skippedMixes))
+        if (skippedGeneratedPlaylists > 0) {
+            Timber.tag("Sync").i("Leaving out $skippedGeneratedPlaylists generated/personalised playlist(s); existing local copies are preserved")
+        }
+        return AccountResult.Success(
+            CloudSnapshot(liked, albums, playlists, skippedGeneratedPlaylists, preservedPlaylistIds)
+        )
     }
 }
 
@@ -464,7 +494,7 @@ internal object LibraryFlow {
         Timber.tag(TAG).i("Applied: $c")
         _state.value = LibraryFlowState.Done(
             "${c.liked} liked songs, ${c.albums} albums and ${c.playlists} playlists are now on this device." +
-                if (snapshot.skippedMixes > 0) " ${snapshot.skippedMixes} personalised mixes were left out." else ""
+                if (snapshot.skippedGeneratedPlaylists > 0) " ${snapshot.skippedGeneratedPlaylists} generated playlist(s) couldn't be imported." else ""
         )
     }
 
@@ -517,7 +547,8 @@ internal object LibraryFlow {
         a.counts == b.counts &&
             a.liked.map { it.song.id } == b.liked.map { it.song.id } &&
             a.albums.map { it.id } == b.albums.map { it.id } &&
-            a.playlists.map { it.playlist.id } == b.playlists.map { it.playlist.id }
+            a.playlists.map { it.playlist.id } == b.playlists.map { it.playlist.id } &&
+            a.preservedPlaylistIds == b.preservedPlaylistIds
 
     private fun launchExclusive(block: suspend () -> Unit) {
         if (!busy.compareAndSet(false, true)) return

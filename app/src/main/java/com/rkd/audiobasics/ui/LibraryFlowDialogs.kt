@@ -125,7 +125,7 @@ internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStor
                     if (orderOnly) " (same songs, different order)" else ""
             }
         }
-        val cloudPlaylistIds = snapshot.playlists.map { it.playlist.id }.toSet()
+        val cloudPlaylistIds = snapshot.playlists.map { it.playlist.id }.toSet() + snapshot.preservedPlaylistIds
         val removed = byCloudId.keys.count { it !in cloudPlaylistIds }
         byCloudId.filterKeys { it !in cloudPlaylistIds }.values.forEach { details += "gone from the account: ${it.name}" }
 

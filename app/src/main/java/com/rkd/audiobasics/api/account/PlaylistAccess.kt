@@ -49,8 +49,12 @@ internal object PlaylistAccess {
 
     /** From a freshly read account: everything the account can't edit. */
     fun updateFrom(snapshot: CloudSnapshot) {
-        val readOnly = snapshot.playlists.filter { !it.playlist.owned }.map { it.playlist.id }.toSet()
-        val special = snapshot.playlists.filter { it.playlist.special }.map { it.playlist.id }.toSet()
+        val previous = _flags.value
+        val preserved = snapshot.preservedPlaylistIds
+        val readOnly = snapshot.playlists.filter { !it.playlist.owned }.map { it.playlist.id }.toSet() +
+            previous.readOnly.intersect(preserved)
+        val special = snapshot.playlists.filter { it.playlist.special }.map { it.playlist.id }.toSet() +
+            previous.special.intersect(preserved)
         update(readOnly, special)
     }
 }

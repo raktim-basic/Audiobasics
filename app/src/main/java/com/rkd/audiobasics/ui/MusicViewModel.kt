@@ -1932,7 +1932,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             // ── Playlists ──
             val existing = playlistDao.getPlaylists()
             val existingByCloudId = existing.filter { it.cloudId != null }.associateBy { it.cloudId!! }
-            val cloudIds = snapshot.playlists.map { it.playlist.id }.toSet()
+            // Skipped generated playlists have no current cloud contents to apply. Keep their
+            // prior local rows intact rather than interpreting their absence as deletion.
+            val cloudIds = snapshot.playlists.map { it.playlist.id }.toSet() + snapshot.preservedPlaylistIds
 
             val deleteIds = existing.filter {
                 (it.cloudId != null && it.cloudId !in cloudIds) || (wipeLocalOnly && it.cloudId == null)

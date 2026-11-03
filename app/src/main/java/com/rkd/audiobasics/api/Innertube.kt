@@ -142,9 +142,11 @@ object Innertube {
         append("YFDNX30")
     }
     private const val YTM_CLIENT_NAME = "WEB_REMIX"
-    private const val YTM_CLIENT_VERSION = "1.20260520.01.00"
+    private const val YTM_CLIENT_VERSION = "1.20261018.16.00"
     private const val FIREFOX_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+    private const val WEB_REMIX_UA =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
     // Visitor data fetched from YouTube on first use — used as poToken session ID.
     // Using a real YouTube visitor ID gives BotGuard enough entropy to produce
@@ -388,6 +390,9 @@ object Innertube {
         "client", JSONObject()
             .put("clientName", YTM_CLIENT_NAME)
             .put("clientVersion", YTM_CLIENT_VERSION)
+            .put("xClientName", "67")
+            .put("userAgent", WEB_REMIX_UA)
+            .put("platform", "DESKTOP")
             .put("hl", "en")
             .put("gl", "US")
     )
@@ -398,7 +403,7 @@ object Innertube {
             val request = Request.Builder()
                 .url("$YTM_BASE/$endpoint?key=$YTM_KEY")
                 .addHeader("Content-Type", "application/json")
-                .addHeader("User-Agent", FIREFOX_UA)
+                .addHeader("User-Agent", WEB_REMIX_UA)
                 .addHeader("Origin", "https://music.youtube.com")
                 .addHeader("Referer", "https://music.youtube.com/")
                 .addHeader("X-YouTube-Client-Name", "67")
@@ -1352,7 +1357,7 @@ object Innertube {
     // WEB_REMIX first — its CDN URLs have no per-URL chunk request limit.
     // IOS/ANDROID as fallbacks — limited to ~16 chunks per URL (~64s at 512KB).
     private val STREAM_CLIENTS = listOf(
-        YTClient("WEB_REMIX", "1.20260213.01.00", "67", FIREFOX_UA,
+        YTClient("WEB_REMIX", "1.20261018.16.00", "67", WEB_REMIX_UA,
             usePoTokenInBody = true, appendPotToUrl = true, useSignatureTimestamp = true),
         YTClient("WEB", "2.20260213.00.00", "1", FIREFOX_UA,
             usePoTokenInBody = true, appendPotToUrl = true, useSignatureTimestamp = true),
@@ -1515,6 +1520,11 @@ object Innertube {
             .put("clientVersion", client.clientVersion)
             .put("hl", "en")
             .put("gl", "US")
+        if (client.clientName == "WEB_REMIX") {
+            clientContext.put("xClientName", client.clientId)
+                .put("userAgent", client.userAgent)
+                .put("platform", "DESKTOP")
+        }
         client.androidSdkVersion?.let { clientContext.put("androidSdkVersion", it) }
         client.osName?.let { clientContext.put("osName", it) }
         client.osVersion?.let { clientContext.put("osVersion", it) }

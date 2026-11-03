@@ -8,6 +8,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,7 +28,16 @@ sealed interface AccountResult<out T> {
     data class ServerError(val code: Int, val message: String) : AccountResult<Nothing>
 
     /** YouTube answered, but not in a shape we understand (format change, empty body). */
-    data class ParseError(val message: String) : AccountResult<Nothing>
+    data class ParseError(
+        val message: String,
+        val kind: Kind = Kind.OTHER
+    ) : AccountResult<Nothing> {
+        enum class Kind {
+            OTHER,
+            /** The initial playlist song-list browse returned only response metadata. */
+            METADATA_ONLY_INITIAL_SONG_LIST
+        }
+    }
 }
 
 internal data class AccountInfo(
@@ -51,9 +61,9 @@ internal object AccountClient {
     // These mirror the private constants in Innertube.kt. If the client version is ever
     // bumped there, bump it here too (a later phase can share one definition).
     private const val CLIENT_NAME = "WEB_REMIX"
-    private const val CLIENT_VERSION = "1.20260520.01.00"
+    private const val CLIENT_VERSION = "1.20261018.16.00"
     private const val USER_AGENT =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
     private val API_KEY = buildString {
         append("AIzaSyC9XL3ZjWdd")
         append("Xya6X74dJoCTL-WE")
@@ -103,6 +113,9 @@ internal object AccountClient {
                     JSONObject()
                         .put("clientName", CLIENT_NAME)
                         .put("clientVersion", CLIENT_VERSION)
+                        .put("xClientName", "67")
+                        .put("userAgent", USER_AGENT)
+                        .put("platform", "DESKTOP")
                         .put("hl", "en")
                         .put("gl", "US")
                         .put("visitorData", visitorData)
@@ -128,13 +141,23 @@ internal object AccountClient {
             }
             .build()
 
+        // Match the browser metadata used by the known-working WEB_REMIX request in Umihi.
+        val nowMs = System.currentTimeMillis()
+        val timeZone = TimeZone.getDefault()
+        val utcOffsetMinutes = timeZone.getOffset(nowMs) / 60_000
+
         val request = Request.Builder()
             .url(url)
-            .addHeader("Content-Type", "application/json")
+            .addHeader("Content-Type", "application/json; charset=utf-8")
             .addHeader("User-Agent", USER_AGENT)
             .addHeader("Origin", SapisidAuth.ORIGIN)
             .addHeader("X-Origin", SapisidAuth.ORIGIN)
             .addHeader("Referer", "${SapisidAuth.ORIGIN}/")
+            .addHeader("X-Goog-Api-Format-Version", "1")
+            .addHeader("X-Goog-Event-Time", nowMs.toString())
+            .addHeader("X-Goog-Request-Time", nowMs.toString())
+            .addHeader("X-YouTube-Utc-Offset", utcOffsetMinutes.toString())
+            .addHeader("X-YouTube-Time-Zone", timeZone.id)
             .addHeader("X-YouTube-Client-Name", "67")
             .addHeader("X-YouTube-Client-Version", CLIENT_VERSION)
             .addHeader("X-Goog-AuthUser", authUser)

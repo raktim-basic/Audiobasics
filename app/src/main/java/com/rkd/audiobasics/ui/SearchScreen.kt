@@ -106,7 +106,10 @@ private suspend fun fetchSuggestions(query: String): List<String> = withContext(
             put("context", JSONObject().apply {
                 put("client", JSONObject().apply {
                     put("clientName", "WEB_REMIX")
-                    put("clientVersion", "1.20260520.01.00")
+                    put("clientVersion", "1.20261018.16.00")
+                    put("xClientName", "67")
+                    put("userAgent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+                    put("platform", "DESKTOP")
                     put("hl", "en")
                     put("gl", "US")
                 })
@@ -119,7 +122,7 @@ private suspend fun fetchSuggestions(query: String): List<String> = withContext(
                 "?key=AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
             )
             .addHeader("Content-Type", "application/json")
-            .addHeader("User-Agent", "Mozilla/5.0")
+            .addHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
             .addHeader("Origin", "https://music.youtube.com")
             .post(body.toString().toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
