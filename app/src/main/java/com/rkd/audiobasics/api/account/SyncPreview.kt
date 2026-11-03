@@ -121,7 +121,11 @@ internal object SyncPreview {
                                     (if (notes.isEmpty()) "." else " (${notes.joinToString(", ")})."))
                             }
                             else -> {
-                                log("  ${p.title}: NOT READ. ${describe(pr)}")
+                                if (CloudLibrary.isMetadataOnlyInitialPlaylistResponse(pr)) {
+                                    log("  ${p.title}: SKIPPED (metadata-only song-list response after retry; no new local copy would be created).")
+                                } else {
+                                    log("  ${p.title}: NOT READ. ${describe(pr)}")
+                                }
                                 if (pr is AccountResult.SessionExpired) return@withContext finish(lines, started)
                             }
                         }

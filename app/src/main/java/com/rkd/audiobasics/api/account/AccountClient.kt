@@ -28,7 +28,16 @@ sealed interface AccountResult<out T> {
     data class ServerError(val code: Int, val message: String) : AccountResult<Nothing>
 
     /** YouTube answered, but not in a shape we understand (format change, empty body). */
-    data class ParseError(val message: String) : AccountResult<Nothing>
+    data class ParseError(
+        val message: String,
+        val kind: Kind = Kind.OTHER
+    ) : AccountResult<Nothing> {
+        enum class Kind {
+            OTHER,
+            /** The initial playlist song-list browse returned only response metadata. */
+            METADATA_ONLY_INITIAL_SONG_LIST
+        }
+    }
 }
 
 internal data class AccountInfo(

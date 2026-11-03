@@ -72,6 +72,11 @@ internal object CloudLibrary {
      *  header count and change constantly, so the sync leaves them out instead of failing on them. */
     fun isPersonalMix(playlistId: String): Boolean = playlistId.startsWith("RDTMAK5uy_")
 
+    /** True only for the initial song-list response shape that has been retried and still has no content. */
+    fun isMetadataOnlyInitialPlaylistResponse(result: AccountResult<*>): Boolean =
+        (result as? AccountResult.ParseError)?.kind ==
+            AccountResult.ParseError.Kind.METADATA_ONLY_INITIAL_SONG_LIST
+
     fun fetchLikedSongs(session: AccountSession): AccountResult<CloudList<CloudSong>> =
         fetchPaged(
             session, "liked songs", "VLLM",
@@ -253,7 +258,11 @@ internal object CloudLibrary {
         if (shelf == null) {
             if (isMetadataOnly(json)) {
                 val kind = if (first) "initial song-list response" else "song-list continuation page"
-                return AccountResult.ParseError("YouTube returned a metadata-only $kind (${shapeOf(json)})")
+                return AccountResult.ParseError(
+                    "YouTube returned a metadata-only $kind (${shapeOf(json)})",
+                    if (first) AccountResult.ParseError.Kind.METADATA_ONLY_INITIAL_SONG_LIST
+                    else AccountResult.ParseError.Kind.OTHER
+                )
             }
             // An empty playlist arrives as a song-list shelf that has no "contents" at all. That
             // is only believed when the page header doesn't contradict it; a header that claims
