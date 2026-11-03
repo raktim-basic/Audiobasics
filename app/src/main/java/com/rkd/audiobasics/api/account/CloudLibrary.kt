@@ -122,6 +122,7 @@ internal object CloudLibrary {
         var token: String? = null
         var pages = 0
         var lastPageRows = 0
+        var endedOnBareEnvelope = false
         val seenTokens = HashSet<String>()
 
         while (true) {
@@ -164,13 +165,17 @@ internal object CloudLibrary {
                     is AccountResult.ParseError -> return retry
                 }
             }
-            // Still a bare envelope after the single retry. Only believed as "the list ended"
-            // when the header's count is already met: nothing it promised can be missing.
-            // Otherwise the sync aborts, and the counts (never content) go in the log so the
-            // cause can be told apart: genuine end, YouTube-side cap, or a request mismatch.
+            // Still a bare envelope after the single retry. YouTube pages are 100 slots each, and
+            // removed videos leave a page short (a 99 or 98 page) while the header still counts
+            // them. So the list is believed to have ended only when the pages already read could
+            // hold everything the header promises (header <= pages x 100): nothing is missing
+            // beyond the removed slots. Otherwise the sync aborts, and the counts (never content)
+            // go in the log so the cause can be told apart: genuine end, a YouTube-side cap, or
+            // a request mismatch.
             if (token != null && parsed is AccountResult.ParseError && isMetadataOnly(json)) {
-                if (advertised != null && rows >= advertised) {
-                    Timber.tag(TAG).d("$label: trailing metadata-only page after $rows rows; header says $advertised, so the list is complete")
+                if (advertised != null && advertised <= pages * FULL_PAGE_ROWS) {
+                    Timber.tag(TAG).d("$label: trailing metadata-only page after $rows rows in $pages pages; header says $advertised, which those pages cover, so the list is complete")
+                    endedOnBareEnvelope = true
                     break
                 }
                 Timber.tag(TAG).w("$label: page ${pages + 1} was metadata only after $rows rows in $pages pages (header says ${advertised ?: "nothing"}); not applying anything")
@@ -206,7 +211,7 @@ internal object CloudLibrary {
             token = next
         }
 
-        if (advertised != null && rows < advertised && lastPageRows >= FULL_PAGE_ROWS) {
+        if (!endedOnBareEnvelope && advertised != null && rows < advertised && lastPageRows >= FULL_PAGE_ROWS) {
             Timber.tag(TAG).w("$label: ended on a full page ($lastPageRows rows) but the header says $advertised and only $rows arrived (not applying anything)")
             return AccountResult.ParseError("$label ended on a full page of $lastPageRows, but the header says $advertised and only $rows arrived")
         }
