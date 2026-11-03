@@ -126,7 +126,13 @@ internal object CloudSnapshotFetcher {
                 is AccountResult.ParseError -> {
                     // YouTube's built-in lists (episodes, ...) use other layouts; those are left out rather
                     // than shown empty. An ordinary playlist that can't be read still fails the refresh.
-                    if (!p.special) return r.asFailure()
+                    // Include its identity in the surfaced error: a metadata-only initial browse response
+                    // can be specific to one playlist, and the title/ID tells us which kind failed.
+                    if (!p.special) {
+                        return AccountResult.ParseError(
+                            "Playlist \"${p.title}\" (VL${p.id}) could not be read: ${r.message}"
+                        )
+                    }
                     Timber.tag("Sync").w("Built-in list \"${p.title}\" couldn't be read (${r.message}); leaving it out")
                     continue
                 }
