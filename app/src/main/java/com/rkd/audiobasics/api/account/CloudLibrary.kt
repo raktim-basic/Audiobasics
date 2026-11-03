@@ -164,6 +164,18 @@ internal object CloudLibrary {
                     is AccountResult.ParseError -> return retry
                 }
             }
+            // Still a bare envelope after the single retry. Only believed as "the list ended"
+            // when the header's count is already met: nothing it promised can be missing.
+            // Otherwise the sync aborts, and the counts (never content) go in the log so the
+            // cause can be told apart: genuine end, YouTube-side cap, or a request mismatch.
+            if (token != null && parsed is AccountResult.ParseError && isMetadataOnly(json)) {
+                if (advertised != null && rows >= advertised) {
+                    Timber.tag(TAG).d("$label: trailing metadata-only page after $rows rows; header says $advertised, so the list is complete")
+                    break
+                }
+                Timber.tag(TAG).w("$label: page ${pages + 1} was metadata only after $rows rows in $pages pages (header says ${advertised ?: "nothing"}); not applying anything")
+                return AccountResult.ParseError("$label: YouTube ended paging after $rows rows, but the header says ${advertised ?: "nothing"}")
+            }
             val page = when (parsed) {
                 is AccountResult.Success -> parsed.value
                 is AccountResult.SessionExpired -> return parsed
