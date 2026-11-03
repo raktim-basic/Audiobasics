@@ -706,6 +706,13 @@ internal object CloudLibrary {
     private fun libraryContinuationShelf(json: JSONObject): Shelf? {
         val cc = json.optJSONObject("continuationContents")
         if (cc != null) {
+            // Umihi Music reads the account's playlist feed through exactly two continuation
+            // shapes: gridContinuation and musicLibraryContinuation (cards under "contents", the
+            // next token under the legacy "continuations"). Audiobasics originally knew only the
+            // grid and section-list shapes, which fits the "page 2 not understood" report.
+            cc.optJSONObject("musicLibraryContinuation")?.let { continuation ->
+                return Shelf(continuation.optJSONArray("contents") ?: JSONArray(), continuation)
+            }
             cc.optJSONObject("gridContinuation")?.let { continuation ->
                 return Shelf(continuation.optJSONArray("items") ?: JSONArray(), json)
             }
