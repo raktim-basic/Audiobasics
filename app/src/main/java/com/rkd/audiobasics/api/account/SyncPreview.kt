@@ -98,7 +98,7 @@ internal object SyncPreview {
             // ── Playlists ────────────────────────────────────────────────────
             when (val r = CloudLibrary.fetchPlaylists(session)) {
                 is AccountResult.Success -> {
-                    val all = r.value.items
+                    val all = r.value.items.filterNot { CloudLibrary.isPersonalMix(it.id) }
                     log("Playlists: ${all.size} in the library (all of them are mirrored; the ones you can't edit are read-only).")
                     for (p in all) {
                         Thread.sleep(STEP_PAUSE_MS)

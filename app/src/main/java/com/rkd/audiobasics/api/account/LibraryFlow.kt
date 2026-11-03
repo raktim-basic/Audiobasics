@@ -23,7 +23,9 @@ internal data class CloudPlaylistData(val playlist: CloudPlaylist, val songs: Li
 internal data class CloudSnapshot(
     val liked: List<CloudSong>,
     val albums: List<Album>,
-    val playlists: List<CloudPlaylistData>
+    val playlists: List<CloudPlaylistData>,
+    /** Personalised mixes (Replay Mix and similar) that were left out of the sync. */
+    val skippedMixes: Int = 0
 ) {
     val counts: LibraryCounts
         get() = LibraryCounts(liked.size, albums.size, playlists.size, playlists.sumOf { it.songs.size })
@@ -96,10 +98,14 @@ internal object CloudSnapshotFetcher {
         }
         Thread.sleep(STEP_PAUSE_MS)
 
-        val tiles = when (val r = CloudLibrary.fetchPlaylists(session)) {
+        val allTiles = when (val r = CloudLibrary.fetchPlaylists(session)) {
             is AccountResult.Success -> r.value.items.distinctBy { it.id }
             else -> return r.asFailure()
         }
+        // Personalised mixes have no fixed length, so they can't be checked for completeness.
+        val tiles = allTiles.filterNot { CloudLibrary.isPersonalMix(it.id) }
+        val skippedMixes = allTiles.size - tiles.size
+        if (skippedMixes > 0) Timber.tag("Sync").i("Leaving out $skippedMixes personalised mix(es)")
 
         // Every playlist in the library is mirrored: the user's own, other people's that they saved,
         // and YouTube's built-in lists. Each one's page says whether the account can edit it
@@ -129,7 +135,7 @@ internal object CloudSnapshotFetcher {
             Timber.tag("Sync").i("\"${p.title}\": ${list.items.size} songs, ${if (editable) "editable" else "read-only"} (page=${list.editable}, tile-hint=${p.owned})")
             playlists += CloudPlaylistData(p.copy(owned = editable), list.items.distinctBy { it.song.id })
         }
-        return AccountResult.Success(CloudSnapshot(liked, albums, playlists))
+        return AccountResult.Success(CloudSnapshot(liked, albums, playlists, skippedMixes))
     }
 }
 
@@ -457,7 +463,8 @@ internal object LibraryFlow {
         val c = snapshot.counts
         Timber.tag(TAG).i("Applied: $c")
         _state.value = LibraryFlowState.Done(
-            "${c.liked} liked songs, ${c.albums} albums and ${c.playlists} playlists are now on this device."
+            "${c.liked} liked songs, ${c.albums} albums and ${c.playlists} playlists are now on this device." +
+                if (snapshot.skippedMixes > 0) " ${snapshot.skippedMixes} personalised mixes were left out." else ""
         )
     }
 

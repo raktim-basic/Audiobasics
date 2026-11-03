@@ -68,6 +68,10 @@ internal object CloudLibrary {
     private const val FULL_PAGE_ROWS = 100
     private const val PAGE_PAUSE_MS = 250L
 
+    /** YouTube's personalised mixes (Replay Mix, My Mix and similar). They have no fixed length or
+     *  header count and change constantly, so the sync leaves them out instead of failing on them. */
+    fun isPersonalMix(playlistId: String): Boolean = playlistId.startsWith("RDTMAK5uy_")
+
     fun fetchLikedSongs(session: AccountSession): AccountResult<CloudList<CloudSong>> =
         fetchPaged(
             session, "liked songs", "VLLM",
@@ -179,7 +183,10 @@ internal object CloudLibrary {
                     break
                 }
                 Timber.tag(TAG).w("$label: page ${pages + 1} was metadata only after $rows rows in $pages pages (header says ${advertised ?: "nothing"}); not applying anything")
-                return AccountResult.ParseError("$label: YouTube ended paging after $rows rows, but the header says ${advertised ?: "nothing"}")
+                val hint = if (label == "liked songs" && advertised != null && advertised > rows) {
+                    ". If your liked list includes liked YouTube videos, turning off \"Show liked songs from YouTube\" in YouTube Music's settings may fix this"
+                } else ""
+                return AccountResult.ParseError("$label: YouTube ended paging after $rows rows, but the header says ${advertised ?: "nothing"}$hint")
             }
             val page = when (parsed) {
                 is AccountResult.Success -> parsed.value
