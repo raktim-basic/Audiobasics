@@ -46,6 +46,9 @@ import com.rkd.audiobasics.ui.LocalNavigateGlobalSearch
 import com.rkd.audiobasics.ui.LocalNavigateHome
 import com.rkd.audiobasics.ui.LocalMorphOverlay
 import com.rkd.audiobasics.ui.LocalSongInfo
+import com.rkd.audiobasics.ui.LocalPlayPulse
+import com.rkd.audiobasics.ui.PLAY_PULSE_HOLD_MS
+import com.rkd.audiobasics.ui.PlayPulseState
 import com.rkd.audiobasics.ui.SongInfoPopup
 import com.rkd.audiobasics.ui.MonochromeExcept
 import com.rkd.audiobasics.ui.MorphAlertDialog
@@ -132,6 +135,7 @@ import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -387,6 +391,14 @@ fun AudiobasicsApp(
     var showPlayerDialog by remember { mutableStateOf(false) }
     var addToSheetSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
     var songInfoSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
+    // "Just played" emphasis: weights ease thick/thin for a moment, then back to normal.
+    val playPulse = remember { PlayPulseState() }
+    LaunchedEffect(playPulse.token) {
+        if (playPulse.token > 0) {
+            delay(PLAY_PULSE_HOLD_MS)
+            playPulse.active = false
+        }
+    }
     val openSongInfo = remember { { song: com.rkd.audiobasics.data.Song -> songInfoSong = song } }
     var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
 
@@ -531,6 +543,7 @@ fun AudiobasicsApp(
     CompositionLocalProvider(
         LocalMorphOverlay provides morphOverlay,
         LocalSongInfo provides openSongInfo,
+        LocalPlayPulse provides playPulse,
         LocalViewConfiguration provides appViewConfiguration
     ) {
 
