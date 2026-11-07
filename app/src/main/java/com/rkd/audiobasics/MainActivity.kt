@@ -58,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.app.NotificationCompat
@@ -515,7 +516,18 @@ fun AudiobasicsApp(
         }
     }
 
-    CompositionLocalProvider(LocalMorphOverlay provides morphOverlay) {
+    // Use one app-wide Compose long-press threshold so clickable, draggable, and custom
+    // gesture handlers all resolve long presses consistently.
+    val defaultViewConfiguration = LocalViewConfiguration.current
+    val appViewConfiguration = remember(defaultViewConfiguration) {
+        object : androidx.compose.ui.platform.ViewConfiguration by defaultViewConfiguration {
+            override val longPressTimeoutMillis: Long = 200L
+        }
+    }
+    CompositionLocalProvider(
+        LocalMorphOverlay provides morphOverlay,
+        LocalViewConfiguration provides appViewConfiguration
+    ) {
 
     if (showStorageLow) {
         val lowTextColor = if (isDarkMode) Color.White else Color.Black
