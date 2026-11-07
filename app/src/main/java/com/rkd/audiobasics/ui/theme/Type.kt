@@ -2,6 +2,7 @@ package com.rkd.audiobasics.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
@@ -31,6 +32,7 @@ val NothingFont: FontFamily =
 // Body font: Roboto Flex, weight axis only (res/font/roboto_flex.ttf). One variable file covers every
 // weight from Thin to Black, so one Font entry per weight just sets that weight on the same file.
 // minSdk is 26, so variable font axes are always supported (no static fallback needed).
+@OptIn(ExperimentalTextApi::class)
 private val RobotoFlexBody = FontFamily(
     (100..900 step 100).map { w ->
         Font(
