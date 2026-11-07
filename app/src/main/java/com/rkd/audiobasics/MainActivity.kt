@@ -45,6 +45,8 @@ import com.rkd.audiobasics.ui.LocalHapticsEnabled
 import com.rkd.audiobasics.ui.LocalNavigateGlobalSearch
 import com.rkd.audiobasics.ui.LocalNavigateHome
 import com.rkd.audiobasics.ui.LocalMorphOverlay
+import com.rkd.audiobasics.ui.LocalSongInfo
+import com.rkd.audiobasics.ui.SongInfoPopup
 import com.rkd.audiobasics.ui.MonochromeExcept
 import com.rkd.audiobasics.ui.MorphAlertDialog
 import com.rkd.audiobasics.ui.MorphOverlayHost
@@ -384,6 +386,8 @@ fun AudiobasicsApp(
     val backStack = rememberNavBackStack(HomeKey)
     var showPlayerDialog by remember { mutableStateOf(false) }
     var addToSheetSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
+    var songInfoSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
+    val openSongInfo = remember { { song: com.rkd.audiobasics.data.Song -> songInfoSong = song } }
     var showCreatePlaylistFromSheet by remember { mutableStateOf(false) }
 
     // Which special slide (if any) the transition currently in flight should use. Set
@@ -526,6 +530,7 @@ fun AudiobasicsApp(
     }
     CompositionLocalProvider(
         LocalMorphOverlay provides morphOverlay,
+        LocalSongInfo provides openSongInfo,
         LocalViewConfiguration provides appViewConfiguration
     ) {
 
@@ -588,6 +593,27 @@ fun AudiobasicsApp(
             context = context,
             onDismiss = { addToSheetSong = null },
             onCreateNew = { showCreatePlaylistFromSheet = true }
+        )
+    }
+
+    // Global Song info popup — opened from any song's 3-dot menu via LocalSongInfo
+    songInfoSong?.let { song ->
+        val context = LocalContext.current
+        SongInfoPopup(
+            song = song,
+            vm = vm,
+            isDarkMode = isDarkMode,
+            context = context,
+            onDismiss = { songInfoSong = null },
+            onNavigateArtist = { name, artistId ->
+                // Smart Inputs can be the screen underneath; don't leave it hovering over the new one.
+                vm.dismissSmartInputs()
+                push(ArtistDetailKey(name, artistId ?: ""))
+            },
+            onNavigateAlbum = { query, expectedTitle, expectedArtist ->
+                vm.dismissSmartInputs()
+                push(SearchAlbumsKey(query, expectedTitle, expectedArtist))
+            }
         )
     }
 
