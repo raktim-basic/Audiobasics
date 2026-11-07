@@ -29,3 +29,30 @@ fun animatedBodyWeight(
     )
     return ((w + 5) / 10) * 10
 }
+
+/**
+ * Weight for rows that can be reordered. While nothing is being reordered every row keeps its
+ * normal [base] weight. Once a row is picked up ([armed]) it glides to a heavy [armedWeight] and
+ * every other row ([reorderActive] but not armed) glides to a thin [thinWeight], so the picked
+ * row stands out. Same rounding as [animatedBodyWeight].
+ */
+@Composable
+fun animatedReorderWeight(
+    armed: Boolean,
+    reorderActive: Boolean,
+    base: Int = 700,
+    armedWeight: Int = 900,
+    thinWeight: Int = 300,
+    durationMs: Int = 300,
+): Int {
+    val w by animateIntAsState(
+        targetValue = when {
+            armed -> armedWeight
+            reorderActive -> thinWeight
+            else -> base
+        },
+        animationSpec = tween(durationMs, easing = FastOutSlowInEasing),
+        label = "reorderWeight",
+    )
+    return ((w + 5) / 10) * 10
+}
