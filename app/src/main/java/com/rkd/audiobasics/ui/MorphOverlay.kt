@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Share
@@ -640,6 +641,7 @@ fun MorphMenuItem(
         text.equals("Unlike", ignoreCase = true) -> Icons.Default.Favorite
         text.equals("Reorder", ignoreCase = true) || text.equals("Cancel reorder", ignoreCase = true) -> Icons.Default.SwapVert
         text.equals("Rename", ignoreCase = true) -> Icons.Default.Edit
+        text.equals("Song info", ignoreCase = true) -> Icons.Default.Info
         text.equals("Delete", ignoreCase = true) || text.startsWith("Remove from", ignoreCase = true) -> Icons.Default.Delete
         else -> null
     }

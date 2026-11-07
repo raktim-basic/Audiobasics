@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.*
@@ -219,6 +220,7 @@ fun SongItem(
 
         if (showMenu) {
             val overlay = LocalMorphOverlay.current
+            val showSongInfo = LocalSongInfo.current
             val menuAnchor = rememberMorphAnchor()
 
             fun openMenu() {
@@ -272,6 +274,15 @@ fun SongItem(
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                     close()
                                     onReorder?.invoke()
+                                }
+                            )
+                            MorphMenuItem(
+                                text = "Song info",
+                                leadingIcon = Icons.Default.Info,
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close()
+                                    showSongInfo(song)
                                 }
                             )
                             MorphMenuItem(
@@ -352,6 +363,15 @@ fun SongItem(
                                     }
                                 )
                             }
+                            MorphMenuItem(
+                                text = "Song info",
+                                leadingIcon = Icons.Default.Info,
+                                onClick = {
+                                    if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                    close()
+                                    showSongInfo(song)
+                                }
+                            )
                             onRemoveLike?.let { action ->
                                 MorphMenuItem(
                                     text = removeLabel,

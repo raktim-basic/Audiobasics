@@ -855,6 +855,7 @@ fun AlbumSongRow(
 
         run {
             val overlay = LocalMorphOverlay.current
+            val showSongInfo = LocalSongInfo.current
             val menuAnchor = rememberMorphAnchor()
 
             fun openMenu() {
@@ -907,6 +908,14 @@ fun AlbumSongRow(
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 close()
                                 onAddToQueue()
+                            }
+                        )
+                        MorphMenuItem(
+                            text = "Song info",
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                showSongInfo(song)
                             }
                         )
                     }

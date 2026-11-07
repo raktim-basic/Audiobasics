@@ -44,6 +44,7 @@ import com.rkd.audiobasics.lyrics.LyricsOutcome
 import com.rkd.audiobasics.lyrics.LyricsRepository
 import com.rkd.audiobasics.lyrics.LyricsResult
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
@@ -131,7 +132,7 @@ fun LyricsCardContent(
         idx
     }
 
-    // Glide the active line to a fixed spot (about a third of the way down) with a slow ease, instead of
+    // Glide the active line to a fixed spot (about a third of the way down) with a quick ease, instead of
     // snapping. A new line cancels the previous glide and carries on from where it is, so it stays smooth.
     LaunchedEffect(currentLineIndex) {
         if (isRealTime && currentLineIndex >= 0) {
@@ -142,7 +143,7 @@ fun LyricsCardContent(
                 val desiredTop = viewportH * 0.33f - target.size / 2f
                 listState.animateScrollBy(
                     value = target.offset - desiredTop,
-                    animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing)
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
                 )
             } else {
                 // Far away (first open, or a seek): jump close first.
@@ -278,7 +279,7 @@ fun LyricsCardContent(
                                     fontFamily = bodyFontAt(weight),
                                     fontWeight = FontWeight(weight),
                                     fontSize = LYRIC_FONT_SIZE.sp,
-                                    color = lerp(Color.Gray, Color.Red, t),
+                                    color = lerp(Color.Gray, textColor, t),
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -331,7 +332,7 @@ fun LyricsCardContent(
             }
             Text(
                 text = "Powered by LRCLIB",
-                fontFamily = BodyFont,
+                fontFamily = NothingFont,
                 fontSize = 12.sp,
                 color = Color.Gray
             )
@@ -354,7 +355,7 @@ fun LyricsCardContent(
 private const val LYRIC_FONT_SIZE = 18
 private const val LYRIC_THIN_WEIGHT = 350      // idle lines
 private const val LYRIC_ACTIVE_WEIGHT = 800    // the line being sung
-private const val LYRIC_ACTIVE_SCALE = 1.12f   // the active line also grows by this factor
+private const val LYRIC_ACTIVE_SCALE = 1.20f   // the active line also grows by this factor
 
 /** Inserts line breaks where [text] would wrap at [widthPx] with [style], so the wrapping is fixed. */
 private fun prewrapLyric(text: String, style: TextStyle, measurer: TextMeasurer, widthPx: Int): String {

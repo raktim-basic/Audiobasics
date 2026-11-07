@@ -118,6 +118,7 @@ private fun SmartInputsContent(
                     )
 
                     val overlay = LocalMorphOverlay.current
+                    val showSongInfo = LocalSongInfo.current
                     val linkMenuAnchor = rememberMorphAnchor()
                     IconButton(
                         onClick = {
@@ -141,6 +142,14 @@ private fun SmartInputsContent(
                                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                             close()
                                             vm.playNext(linkSong)
+                                        }
+                                    )
+                                    MorphMenuItem(
+                                        text = "Song info",
+                                        onClick = {
+                                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                            close()
+                                            showSongInfo(linkSong)
                                         }
                                     )
                                 }
@@ -262,6 +271,7 @@ private fun SmartInputMatchRow(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val overlay = LocalMorphOverlay.current
+    val showSongInfo = LocalSongInfo.current
     val menuAnchor = rememberMorphAnchor()
 
     Row(
@@ -329,6 +339,14 @@ private fun SmartInputMatchRow(
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 close()
                                 onAddToQueue()
+                            }
+                        )
+                        MorphMenuItem(
+                            text = "Song info",
+                            onClick = {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                close()
+                                showSongInfo(song)
                             }
                         )
                     }

@@ -26,6 +26,7 @@ import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
 import android.content.Context
+import com.rkd.audiobasics.utils.HapticUtils
 
 /**
  * The song-info face of the player's flip card. This used to be its own floating Dialog window;
@@ -44,6 +45,7 @@ fun SongInfoCardContent(
     resolvedAlbumCache: Map<String, Album> = emptyMap(),
     onCacheResolvedAlbum: (Album) -> Unit = {},
     livePlaybackDurationMs: Long? = null,
+    hapticsEnabled: Boolean = false,
     onDismiss: () -> Unit,
     onArtistClick: (String, String?) -> Unit,
     onAlbumClick: (query: String, expectedTitle: String, expectedArtist: String) -> Unit
@@ -247,7 +249,10 @@ fun SongInfoCardContent(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            IconButton(onClick = onDismiss) {
+            IconButton(onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onDismiss()
+            }) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor)
             }
         }
