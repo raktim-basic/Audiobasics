@@ -863,12 +863,7 @@ private fun SearchPill(
                 .padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onBack()
-            }) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = textColor, modifier = Modifier.size(24.dp))
-            }
+            PillBackButton(textColor, hapticsEnabled, context, onBack)
 
             // Rounded search field with a clear (X) button once there's text.
             Row(

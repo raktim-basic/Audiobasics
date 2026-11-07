@@ -12,6 +12,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -44,10 +46,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -79,6 +83,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.NothingFont
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import com.rkd.audiobasics.utils.HapticUtils
@@ -281,6 +286,86 @@ fun FloatingBarHost(
     }
 }
 
+// ── Press-and-hold shortcuts ─────────────────────────────────────────────────────────────────
+
+/** Set by MainActivity: jumps straight to Home from anywhere (long-press on a pill's back button). */
+val LocalNavigateHome = compositionLocalOf<(() -> Unit)?> { null }
+
+/** Set by MainActivity: opens the global search from anywhere (long-press on a pill's search). */
+val LocalNavigateGlobalSearch = compositionLocalOf<(() -> Unit)?> { null }
+
+private const val HOLD_MS = 500L
+
+/** Remembers whether the current press already turned into a hold, so its release isn't also a tap. */
+private class HoldGuard { var fired = false }
+
+/**
+ * Fires [onHold] once the finger has stayed down for [HOLD_MS] without moving past touch slop. It only
+ * watches (Initial pass, never consumes), so the button's normal tap and ripple keep working; the
+ * click handler must check [HoldGuard.fired] and skip itself after a hold.
+ */
+@Composable
+private fun Modifier.holdToAct(guard: HoldGuard, onHold: () -> Unit): Modifier {
+    val currentOnHold by rememberUpdatedState(onHold)
+    return this.pointerInput(Unit) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            guard.fired = false
+            val slop = viewConfiguration.touchSlop
+            val endedEarly = withTimeoutOrNull(HOLD_MS) {
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull true
+                    if ((change.position - down.position).getDistance() > slop) return@withTimeoutOrNull true
+                } while (change.pressed)
+                true
+            }
+            if (endedEarly == null) {
+                // Timed out with the finger still down: that's a hold.
+                guard.fired = true
+                currentOnHold()
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                } while (event.changes.any { it.pressed })
+            }
+        }
+    }
+}
+
+/**
+ * The back arrow used by every pill. A tap goes back; holding it for half a second (with a second,
+ * stronger haptic) jumps straight to Home.
+ */
+@Composable
+fun PillBackButton(
+    tint: Color,
+    hapticsEnabled: Boolean,
+    context: Context,
+    onBack: () -> Unit
+) {
+    val goHome = LocalNavigateHome.current
+    val guard = remember { HoldGuard() }
+    val holdModifier = if (goHome != null) {
+        Modifier.holdToAct(guard) {
+            if (hapticsEnabled) HapticUtils.performStrongHaptic(context)
+            goHome()
+        }
+    } else Modifier
+    IconButton(
+        onClick = {
+            if (guard.fired) {
+                guard.fired = false
+                return@IconButton
+            }
+            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+            onBack()
+        },
+        modifier = holdModifier
+    ) {
+        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = tint, modifier = Modifier.size(24.dp))
+    }
+}
+
 // ── Building blocks ──────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -350,7 +435,7 @@ fun BackQueuePill(
 ) {
     val iconColor = if (isDarkMode) Color.White else Color.Black
     PillRow(isDarkMode, spacing = 20.dp) {
-        PillIconButton(Icons.Default.ArrowBack, "Back", iconColor, hapticsEnabled, context, onBack)
+        PillBackButton(iconColor, hapticsEnabled, context, onBack)
         PillIconButton(Icons.Default.QueueMusic, "Queue", iconColor, hapticsEnabled, context, onQueue)
     }
 }
@@ -371,7 +456,7 @@ fun BackOnlyPill(
             .size(56.dp),
         contentAlignment = Alignment.Center
     ) {
-        PillIconButton(Icons.Default.ArrowBack, "Back", iconColor, hapticsEnabled, context, onBack)
+        PillBackButton(iconColor, hapticsEnabled, context, onBack)
     }
 }
 
@@ -392,7 +477,7 @@ fun QueueNavPill(
 ) {
     val iconColor = if (isDarkMode) Color.White else Color.Black
     PillRow(isDarkMode, spacing = 8.dp) {
-        PillIconButton(Icons.Default.ArrowBack, "Back", iconColor, hapticsEnabled, context, onBack)
+        PillBackButton(iconColor, hapticsEnabled, context, onBack)
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(percent = 50))
@@ -413,7 +498,7 @@ fun QueueNavPill(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = timerText,
-                    fontFamily = BodyFont,
+                    fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     color = Color.Red,
@@ -521,11 +606,25 @@ fun ContextNavPill(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    PillIconButton(Icons.Default.ArrowBack, "Back", textColor, hapticsEnabled, context, onBack)
+                    PillBackButton(textColor, hapticsEnabled, context, onBack)
+                    val goGlobalSearch = LocalNavigateGlobalSearch.current
+                    val searchGuard = remember { HoldGuard() }
+                    // Holding the search area opens the global search; tapping still searches this screen.
+                    val searchHoldModifier = if (goGlobalSearch != null) {
+                        Modifier.holdToAct(searchGuard) {
+                            if (hapticsEnabled) HapticUtils.performStrongHaptic(context)
+                            goGlobalSearch()
+                        }
+                    } else Modifier
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(percent = 50))
+                            .then(searchHoldModifier)
                             .clickable {
+                                if (searchGuard.fired) {
+                                    searchGuard.fired = false
+                                    return@clickable
+                                }
                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                 onStartSearch()
                             }
@@ -541,7 +640,7 @@ fun ContextNavPill(
                         Spacer(Modifier.width(4.dp))
                         Text(
                             text = contextLabel,
-                            fontFamily = BodyFont,
+                            fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = textColor,

@@ -787,7 +787,7 @@ fun AlbumSongRow(
     ) {
         Text(
             text = trackNumber.toString(),
-            fontFamily = BodyFont,
+            fontFamily = NothingFont,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             color = if (isPlaying) Color.Red else subTextColor,
