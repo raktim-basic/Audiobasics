@@ -124,6 +124,7 @@ import com.rkd.audiobasics.ui.resetLikedScreenScroll
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import com.rkd.audiobasics.ui.theme.AppTheme
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -483,10 +484,10 @@ fun AudiobasicsApp(
             title = {
                 Text("Storage Low", fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = lowTextColor)
             },
-            text = { Text("Cannot download song — less than 1GB storage available.", fontFamily = NothingFont, color = lowTextColor) },
+            text = { Text("Cannot download song — less than 1GB storage available.", fontFamily = BodyFont, color = lowTextColor) },
             confirmButton = {
                 TextButton(onClick = { vm.dismissStorageLow() }) {
-                    Text("OK", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                    Text("OK", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
                 }
             }
         )
