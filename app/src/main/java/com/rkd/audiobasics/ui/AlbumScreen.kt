@@ -830,7 +830,7 @@ fun AlbumSongRow(
                     Spacer(Modifier.width(5.dp))
                 }
                 Text(
-                    text = song.artist,
+                    text = songArtistLine(song),
                     fontFamily = BodyFont,
                     fontSize = 12.sp,
                     color = if (isPlaying) Color(0xFFFF8A80) else subTextColor,

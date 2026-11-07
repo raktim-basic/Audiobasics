@@ -185,7 +185,7 @@ private fun SmartInputsContent(
                         )
                         if (linkSong.artist.isNotBlank()) {
                             Text(
-                                text = linkSong.artist,
+                                text = songArtistLine(linkSong),
                                 fontSize = 14.sp,
                                 color = subTextColor,
                                 maxLines = 1,
@@ -301,7 +301,7 @@ private fun SmartInputMatchRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = song.artist,
+                text = songArtistLine(song),
                 fontSize = 13.sp,
                 color = subTextColor,
                 maxLines = 1,

@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.animatedReorderWeight
+import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
@@ -51,6 +53,8 @@ fun SongItem(
     onAddTo: (() -> Unit)? = null,     // new: opens Add to playlist sheet
     showMenu: Boolean = !song.isAlbum || isInQueue,
     isDragging: Boolean = false,
+    // True while any row in the list is picked up for reordering (this one or another).
+    reorderActive: Boolean = false,
     showCacheIndicator: Boolean = isLiked,
     removeLabel: String = "Remove from liked",
     // False on screens (the queue) where the broken-heart popup must never offer a remove action.
@@ -59,6 +63,13 @@ fun SongItem(
 ) {
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
+
+    // Picked-up row goes heavy, every other row goes thin; normal weights when not reordering.
+    val titleWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
+    val subWeight = animatedReorderWeight(
+        armed = isDragging, reorderActive = reorderActive,
+        base = 400, armedWeight = 650, thinWeight = 200
+    )
 
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -163,8 +174,8 @@ fun SongItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
-                fontFamily = BodyFont,
-                fontWeight = FontWeight.Bold,
+                fontFamily = bodyFontAt(titleWeight),
+                fontWeight = FontWeight(titleWeight),
                 fontSize = 14.sp,
                 color = titleColor,
                 maxLines = 1,
@@ -193,9 +204,9 @@ fun SongItem(
                     Spacer(Modifier.width(5.dp))
                 }
                 Text(
-                    text = song.artist,
-                    fontFamily = BodyFont,
-                    fontWeight = FontWeight.Normal,
+                    text = songArtistLine(song),
+                    fontFamily = bodyFontAt(subWeight),
+                    fontWeight = FontWeight(subWeight),
                     fontSize = 12.sp,
                     color = if (isPlaying) Color(0xFFFF8A80) else subTextColor,
                     maxLines = 1,
@@ -399,6 +410,22 @@ fun SongItem(
             }
         }
     }
+}
+
+/** "2:39" (or "1:02:39" for an hour or more); null when the length isn't known. */
+fun formatSongDuration(ms: Long): String? {
+    if (ms <= 0) return null
+    val total = ms / 1000
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val sec = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
+}
+
+/** The artist line of a song row: "2:39 • Drake", or just "Drake" when the length is unknown. */
+fun songArtistLine(song: Song): String {
+    val t = formatSongDuration(song.duration) ?: return song.artist
+    return "$t • ${song.artist}"
 }
 
 private fun shareYouTube(context: android.content.Context, songId: String) {

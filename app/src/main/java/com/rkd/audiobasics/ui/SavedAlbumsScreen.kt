@@ -46,6 +46,8 @@ import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.animatedReorderWeight
+import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -318,6 +320,7 @@ fun SavedAlbumsScreen(
                                                 if (draggingIndex == null) onAlbumClick(album)
                                             },
                                             isDragging = armed,
+                                            reorderActive = draggingIndex != null,
                                             onReorder = {
                                                 draggingIndex = if (armed) null else index
                                                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -369,9 +372,16 @@ fun AlbumItem(
     onClick: () -> Unit,
     isExplicit: Boolean = album.isExplicit,
     isDragging: Boolean = false,
+    // True while any album in the list is picked up for reordering (this one or another).
+    reorderActive: Boolean = false,
     onReorder: (() -> Unit)? = null,
     onRemoveFromSave: (() -> Unit)? = null
 ) {
+    val titleWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
+    val subWeight = animatedReorderWeight(
+        armed = isDragging, reorderActive = reorderActive,
+        base = 400, armedWeight = 650, thinWeight = 200
+    )
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) AmoledBlack else Color.White
@@ -421,8 +431,8 @@ fun AlbumItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = album.title,
-                fontFamily = BodyFont,
-                fontWeight = FontWeight.Bold,
+                fontFamily = bodyFontAt(titleWeight),
+                fontWeight = FontWeight(titleWeight),
                 fontSize = 14.sp,
                 color = textColor,
                 maxLines = 1,
@@ -435,7 +445,8 @@ fun AlbumItem(
                 }
                 Text(
                     text = album.artist,
-                    fontFamily = BodyFont,
+                    fontFamily = bodyFontAt(subWeight),
+                    fontWeight = FontWeight(subWeight),
                     fontSize = 12.sp,
                     color = subTextColor,
                     maxLines = 1,

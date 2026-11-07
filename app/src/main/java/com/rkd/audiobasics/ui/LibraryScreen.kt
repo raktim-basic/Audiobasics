@@ -42,6 +42,8 @@ import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.animatedReorderWeight
+import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -264,12 +266,10 @@ fun LibraryScreen(
                     if (showLiked) {
                         item {
                             LibraryRow(
-                                emoji = null,
-                                icon = {
-                                    Icon(Icons.Default.Favorite, contentDescription = null,
-                                        tint = Color.Red, modifier = Modifier.size(40.dp))
-                                },
-                                label = "Liked songs (${likedSongs.size})",
+                                emoji = "❤️",
+                                icon = null,
+                                label = "Liked songs",
+                                reorderActive = draggingIndex != null,
                                 isDarkMode = isDarkMode,
                                 hapticsEnabled = hapticsEnabled,
                                 context = context,
@@ -290,7 +290,8 @@ fun LibraryScreen(
                                     Icon(Icons.Default.Bookmark, contentDescription = null,
                                         tint = textColor, modifier = Modifier.size(40.dp))
                                 },
-                                label = "Saved albums (${savedAlbums.size})",
+                                label = "Saved albums",
+                                reorderActive = draggingIndex != null,
                                 isDarkMode = isDarkMode,
                                 hapticsEnabled = hapticsEnabled,
                                 context = context,
@@ -367,6 +368,7 @@ fun LibraryScreen(
                                         onDelete = if (access.isSpecial(playlist.cloudId)) null else ({ deleteTarget = playlist }),
                                         deleteLabel = if (access.isReadOnly(playlist.cloudId)) "Remove" else "Delete",
                                         isDragging = armed,
+                                        reorderActive = draggingIndex != null,
                                         onReorder = {
                                             draggingIndex = if (armed) null else index
                                             if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -445,10 +447,13 @@ private fun LibraryRow(
     onDelete: (() -> Unit)? = null,
     deleteLabel: String = "Delete",
     isDragging: Boolean = false,
+    // True while any row in the list is picked up for reordering (this one or another).
+    reorderActive: Boolean = false,
     onReorder: (() -> Unit)? = null
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+    val labelWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
     // Bounds of the whole row — used only so the 3-dot menu can keep this row in color while
     // the rest of the list goes monochrome (see MorphOverlay's MonochromeExcept). The menu
     // itself still grows from the icon (menuAnchor below), this is a separate, wider rect.
@@ -483,7 +488,7 @@ private fun LibraryRow(
             }
         }
         Spacer(Modifier.width(16.dp))
-        Text(text = label, fontFamily = BodyFont, fontWeight = FontWeight.Bold,
+        Text(text = label, fontFamily = bodyFontAt(labelWeight), fontWeight = FontWeight(labelWeight),
             fontSize = 16.sp, color = textColor, modifier = Modifier.weight(1f))
         if (showMenu) {
             val overlay = LocalMorphOverlay.current

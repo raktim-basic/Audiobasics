@@ -21,6 +21,8 @@ import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.animatedBodyWeight
+import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
@@ -222,6 +224,8 @@ private fun PlaylistPickerRow(
     onClick: () -> Unit
 ) {
     val textColor = if (isSelected) Color.Red else (if (isDarkMode) Color.White else Color.Black)
+    // Ticked rows keep the normal (bold) weight, unticked ones are a touch thinner.
+    val labelWeight = animatedBodyWeight(isSelected, selectedWeight = 700, unselectedWeight = 500)
 
     Row(
         modifier = Modifier
@@ -247,8 +251,8 @@ private fun PlaylistPickerRow(
 
         Text(
             text = label,
-            fontFamily = BodyFont,
-            fontWeight = FontWeight.Bold,
+            fontFamily = bodyFontAt(labelWeight),
+            fontWeight = FontWeight(labelWeight),
             fontSize = 18.sp,
             color = textColor,
             modifier = Modifier.weight(1f)

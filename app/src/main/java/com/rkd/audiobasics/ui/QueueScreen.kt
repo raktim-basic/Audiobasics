@@ -329,6 +329,7 @@ fun QueueScreen(
                                     showRemoveInHeartDialog = false,
                                     onAddTo = { onAddTo(song) },
                                     isDragging = armed,
+                                    reorderActive = draggingIndex != null,
                                     isCaching = song.id in cachingSongIds
                                 )
                             }
