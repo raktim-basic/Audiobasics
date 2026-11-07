@@ -42,6 +42,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
 import com.rkd.audiobasics.ui.LocalHapticsEnabled
+import com.rkd.audiobasics.ui.LocalNavigateGlobalSearch
+import com.rkd.audiobasics.ui.LocalNavigateHome
 import com.rkd.audiobasics.ui.LocalMorphOverlay
 import com.rkd.audiobasics.ui.MonochromeExcept
 import com.rkd.audiobasics.ui.MorphAlertDialog
@@ -434,6 +436,45 @@ fun AudiobasicsApp(
         }
     }
 
+    // Per-screen cleanup that navigateBack() does for the one screen it closes; here it runs for every
+    // screen a multi-step jump closes.
+    fun cleanupLeaving(key: NavKey) {
+        when (key) {
+            is SearchKey -> vm.clearSearch()
+            is LikedKey -> resetLikedScreenScroll()
+            is CustomPlaylistKey -> resetCustomPlaylistScroll(key.playlist.id)
+            else -> {}
+        }
+    }
+
+    // Long-press on a pill's back button: straight back to Home, closing everything in between.
+    fun navigateHome() {
+        if (backStack.size > 1) {
+            val leaving = backStack.last()
+            backStack.drop(1).forEach { cleanupLeaving(it) }
+            pendingSlideKind = popSlideKind(leaving, backStack.first())
+            while (backStack.size > 1) backStack.removeLastOrNull()
+        }
+    }
+
+    // Long-press on a pill's search: open the global search on top of the current screen, so back
+    // returns here. If a global search is already open lower in the stack, return to it instead of
+    // stacking a second copy.
+    fun openGlobalSearch() {
+        val existing = backStack.indexOfLast { it is SearchKey }
+        when {
+            existing < 0 -> push(SearchKey)
+            existing < backStack.size - 1 -> {
+                val leaving = backStack.last()
+                backStack.drop(existing + 1).forEach { cleanupLeaving(it) }
+                pendingSlideKind = popSlideKind(leaving, backStack[existing])
+                while (backStack.size - 1 > existing) backStack.removeLastOrNull()
+            }
+        }
+    }
+    val goHome = remember { { navigateHome() } }
+    val goGlobalSearch = remember { { openGlobalSearch() } }
+
     LaunchedEffect(pendingAlbumLinkNavigation) {
         pendingAlbumLinkNavigation?.let { album ->
             push(AlbumDetailKey(album))
@@ -659,7 +700,11 @@ fun AudiobasicsApp(
             .imePadding()
     ) {
         Box(modifier = Modifier.weight(1f)) {
-            CompositionLocalProvider(LocalHapticsEnabled provides vm.hapticsEnabled.collectAsState().value) {
+            CompositionLocalProvider(
+                LocalHapticsEnabled provides vm.hapticsEnabled.collectAsState().value,
+                LocalNavigateHome provides goHome,
+                LocalNavigateGlobalSearch provides goGlobalSearch
+            ) {
             NavDisplay(
                 backStack = backStack,
                 modifier = Modifier.fillMaxSize(),
