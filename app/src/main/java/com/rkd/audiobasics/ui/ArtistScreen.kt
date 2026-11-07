@@ -59,6 +59,8 @@ import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.bodyFontAt
+import com.rkd.audiobasics.ui.theme.animatedBodyWeight
 import com.rkd.audiobasics.utils.HapticUtils
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -337,12 +339,13 @@ fun ArtistScreen(
                                     horizontalArrangement = Arrangement.spacedBy(20.dp)
                                 ) {
                                     tabs.forEachIndexed { i, label ->
+                                        val tabWeight = animatedBodyWeight(artistVm.selectedTab == i)
                                         Text(
                                             text = label,
                                             maxLines = 1,
                                             softWrap = false,
-                                            fontFamily = BodyFont,
-                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = bodyFontAt(tabWeight),
+                                            fontWeight = FontWeight(tabWeight),
                                             fontSize = 14.sp,
                                             color = if (artistVm.selectedTab == i) Color.Red else subTextColor,
                                             modifier = Modifier
