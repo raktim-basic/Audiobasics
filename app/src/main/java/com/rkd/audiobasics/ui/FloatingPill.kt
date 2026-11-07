@@ -177,7 +177,7 @@ class FloatingBarState {
 }
 
 /** How long the screen must sit untouched and still (after any scroll animation ends) before a hidden bar comes back. */
-private const val AUTO_SHOW_IDLE_MS = 500L
+private const val AUTO_SHOW_IDLE_MS = 300L
 
 /**
  * Lays [content] out full-size and floats [bar] over its bottom edge (just above the mini
@@ -294,7 +294,7 @@ val LocalNavigateHome = compositionLocalOf<(() -> Unit)?> { null }
 /** Set by MainActivity: opens the global search from anywhere (long-press on a pill's search). */
 val LocalNavigateGlobalSearch = compositionLocalOf<(() -> Unit)?> { null }
 
-private const val HOLD_MS = 500L
+private const val HOLD_MS = 200L
 
 /** Remembers whether the current press already turned into a hold, so its release isn't also a tap. */
 private class HoldGuard { var fired = false }
