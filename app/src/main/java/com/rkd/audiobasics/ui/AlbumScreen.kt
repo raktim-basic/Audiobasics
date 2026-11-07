@@ -60,6 +60,8 @@ import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.animatedReorderWeight
+import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
 
 private fun formatAlbumDuration(ms: Long): String {
@@ -774,12 +776,22 @@ fun AlbumSongRow(
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
 
+    // "Just played" emphasis: this song goes heavy and the rest thin for a moment, then back.
+    val playPulse = LocalPlayPulse.current
+    val pulsedHere = playPulse.active && playPulse.songId == song.id
+    val titleWeight = animatedReorderWeight(armed = pulsedHere, reorderActive = playPulse.active)
+    val subWeight = animatedReorderWeight(
+        armed = pulsedHere, reorderActive = playPulse.active,
+        base = 400, armedWeight = 650, thinWeight = 200
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
             .clickable {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                playPulse.trigger(song.id)
                 onClick()
             }
             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -800,8 +812,8 @@ fun AlbumSongRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
-                fontFamily = BodyFont,
-                fontWeight = FontWeight.Bold,
+                fontFamily = bodyFontAt(titleWeight),
+                fontWeight = FontWeight(titleWeight),
                 fontSize = 14.sp,
                 color = titleColor,
                 maxLines = 1,
@@ -831,7 +843,8 @@ fun AlbumSongRow(
                 }
                 Text(
                     text = songArtistLine(song),
-                    fontFamily = BodyFont,
+                    fontFamily = bodyFontAt(subWeight),
+                    fontWeight = FontWeight(subWeight),
                     fontSize = 12.sp,
                     color = if (isPlaying) Color(0xFFFF8A80) else subTextColor,
                     maxLines = 1,

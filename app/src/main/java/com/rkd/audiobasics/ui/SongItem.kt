@@ -65,9 +65,14 @@ fun SongItem(
     var showShareChoice by remember { mutableStateOf(false) }
 
     // Picked-up row goes heavy, every other row goes thin; normal weights when not reordering.
-    val titleWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
+    // The same emphasis plays briefly when a song is played (normal > thick/thin > normal).
+    val playPulse = LocalPlayPulse.current
+    val pulsedHere = playPulse.active && playPulse.songId == song.id
+    val emphasised = isDragging || pulsedHere
+    val othersThin = reorderActive || playPulse.active
+    val titleWeight = animatedReorderWeight(armed = emphasised, reorderActive = othersThin)
     val subWeight = animatedReorderWeight(
-        armed = isDragging, reorderActive = reorderActive,
+        armed = emphasised, reorderActive = othersThin,
         base = 400, armedWeight = 650, thinWeight = 200
     )
 
@@ -135,6 +140,8 @@ fun SongItem(
             .background(bgColor)
             .clickable {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                // Taps are ignored while reordering, so don't pulse then.
+                if (!reorderActive) playPulse.trigger(song.id)
                 onClick()
             }
             .padding(horizontal = 16.dp, vertical = 8.dp),
