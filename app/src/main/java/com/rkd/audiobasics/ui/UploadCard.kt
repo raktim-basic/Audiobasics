@@ -33,6 +33,7 @@ import com.rkd.audiobasics.api.account.UploadState
 import com.rkd.audiobasics.api.account.UploadSummary
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 private const val MAX_SHOWN_FAILURES = 15
@@ -77,7 +78,7 @@ internal fun UploadCard(isDarkMode: Boolean, hapticsEnabled: Boolean) {
 
     @Composable
     fun Line(text: String, color: Color = subTextColor) {
-        Text(text, fontFamily = NothingFont, fontSize = 13.sp, color = color, modifier = Modifier.padding(top = 4.dp))
+        Text(text, fontFamily = BodyFont, fontSize = 13.sp, color = color, modifier = Modifier.padding(top = 4.dp))
     }
 
     Column(
@@ -105,7 +106,7 @@ internal fun UploadCard(isDarkMode: Boolean, hapticsEnabled: Boolean) {
                 Line("Keep Audiobasics open. Pausing is always safe.")
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { tap(); LibraryUpload.pause() }) {
-                        Text("Pause", fontFamily = NothingFont, color = textColor)
+                        Text("Pause", fontFamily = BodyFont, color = textColor)
                     }
                 }
             }
@@ -125,10 +126,10 @@ internal fun UploadCard(isDarkMode: Boolean, hapticsEnabled: Boolean) {
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { tap(); confirmDiscard = true }) {
-                        Text("Discard", fontFamily = NothingFont, color = subTextColor)
+                        Text("Discard", fontFamily = BodyFont, color = subTextColor)
                     }
                     TextButton(onClick = { tap(); LibraryUpload.resume() }) {
-                        Text("Resume", fontFamily = NothingFont, color = Color.Red)
+                        Text("Resume", fontFamily = BodyFont, color = Color.Red)
                     }
                 }
             }
@@ -152,19 +153,19 @@ internal fun UploadCard(isDarkMode: Boolean, hapticsEnabled: Boolean) {
             text = {
                 Text(
                     "The upload stops for good. What was already uploaded stays in your account, and your library on this device is unchanged. You can sign out afterwards.",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 14.sp,
                     color = subTextColor
                 )
             },
             confirmButton = {
                 TextButton(onClick = { confirmDiscard = false; LibraryUpload.discard() }) {
-                    Text("Discard", fontFamily = NothingFont, color = warn)
+                    Text("Discard", fontFamily = BodyFont, color = warn)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { confirmDiscard = false }) {
-                    Text("Keep it", fontFamily = NothingFont, color = textColor)
+                    Text("Keep it", fontFamily = BodyFont, color = textColor)
                 }
             }
         )
@@ -190,32 +191,32 @@ private fun FinishedReport(
         "Playlists: ${summary.playlistsCreated} of ${summary.playlistsTotal}",
         lineOf("Playlist songs", summary.playlistSongsTotal, summary.playlistSongsFailed)
     ).forEach {
-        Text(it, fontFamily = NothingFont, fontSize = 13.sp, color = subTextColor, modifier = Modifier.padding(top = 2.dp))
+        Text(it, fontFamily = BodyFont, fontSize = 13.sp, color = subTextColor, modifier = Modifier.padding(top = 2.dp))
     }
 
     if (summary.failures.isNotEmpty()) {
         Spacer(Modifier.height(10.dp))
         Text(
             "${summary.failures.size} could not be added to your account:",
-            fontFamily = NothingFont, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = warn
+            fontFamily = BodyFont, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = warn
         )
         summary.failures.take(MAX_SHOWN_FAILURES).forEach {
-            Text("• ${it.label}", fontFamily = NothingFont, fontSize = 12.sp, color = subTextColor, modifier = Modifier.padding(top = 2.dp))
+            Text("• ${it.label}", fontFamily = BodyFont, fontSize = 12.sp, color = subTextColor, modifier = Modifier.padding(top = 2.dp))
         }
         if (summary.failures.size > MAX_SHOWN_FAILURES) {
             Text(
                 "…and ${summary.failures.size - MAX_SHOWN_FAILURES} more (Copy list has all of them)",
-                fontFamily = NothingFont, fontSize = 12.sp, color = subTextColor, modifier = Modifier.padding(top = 2.dp)
+                fontFamily = BodyFont, fontSize = 12.sp, color = subTextColor, modifier = Modifier.padding(top = 2.dp)
             )
         }
         Spacer(Modifier.height(8.dp))
         Text(
             "They are still on this device for now, but they aren't in your account, so the next refresh (pull down, Sync now, or the next app start) removes them here too, along with their saved audio. Copy the list first if you want to look for them again.",
-            fontFamily = NothingFont, fontSize = 12.sp, color = warn
+            fontFamily = BodyFont, fontSize = 12.sp, color = warn
         )
     }
     summary.notes.forEach {
-        Text(it, fontFamily = NothingFont, fontSize = 12.sp, color = subTextColor, modifier = Modifier.padding(top = 6.dp))
+        Text(it, fontFamily = BodyFont, fontSize = 12.sp, color = subTextColor, modifier = Modifier.padding(top = 6.dp))
     }
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
@@ -225,11 +226,11 @@ private fun FinishedReport(
                 clipboard.setPrimaryClip(ClipData.newPlainText("Songs that were not uploaded", summary.failureText()))
                 Toast.makeText(context, "List copied", Toast.LENGTH_SHORT).show()
             }) {
-                Text("Copy list", fontFamily = NothingFont, color = textColor)
+                Text("Copy list", fontFamily = BodyFont, color = textColor)
             }
         }
         TextButton(onClick = onDone) {
-            Text("Done", fontFamily = NothingFont, color = Color.Red)
+            Text("Done", fontFamily = BodyFont, color = Color.Red)
         }
     }
 }

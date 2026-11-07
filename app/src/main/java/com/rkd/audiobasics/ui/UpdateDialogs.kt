@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 /**
@@ -75,7 +76,7 @@ fun DownloadProgressDialog(
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     close()
                 }) {
-                    Text("Cancel", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                    Text("Cancel", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
                 }
             }
         }
@@ -116,7 +117,7 @@ fun InstallingDialog(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "Audiobasics will close by itself when it's done. Open it again afterwards.",
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
                 color = subTextColor
@@ -181,7 +182,7 @@ fun ChangelogDialog(
                             line.text.isEmpty() -> Spacer(Modifier.height(8.dp))
                             line.isHeader -> Text(
                                 text = line.text,
-                                fontFamily = NothingFont,
+                                fontFamily = BodyFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = textColor,
@@ -207,7 +208,7 @@ fun ChangelogDialog(
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     close()
                 }) {
-                    Text("Close", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                    Text("Close", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
                 }
             }
         }

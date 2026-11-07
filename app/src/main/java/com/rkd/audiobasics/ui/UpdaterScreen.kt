@@ -42,6 +42,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 const val APP_CURRENT_VERSION = "3.0.2"
@@ -279,7 +280,7 @@ fun UpdaterScreen(
 
         Text(
             text = "Current app version : $APP_CURRENT_VERSION",
-            fontFamily = NothingFont,
+            fontFamily = BodyFont,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp,
             color = textColor
@@ -295,7 +296,7 @@ fun UpdaterScreen(
                     else -> "Error"
                 }
             }",
-            fontFamily = NothingFont,
+            fontFamily = BodyFont,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp,
             color = textColor
@@ -307,7 +308,7 @@ fun UpdaterScreen(
             Text(
                 text = if (updateAvailable) "An update is available. Update asap"
                        else "You're currently running the absolute latest version",
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontSize = 13.sp,
                 color = subTextColor,
                 textAlign = TextAlign.Center
@@ -345,7 +346,7 @@ fun UpdaterScreen(
                 } else {
                     Text(
                         text = "check for updates",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = Color.White
@@ -369,7 +370,7 @@ fun UpdaterScreen(
                 ) {
                     Text(
                         text = "Download and update",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = Color.White
@@ -384,7 +385,7 @@ fun UpdaterScreen(
                 ) {
                     Text(
                         text = "View changelogs",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontSize = 14.sp,
                         color = linkColor,
                         textDecoration = TextDecoration.Underline,
@@ -397,7 +398,7 @@ fun UpdaterScreen(
                     )
                     Text(
                         text = "Update via GitHub",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontSize = 14.sp,
                         color = linkColor,
                         textDecoration = TextDecoration.Underline,
@@ -416,7 +417,7 @@ fun UpdaterScreen(
 
         Text(
             text = "we'll notify you if an update is available :D",
-            fontFamily = NothingFont,
+            fontFamily = BodyFont,
             fontSize = 12.sp,
             color = subTextColor,
             textAlign = TextAlign.Center

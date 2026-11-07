@@ -28,6 +28,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 
 private const val NEWPIPE_CURRENT = "v0.26.5"
 private const val YTM_CURRENT = "1.20261018.16.00"
@@ -119,7 +120,7 @@ fun EngineInfoScreen(
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = "Current version : $NEWPIPE_CURRENT",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 13.sp,
                     color = subTextColor
                 )
@@ -132,7 +133,7 @@ fun EngineInfoScreen(
                             else -> "Unknown"
                         }
                     }",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 13.sp,
                     color = subTextColor
                 )
@@ -157,7 +158,7 @@ fun EngineInfoScreen(
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = "Current version : $YTM_CURRENT",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 13.sp,
                     color = subTextColor
                 )
@@ -167,7 +168,7 @@ fun EngineInfoScreen(
 
             Text(
                 text = "YTM web remix by Innertube :)",
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontSize = 12.sp,
                 color = subTextColor,
                 modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -202,7 +203,7 @@ fun EngineInfoScreen(
             } else {
                 Text(
                     text = "check latest version",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = Color.White

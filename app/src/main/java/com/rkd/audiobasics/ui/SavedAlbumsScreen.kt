@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -258,7 +259,7 @@ fun SavedAlbumsScreen(
                                     text = if (searchQuery.isBlank())
                                         "No saved albums yet"
                                     else "No albums found",
-                                    fontFamily = NothingFont,
+                                    fontFamily = BodyFont,
                                     color = Color.Gray,
                                     textAlign = TextAlign.Center
                                 )
@@ -420,7 +421,7 @@ fun AlbumItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = album.title,
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = textColor,
@@ -434,7 +435,7 @@ fun AlbumItem(
                 }
                 Text(
                     text = album.artist,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 12.sp,
                     color = subTextColor,
                     maxLines = 1,
@@ -444,7 +445,7 @@ fun AlbumItem(
             if (album.songCount > 0) {
                 Text(
                     text = "${album.songCount} songs · ${formatTime(album.duration)}",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 11.sp,
                     color = Color.Gray,
                     maxLines = 1

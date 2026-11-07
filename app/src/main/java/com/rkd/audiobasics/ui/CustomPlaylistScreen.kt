@@ -41,6 +41,7 @@ import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -303,13 +304,13 @@ fun CustomPlaylistScreen(
                                         text = if (isPlaylistCaching) "Downloading songs. "
                                                else if (uncachedCount == playlistSongs.size) "All songs aren't downloaded. "
                                                else "$uncachedCount songs aren't downloaded. ",
-                                        fontFamily = NothingFont,
+                                        fontFamily = BodyFont,
                                         fontSize = 13.sp,
                                         color = Color.Gray
                                     )
                                     Text(
                                         text = if (isPlaylistCaching) "See progress" else "Download them?",
-                                        fontFamily = NothingFont,
+                                        fontFamily = BodyFont,
                                         fontSize = 13.sp,
                                         color = Color(0xFF1565C0),
                                         textDecoration = TextDecoration.Underline,
@@ -340,7 +341,7 @@ fun CustomPlaylistScreen(
                             ) {
                                 Text(
                                     text = "No results for \"$searchQuery\"",
-                                    fontFamily = NothingFont,
+                                    fontFamily = BodyFont,
                                     color = Color.Gray,
                                     fontSize = 15.sp
                                 )

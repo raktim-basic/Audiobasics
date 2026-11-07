@@ -42,6 +42,7 @@ import com.rkd.audiobasics.api.account.LoginResult
 import com.rkd.audiobasics.api.account.SapisidAuth
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -147,7 +148,7 @@ internal fun AccountPage(
                     // Lines up with the row's text (20dp padding + 24dp icon + 16dp gap).
                     Text(
                         text = "Sign in with an empty account to upload your local library",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontSize = 12.sp,
                         color = subTextColor,
                         modifier = Modifier
@@ -199,7 +200,7 @@ internal fun AccountPage(
                     UploadCard(isDarkMode = isDarkMode, hapticsEnabled = hapticsEnabled)
                     Text(
                         text = "Your session expired. Sign in again to keep using your account.",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontSize = 13.sp,
                         color = Color(0xFFE57373),
                         modifier = Modifier
@@ -249,7 +250,7 @@ internal fun AccountPage(
                     Column {
                         Text(
                             "What should happen to the library on this device?",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             color = subTextColor
                         )
                         Spacer(Modifier.height(12.dp))
@@ -257,16 +258,16 @@ internal fun AccountPage(
                             showLogoutConfirm = false
                             LibraryFlow.logout(store, clearLocal = false)
                         }) {
-                            Text("Keep library on this device", fontFamily = NothingFont, color = textColor)
+                            Text("Keep library on this device", fontFamily = BodyFont, color = textColor)
                         }
                         TextButton(onClick = {
                             showLogoutConfirm = false
                             LibraryFlow.logout(store, clearLocal = true)
                         }) {
-                            Text("Clear library from this device", fontFamily = NothingFont, color = Color(0xFFE57373))
+                            Text("Clear library from this device", fontFamily = BodyFont, color = Color(0xFFE57373))
                         }
                         TextButton(onClick = { showLogoutConfirm = false }) {
-                            Text("Cancel", fontFamily = NothingFont, color = subTextColor)
+                            Text("Cancel", fontFamily = BodyFont, color = subTextColor)
                         }
                     }
                 },
@@ -285,7 +286,7 @@ internal fun AccountPage(
                         } else {
                             "This removes your account from this device. Nothing in your library on this device is changed."
                         },
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         color = subTextColor
                     )
                 },
@@ -295,12 +296,12 @@ internal fun AccountPage(
                         if (uploadUnfinished) LibraryUpload.discard()
                         scope.launch { AccountManager.logout() }
                     }) {
-                        Text("Log out", fontFamily = NothingFont, color = Color(0xFFE57373))
+                        Text("Log out", fontFamily = BodyFont, color = Color(0xFFE57373))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showLogoutConfirm = false }) {
-                        Text("Cancel", fontFamily = NothingFont, color = textColor)
+                        Text("Cancel", fontFamily = BodyFont, color = textColor)
                     }
                 }
             )
@@ -341,7 +342,7 @@ private fun ProfileRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = profile.name,
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = textColor
@@ -351,7 +352,7 @@ private fun ProfileRow(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = secondary,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 12.sp,
                     color = subTextColor
                 )
@@ -493,13 +494,13 @@ internal fun LoginPage(
             ) {
                 Text(
                     text = message,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 13.sp,
                     color = Color(0xFFE57373),
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(onClick = { webViewRef?.let { startFreshLogin(it) } }) {
-                    Text("Try again", fontFamily = NothingFont, color = textColor)
+                    Text("Try again", fontFamily = BodyFont, color = textColor)
                 }
             }
         }
@@ -551,7 +552,7 @@ internal fun LoginPage(
                         Spacer(Modifier.height(16.dp))
                         Text(
                             text = "Signing you in…",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontSize = 14.sp,
                             color = textColor
                         )

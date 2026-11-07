@@ -58,6 +58,7 @@ import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -294,7 +295,7 @@ fun ArtistScreen(
                                             Spacer(Modifier.width(12.dp))
                                             Text(
                                                 text = "Wiki",
-                                                fontFamily = NothingFont,
+                                                fontFamily = BodyFont,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 16.sp,
                                                 color = Color(0xFF4A90E2),
@@ -340,7 +341,7 @@ fun ArtistScreen(
                                             text = label,
                                             maxLines = 1,
                                             softWrap = false,
-                                            fontFamily = NothingFont,
+                                            fontFamily = BodyFont,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.sp,
                                             color = if (artistVm.selectedTab == i) Color.Red else subTextColor,
@@ -365,7 +366,7 @@ fun ArtistScreen(
                         if (artistVm.hasError || artistVm.artistPage == null) {
                             item {
                                 Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                                    Text("Artist not found", fontFamily = NothingFont, color = Color.Gray)
+                                    Text("Artist not found", fontFamily = BodyFont, color = Color.Gray)
                                 }
                             }
                         } else {
@@ -376,7 +377,7 @@ fun ArtistScreen(
                                         item {
                                             Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                                                 Text(if (searchQuery.isBlank()) "No songs found" else "No results",
-                                                    fontFamily = NothingFont, color = Color.Gray)
+                                                    fontFamily = BodyFont, color = Color.Gray)
                                             }
                                         }
                                     } else {
@@ -403,7 +404,7 @@ fun ArtistScreen(
                                         item {
                                             Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                                                 Text(if (searchQuery.isBlank()) "No albums found" else "No results",
-                                                    fontFamily = NothingFont, color = Color.Gray)
+                                                    fontFamily = BodyFont, color = Color.Gray)
                                             }
                                         }
                                     } else {
@@ -418,7 +419,7 @@ fun ArtistScreen(
                                         item {
                                             Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                                                 Text(if (searchQuery.isBlank()) "No singles/EPs found" else "No results",
-                                                    fontFamily = NothingFont, color = Color.Gray)
+                                                    fontFamily = BodyFont, color = Color.Gray)
                                             }
                                         }
                                     } else {
@@ -483,7 +484,7 @@ fun AlbumRowItem(
         )
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = album.title, fontFamily = NothingFont, fontWeight = FontWeight.Bold,
+            Text(text = album.title, fontFamily = BodyFont, fontWeight = FontWeight.Bold,
                 fontSize = 15.sp, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val sub = when {
                 showYear && album.year.isNotBlank() -> album.year
@@ -496,7 +497,7 @@ fun AlbumRowItem(
                         ExplicitBadge(isDarkMode)
                         Spacer(Modifier.width(5.dp))
                     }
-                    Text(text = sub, fontFamily = NothingFont, fontSize = 13.sp,
+                    Text(text = sub, fontFamily = BodyFont, fontSize = 13.sp,
                         color = subTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }

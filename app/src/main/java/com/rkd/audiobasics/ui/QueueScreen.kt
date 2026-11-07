@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -213,7 +214,7 @@ fun QueueScreen(
                 if (draggingIndex == null) {
                     Text(
                         text = "${queue.size} songs",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontSize = 13.sp,
                         color = Color.Gray
                     )
@@ -234,7 +235,7 @@ fun QueueScreen(
                 ) {
                     Text(
                         text = "Queue is empty",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         color = Color.Gray,
                         textAlign = TextAlign.Center
                     )

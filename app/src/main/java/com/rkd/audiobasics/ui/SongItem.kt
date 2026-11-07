@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Song
-import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
@@ -162,7 +162,7 @@ fun SongItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = titleColor,
@@ -183,7 +183,7 @@ fun SongItem(
                     ) {
                         Text(
                             text = "E",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 9.sp,
                             color = explicitTextColor
@@ -193,7 +193,7 @@ fun SongItem(
                 }
                 Text(
                     text = song.artist,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontWeight = FontWeight.Normal,
                     fontSize = 12.sp,
                     color = if (isPlaying) Color(0xFFFF8A80) else subTextColor,
@@ -427,7 +427,7 @@ fun BrokenHeartDialog(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "Not downloaded",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = textColor
@@ -436,7 +436,7 @@ fun BrokenHeartDialog(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = song.title,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 13.sp,
                     color = textColor.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -461,7 +461,7 @@ fun BrokenHeartDialog(
                     ) {
                         Text(
                             label,
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             color = if (bg == Color.Red) Color.White else
                                 if (label == removeLabel) Color.Red else textColor

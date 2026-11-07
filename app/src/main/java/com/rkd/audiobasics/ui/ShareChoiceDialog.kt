@@ -10,6 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
@@ -70,6 +71,6 @@ private fun ShareChoiceRow(
             }
             .padding(horizontal = 20.dp, vertical = 14.dp)
     ) {
-        Text(label, fontFamily = NothingFont, fontSize = 16.sp, color = textColor)
+        Text(label, fontFamily = BodyFont, fontSize = 16.sp, color = textColor)
     }
 }

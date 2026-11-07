@@ -58,6 +58,7 @@ import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.api.account.AccountManager
 import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 sealed class SettingsPage {
@@ -449,7 +450,7 @@ private fun SettingsMainPage(
                     ) {
                         Text(
                             text = "Audiobasics GitHub",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = Color(0xFF1565C0),
@@ -474,7 +475,7 @@ private fun SettingsMainPage(
                     ) {
                         Text(
                             text = "Discord server",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = Color(0xFF1565C0),
@@ -498,12 +499,12 @@ private fun SettingsMainPage(
                 ) {
         val madeByText = buildAnnotatedString {
                         withStyle(SpanStyle(
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontSize = 14.sp,
                             color = textColor
                         )) { append("Made by ") }
                         withStyle(SpanStyle(
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontSize = 14.sp,
                             color = Color(0xFF1565C0),
                             textDecoration = TextDecoration.Underline
@@ -597,7 +598,7 @@ private fun AppearancePage(
                     Spacer(Modifier.width(16.dp))
                     Text(
                         text = "Theme",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = textColor,
@@ -641,7 +642,7 @@ private fun AppearancePage(
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 text = label,
-                                fontFamily = NothingFont,
+                                fontFamily = BodyFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = if (isSelected) Color.White else textColor
@@ -677,7 +678,7 @@ private fun AppearancePage(
                     Spacer(Modifier.width(16.dp))
                     Text(
                         text = "Player design",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = textColor,
@@ -714,7 +715,7 @@ private fun AppearancePage(
                         ) {
                             Text(
                                 text = label,
-                                fontFamily = NothingFont,
+                                fontFamily = BodyFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = if (isSelected) Color.White else textColor
@@ -747,14 +748,14 @@ private fun AppearancePage(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Auto-immerse",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = textColor
                     )
                     Text(
                         text = "Hide controls automatically",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Normal,
                         fontSize = 12.sp,
                         color = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
@@ -853,7 +854,7 @@ private fun GeneralPage(
                 Spacer(Modifier.width(16.dp))
                 Text(
                     text = "Haptic feedback (vibration)",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = textColor,
@@ -891,7 +892,7 @@ private fun GeneralPage(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Tempo/Pitch applies to all songs",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = textColor
@@ -934,7 +935,7 @@ private fun GeneralPage(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Show YouTube Link option on share",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = textColor
@@ -978,7 +979,7 @@ private fun GeneralPage(
                     Spacer(Modifier.width(16.dp))
                     Text(
                         text = "Audio quality",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = textColor,
@@ -1022,7 +1023,7 @@ private fun GeneralPage(
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 text = label,
-                                fontFamily = NothingFont,
+                                fontFamily = BodyFont,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = if (isSelected) Color.White else textColor
@@ -1101,7 +1102,7 @@ private fun LibraryPage(
             text = {
                 Text(
                     text = "This will replace your current liked songs and saved albums. All your previous library will be gone forever              :(  Are you sure?",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 14.sp,
                     color = subTextColor
                 )
@@ -1111,7 +1112,7 @@ private fun LibraryPage(
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                     showImportWarning = false
                 }) {
-                    Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
+                    Text("Cancel", fontFamily = BodyFont, color = Color.Gray)
                 }
             },
             confirmButton = {
@@ -1128,7 +1129,7 @@ private fun LibraryPage(
                 ) {
                     Text(
                         "Import",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
@@ -1239,7 +1240,7 @@ private fun LibraryPage(
                         )
                         Text(
                             text = "Starting the download.. do not close the app",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontSize = 12.sp,
                             color = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666),
                             modifier = Modifier
@@ -1327,7 +1328,7 @@ fun SettingsRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = textColor
@@ -1336,7 +1337,7 @@ fun SettingsRow(
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 12.sp,
                     color = subTextColor
                 )
@@ -1437,7 +1438,7 @@ private fun DevToolsPage(
             ) {
                 Text(
                     text = "The LOGS",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = textColor,

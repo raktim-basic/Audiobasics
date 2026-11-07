@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
@@ -111,7 +112,7 @@ fun SearchAlbumsScreen(
                         CircularProgressIndicator(color = Color.Red)
                     }
                     albums.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No albums found", fontFamily = NothingFont, color = Color.Gray)
+                        Text("No albums found", fontFamily = BodyFont, color = Color.Gray)
                     }
                     else -> {
                         LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {

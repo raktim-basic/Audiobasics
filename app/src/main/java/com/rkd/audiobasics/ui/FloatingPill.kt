@@ -78,7 +78,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import com.rkd.audiobasics.utils.HapticUtils
@@ -413,7 +413,7 @@ fun QueueNavPill(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = timerText,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     color = Color.Red,
@@ -488,7 +488,7 @@ fun ContextNavPill(
                         modifier = Modifier.weight(1f).focusRequester(focusRequester),
                         singleLine = true,
                         textStyle = TextStyle(
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             color = textColor,
                             fontSize = 15.sp
                         ),
@@ -500,7 +500,7 @@ fun ContextNavPill(
                                 if (searchQuery.isEmpty()) {
                                     Text(
                                         text = searchPlaceholder,
-                                        fontFamily = NothingFont,
+                                        fontFamily = BodyFont,
                                         color = Color.Gray,
                                         fontSize = 15.sp,
                                         maxLines = 1
@@ -541,7 +541,7 @@ fun ContextNavPill(
                         Spacer(Modifier.width(4.dp))
                         Text(
                             text = contextLabel,
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = textColor,

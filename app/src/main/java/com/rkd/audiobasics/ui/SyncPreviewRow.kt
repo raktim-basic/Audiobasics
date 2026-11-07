@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.api.account.SyncPreview
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
@@ -96,7 +97,7 @@ internal fun SyncPreviewRow(
                     lines.forEach { line ->
                         Text(
                             text = line,
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontSize = 12.sp,
                             color = if (line.contains("NOT READ")) Color(0xFFE57373) else subTextColor
                         )
@@ -105,7 +106,7 @@ internal fun SyncPreviewRow(
             },
             confirmButton = {
                 TextButton(onClick = { report = null }) {
-                    Text("Close", fontFamily = NothingFont, color = textColor)
+                    Text("Close", fontFamily = BodyFont, color = textColor)
                 }
             }
         )

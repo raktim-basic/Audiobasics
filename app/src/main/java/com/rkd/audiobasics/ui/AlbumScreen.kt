@@ -59,6 +59,7 @@ import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 private fun formatAlbumDuration(ms: Long): String {
@@ -421,7 +422,7 @@ fun AlbumScreen(
                                         // artist page to open.
                                         Text(
                                             text = "Various artists",
-                                            fontFamily = NothingFont,
+                                            fontFamily = BodyFont,
                                             fontSize = 14.sp,
                                             color = textColor
                                         )
@@ -433,12 +434,12 @@ fun AlbumScreen(
                                                     textDecoration = TextDecoration.Underline
                                                 )) { append(artist) }
                                             },
-                                            fontFamily = NothingFont,
+                                            fontFamily = BodyFont,
                                             fontSize = 14.sp,
                                             modifier = Modifier.clickable { onNavigateArtist(artist, enrichedAlbum.artistIds[artist]) }
                                         )
                                         if (i < artistList.lastIndex) {
-                                            Text(", ", fontFamily = NothingFont, fontSize = 14.sp, color = subTextColor)
+                                            Text(", ", fontFamily = BodyFont, fontSize = 14.sp, color = subTextColor)
                                         }
                                     }
                                 }
@@ -455,7 +456,7 @@ fun AlbumScreen(
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = detailsText,
-                                        fontFamily = NothingFont,
+                                        fontFamily = BodyFont,
                                         fontSize = 13.sp,
                                         color = subTextColor,
                                         textAlign = TextAlign.Center
@@ -611,13 +612,13 @@ fun AlbumScreen(
                                         Text(
                                             text = if (isAlbumCaching) "Downloading songs. "
                                                    else "This album isn't available offline. ",
-                                            fontFamily = NothingFont,
+                                            fontFamily = BodyFont,
                                             fontSize = 13.sp,
                                             color = Color.Gray
                                         )
                                         Text(
                                             text = if (isAlbumCaching) "See progress" else "Download now?",
-                                            fontFamily = NothingFont,
+                                            fontFamily = BodyFont,
                                             fontSize = 13.sp,
                                             color = Color(0xFF1565C0),
                                             textDecoration = TextDecoration.Underline,
@@ -645,7 +646,7 @@ fun AlbumScreen(
                                 ) {
                                     Text(
                                         text = if (searchQuery.isBlank()) "No songs found" else "No results",
-                                        fontFamily = NothingFont,
+                                        fontFamily = BodyFont,
                                         color = Color.Gray,
                                         textAlign = TextAlign.Center
                                     )
@@ -786,7 +787,7 @@ fun AlbumSongRow(
     ) {
         Text(
             text = trackNumber.toString(),
-            fontFamily = NothingFont,
+            fontFamily = BodyFont,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             color = if (isPlaying) Color.Red else subTextColor,
@@ -799,7 +800,7 @@ fun AlbumSongRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = titleColor,
@@ -820,7 +821,7 @@ fun AlbumSongRow(
                     ) {
                         Text(
                             text = "E",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 9.sp,
                             color = explicitTextColor
@@ -830,7 +831,7 @@ fun AlbumSongRow(
                 }
                 Text(
                     text = song.artist,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 12.sp,
                     color = if (isPlaying) Color(0xFFFF8A80) else subTextColor,
                     maxLines = 1,
@@ -987,7 +988,7 @@ private fun OtherVersionCard(
         Spacer(Modifier.height(8.dp))
         Text(
             text = album.title,
-            fontFamily = NothingFont,
+            fontFamily = BodyFont,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
             color = textColor,
@@ -1002,7 +1003,7 @@ private fun OtherVersionCard(
                 }
                 Text(
                     text = album.artist,
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 11.sp,
                     color = subTextColor,
                     maxLines = 1,

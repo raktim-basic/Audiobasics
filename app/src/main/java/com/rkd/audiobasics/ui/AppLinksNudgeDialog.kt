@@ -12,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 /**
@@ -78,7 +79,7 @@ fun AppLinksNudgeDialog(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onEnable()
                     }) {
-                        Text("Enable", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                        Text("Enable", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
                     }
                 }
             }

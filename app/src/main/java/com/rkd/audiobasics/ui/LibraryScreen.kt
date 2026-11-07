@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -224,14 +225,14 @@ fun LibraryScreen(
                                     if (draggingIndex != null) {
                                         Text(
                                             text = "Drag and drop",
-                                            fontFamily = NothingFont,
+                                            fontFamily = BodyFont,
                                             fontSize = 14.sp,
                                             color = Color.Gray
                                         )
                                     } else if (cacheSize.isNotBlank()) {
                                         Text(
                                             text = cacheSize,
-                                            fontFamily = NothingFont,
+                                            fontFamily = BodyFont,
                                             fontSize = 14.sp,
                                             color = Color.Gray
                                         )
@@ -482,7 +483,7 @@ private fun LibraryRow(
             }
         }
         Spacer(Modifier.width(16.dp))
-        Text(text = label, fontFamily = NothingFont, fontWeight = FontWeight.Bold,
+        Text(text = label, fontFamily = BodyFont, fontWeight = FontWeight.Bold,
             fontSize = 16.sp, color = textColor, modifier = Modifier.weight(1f))
         if (showMenu) {
             val overlay = LocalMorphOverlay.current

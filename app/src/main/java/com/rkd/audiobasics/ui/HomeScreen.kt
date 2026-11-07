@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.api.account.AccountManager
 import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import com.rkd.audiobasics.utils.MigrationMessageProvider
 import com.rkd.audiobasics.utils.NightOwl
@@ -234,7 +235,7 @@ fun HomeScreen(
                         )
                         Text(
                             text = "Coming soon",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontSize = 12.sp,
                             color = subTextColor.copy(alpha = 0.6f)
                         )

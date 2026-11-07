@@ -29,7 +29,7 @@ import com.rkd.audiobasics.lyrics.LyricsCache
 import com.rkd.audiobasics.lyrics.LyricsOutcome
 import com.rkd.audiobasics.lyrics.LyricsRepository
 import com.rkd.audiobasics.lyrics.LyricsResult
-import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
@@ -138,7 +138,7 @@ fun LyricsCardContent(
         ) {
             Text(
                 text = "Real-time",
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = if (isRealTime) Color.Red else Color.Gray,
@@ -150,7 +150,7 @@ fun LyricsCardContent(
             Spacer(Modifier.width(24.dp))
             Text(
                 text = "Static",
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = if (!isRealTime) Color.Red else Color.Gray,
@@ -207,7 +207,7 @@ fun LyricsCardContent(
                         Text(
                             // A failed fetch and "no lyrics exist" can't be told apart, so one message covers both.
                             text = "Couldn't load lyrics.\nPerhaps listen the old school way :)\nTap refresh to try again.",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontSize = 16.sp,
                             color = Color.Gray,
                             textAlign = TextAlign.Center
@@ -226,7 +226,7 @@ fun LyricsCardContent(
                             val isCurrent = index == currentLineIndex
                             Text(
                                 text = line.text.ifBlank { " " },
-                                fontFamily = NothingFont,
+                                fontFamily = BodyFont,
                                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                                 fontSize = 18.sp,
                                 color = if (isCurrent) Color.Red else Color.Gray,
@@ -246,7 +246,7 @@ fun LyricsCardContent(
                         itemsIndexed(lines) { _, line ->
                             Text(
                                 text = line.ifBlank { " " },
-                                fontFamily = NothingFont,
+                                fontFamily = BodyFont,
                                 fontSize = 17.sp,
                                 color = Color.Gray,
                                 textAlign = TextAlign.Center,
@@ -275,7 +275,7 @@ fun LyricsCardContent(
             }
             Text(
                 text = "Powered by LRCLIB",
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontSize = 12.sp,
                 color = Color.Gray
             )

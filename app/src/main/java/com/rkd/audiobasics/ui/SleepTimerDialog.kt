@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 /**
  * The sleep timer entry dialog — a single scrubber screen. Dragging/stepping down to the very
@@ -157,13 +158,13 @@ private fun CustomSleepTimerContent(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onCancel()
             }) {
-                Text("Cancel", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                Text("Cancel", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
             }
             TextButton(onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onSet(minutes.toLong())
             }) {
-                Text("Set", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                Text("Set", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
             }
         }
     }

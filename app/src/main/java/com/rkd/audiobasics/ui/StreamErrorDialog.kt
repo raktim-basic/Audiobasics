@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 /** One song that couldn't be played or downloaded, and why. */
@@ -163,7 +164,7 @@ private fun StreamErrorContent(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onDismiss()
                     }) {
-                        Text("OK", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                        Text("OK", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
                     }
                 }
             }

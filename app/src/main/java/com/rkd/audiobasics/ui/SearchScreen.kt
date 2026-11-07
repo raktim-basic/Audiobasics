@@ -47,6 +47,7 @@ import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import com.rkd.audiobasics.utils.NightOwl
 import kotlinx.coroutines.Dispatchers
@@ -454,7 +455,7 @@ fun SearchScreen(
                                     Spacer(Modifier.width(12.dp))
                                     Text(
                                         text = suggestion,
-                                        fontFamily = NothingFont,
+                                        fontFamily = BodyFont,
                                         fontSize = 14.sp,
                                         color = textColor,
                                         maxLines = 1,
@@ -471,7 +472,7 @@ fun SearchScreen(
                                 CircularProgressIndicator(color = Color.Red)
                             }
                             albumResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("No albums found", fontFamily = NothingFont, color = Color.Gray)
+                                Text("No albums found", fontFamily = BodyFont, color = Color.Gray)
                             }
                             else -> {
                                 LazyColumn(
@@ -502,7 +503,7 @@ fun SearchScreen(
                                 CircularProgressIndicator(color = Color.Red)
                             }
                             artistResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("No artists found", fontFamily = NothingFont, color = Color.Gray)
+                                Text("No artists found", fontFamily = BodyFont, color = Color.Gray)
                             }
                             else -> {
                                 LazyColumn(
@@ -533,7 +534,7 @@ fun SearchScreen(
                                 CircularProgressIndicator(color = Color.Red)
                             }
                             ytResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("No videos found", fontFamily = NothingFont, color = Color.Gray)
+                                Text("No videos found", fontFamily = BodyFont, color = Color.Gray)
                             }
                             else -> {
                                 SongResultsList(
@@ -577,7 +578,7 @@ fun SearchScreen(
                                     Spacer(Modifier.width(12.dp))
                                     Text(
                                         text = pastQuery,
-                                        fontFamily = NothingFont,
+                                        fontFamily = BodyFont,
                                         fontSize = 14.sp,
                                         color = textColor,
                                         maxLines = 1,
@@ -739,9 +740,9 @@ fun PlayByLinkDialog(
                     onValueChange = { link = it },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {
-                        Text("Paste YouTube link...", fontFamily = NothingFont, color = Color.Gray)
+                        Text("Paste YouTube link...", fontFamily = BodyFont, color = Color.Gray)
                     },
-                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor),
+                    textStyle = TextStyle(fontFamily = BodyFont, color = textColor),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color.Red,
@@ -757,7 +758,7 @@ fun PlayByLinkDialog(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onDismiss()
                     }) {
-                        Text("Cancel", fontFamily = NothingFont, color = Color.Gray)
+                        Text("Cancel", fontFamily = BodyFont, color = Color.Gray)
                     }
                     Spacer(Modifier.width(8.dp))
                     Box(
@@ -770,7 +771,7 @@ fun PlayByLinkDialog(
                             }
                             .padding(horizontal = 20.dp, vertical = 10.dp)
                     ) {
-                        Text("Play", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Play", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
@@ -881,7 +882,7 @@ private fun SearchPill(
                     onValueChange = onQueryChange,
                     modifier = Modifier.weight(1f).focusRequester(focusRequester),
                     singleLine = true,
-                    textStyle = TextStyle(fontFamily = NothingFont, color = textColor, fontSize = 15.sp),
+                    textStyle = TextStyle(fontFamily = BodyFont, color = textColor, fontSize = 15.sp),
                     cursorBrush = SolidColor(Color.Red),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
@@ -891,7 +892,7 @@ private fun SearchPill(
                                 Text(
                                     // Between midnight and 3:29 am it nags, every time.
                                     text = if (NightOwl.isLateNight()) "go to sleep..." else "Search...",
-                                    fontFamily = NothingFont,
+                                    fontFamily = BodyFont,
                                     color = Color.Gray,
                                     fontSize = 15.sp,
                                     maxLines = 1

@@ -37,6 +37,7 @@ import com.rkd.audiobasics.data.db.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 
 /** Connects the library flow to this device's library, which lives in the ViewModel. */
 internal class VmLibraryStore(private val vm: MusicViewModel) : LocalLibraryStore {
@@ -181,7 +182,7 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
 
     @Composable
     fun Body(text: String) {
-        Text(text, fontFamily = NothingFont, fontSize = 14.sp, color = subTextColor)
+        Text(text, fontFamily = BodyFont, fontSize = 14.sp, color = subTextColor)
     }
 
     when (val s = state) {
@@ -223,12 +224,12 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
             },
             confirmButton = {
                 TextButton(onClick = { LibraryFlow.replaceLocalWithCloud(store, expectAccountEmpty = false) }) {
-                    Text("Replace library", fontFamily = NothingFont, color = danger)
+                    Text("Replace library", fontFamily = BodyFont, color = danger)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { LibraryFlow.declineAndLogout() }) {
-                    Text("Log out instead", fontFamily = NothingFont, color = textColor)
+                    Text("Log out instead", fontFamily = BodyFont, color = textColor)
                 }
             }
         )
@@ -250,14 +251,14 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
                 Column(horizontalAlignment = Alignment.End) {
                     if (LibraryFlow.UPLOAD_AVAILABLE) {
                         TextButton(onClick = { LibraryFlow.beginUpload(store) }) {
-                            Text("Upload library to cloud and sync", fontFamily = NothingFont, color = textColor)
+                            Text("Upload library to cloud and sync", fontFamily = BodyFont, color = textColor)
                         }
                     }
                     TextButton(onClick = { LibraryFlow.replaceLocalWithCloud(store, expectAccountEmpty = true) }) {
-                        Text("Empty local library", fontFamily = NothingFont, color = danger)
+                        Text("Empty local library", fontFamily = BodyFont, color = danger)
                     }
                     TextButton(onClick = { LibraryFlow.declineAndLogout() }) {
-                        Text("Log out instead", fontFamily = NothingFont, color = textColor)
+                        Text("Log out instead", fontFamily = BodyFont, color = textColor)
                     }
                 }
             }
@@ -270,7 +271,7 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
             text = { Body(s.message) },
             confirmButton = {
                 TextButton(onClick = { LibraryFlow.dismiss() }) {
-                    Text("Close", fontFamily = NothingFont, color = textColor)
+                    Text("Close", fontFamily = BodyFont, color = textColor)
                 }
             }
         )
@@ -282,7 +283,7 @@ internal fun LibraryFlowHost(vm: MusicViewModel, isDarkMode: Boolean) {
             text = { Body(s.message) },
             confirmButton = {
                 TextButton(onClick = { LibraryFlow.dismiss() }) {
-                    Text("Close", fontFamily = NothingFont, color = textColor)
+                    Text("Close", fontFamily = BodyFont, color = textColor)
                 }
             }
         )

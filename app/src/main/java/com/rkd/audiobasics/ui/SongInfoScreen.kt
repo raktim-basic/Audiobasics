@@ -24,6 +24,7 @@ import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import android.content.Context
 
 /**
@@ -152,7 +153,7 @@ fun SongInfoCardContent(
             Row(verticalAlignment = Alignment.Top) {
                 Text(
                     text = "Artist(s) : ",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = textColor
@@ -169,7 +170,7 @@ fun SongInfoCardContent(
                                     withStyle(SpanStyle(color = textColor)) { append(", ") }
                                 }
                             },
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             modifier = Modifier.clickable { onArtistClick(artist, song.artistIdFor(artist)) }
@@ -185,7 +186,7 @@ fun SongInfoCardContent(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "Album/EP : ",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = textColor
@@ -193,7 +194,7 @@ fun SongInfoCardContent(
                     when {
                         albumTitleLoading -> Text(
                             text = "Loading…",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontStyle = FontStyle.Italic,
                             fontSize = 16.sp,
                             color = subColor
@@ -205,7 +206,7 @@ fun SongInfoCardContent(
                                     textDecoration = TextDecoration.Underline
                                 )) { append(albumTitle!!) }
                             },
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             modifier = Modifier.clickable {
@@ -219,7 +220,7 @@ fun SongInfoCardContent(
                         )
                         else -> Text(
                             text = "Unknown",
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             color = subColor
@@ -257,7 +258,7 @@ fun SongInfoCardContent(
 private fun InfoRow(label: String, value: String, textColor: Color) {
     Text(
         text = "$label : $value",
-        fontFamily = NothingFont,
+        fontFamily = BodyFont,
         fontWeight = FontWeight.Bold,
         fontSize = 16.sp,
         color = textColor

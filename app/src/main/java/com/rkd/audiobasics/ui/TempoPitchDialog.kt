@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
@@ -103,13 +104,13 @@ fun TempoPitchDialog(
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         onReset()
                     }) {
-                        Text("Reset", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                        Text("Reset", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
                     }
                     TextButton(onClick = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         close()
                     }) {
-                        Text("Done", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                        Text("Done", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
                     }
                 }
             }

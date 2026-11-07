@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 // Emojis already used elsewhere in the app to represent Liked Songs' download state —
@@ -164,7 +165,7 @@ fun CreatePlaylistDialog(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = if (isEmojiFieldFocused) "Use your keyboard emojis to select" else "Tap to choose an emoji",
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontSize = 12.sp,
                 color = subColor
             )
@@ -172,7 +173,7 @@ fun CreatePlaylistDialog(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "That emoji is reserved for Liked Songs — pick another",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 12.sp,
                     color = Color.Red,
                     textAlign = TextAlign.Center
@@ -187,7 +188,7 @@ fun CreatePlaylistDialog(
                 placeholder = {
                     Text(
                         "Playlist name...",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         color = subColor
                     )
                 },
@@ -211,7 +212,7 @@ fun CreatePlaylistDialog(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = "A playlist with this name already exists",
-                    fontFamily = NothingFont,
+                    fontFamily = BodyFont,
                     fontSize = 12.sp,
                     color = Color.Red,
                     modifier = Modifier.fillMaxWidth()
@@ -232,7 +233,7 @@ fun CreatePlaylistDialog(
                         close()
                     }
                 ) {
-                    Text("Cancel", fontFamily = NothingFont, color = textColor)
+                    Text("Cancel", fontFamily = BodyFont, color = textColor)
                 }
                 Spacer(Modifier.width(8.dp))
                 Button(
@@ -264,7 +265,7 @@ fun CreatePlaylistDialog(
                             color = Color.White
                         )
                     } else {
-                        Text(confirmLabel, fontFamily = NothingFont, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(confirmLabel, fontFamily = BodyFont, color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 }
             }

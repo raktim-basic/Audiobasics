@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 /**
@@ -166,7 +167,7 @@ private fun SmartInputsContent(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = linkSong.title,
-                            fontFamily = NothingFont,
+                            fontFamily = BodyFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = textColor,
@@ -203,7 +204,7 @@ private fun SmartInputsContent(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, tint = textColor, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Add to playlist", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = textColor)
+                        Text("Add to playlist", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = textColor)
                     }
 
                     Box(
@@ -215,7 +216,7 @@ private fun SmartInputsContent(
                             }
                             .padding(horizontal = 28.dp, vertical = 12.dp)
                     ) {
-                        Text("Play", fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Play", fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
 
@@ -282,7 +283,7 @@ private fun SmartInputMatchRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = song.title,
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = textColor,

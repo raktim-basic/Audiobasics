@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 
 /** The small "E" tag shown before an explicit song's or album's artist line. Same look as the
  *  one SongItem draws inline. */
@@ -28,7 +28,7 @@ fun ExplicitBadge(isDarkMode: Boolean, modifier: Modifier = Modifier) {
     ) {
         Text(
             text = "E",
-            fontFamily = NothingFont,
+            fontFamily = BodyFont,
             fontWeight = FontWeight.Bold,
             fontSize = 9.sp,
             color = if (isDarkMode) Color(0xFFCCCCCC) else Color(0xFF555555)

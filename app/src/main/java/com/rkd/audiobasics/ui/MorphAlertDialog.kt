@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
@@ -129,7 +130,7 @@ fun MorphConfirmDialog(
             Text(title, fontFamily = NothingFont, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
         },
         text = {
-            Text(message, fontFamily = NothingFont, color = textColor)
+            Text(message, fontFamily = BodyFont, color = textColor)
         },
         dismissButton = {
             TextButton(
@@ -139,7 +140,7 @@ fun MorphConfirmDialog(
                     onDismiss()
                 }
             ) {
-                Text(cancelLabel, fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                Text(cancelLabel, fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
             }
         },
         confirmButton = {
@@ -166,7 +167,7 @@ fun MorphConfirmDialog(
                         color = Color.Red
                     )
                 } else {
-                    Text(confirmLabel, fontFamily = NothingFont, fontWeight = FontWeight.Bold, color = Color.Red)
+                    Text(confirmLabel, fontFamily = BodyFont, fontWeight = FontWeight.Bold, color = Color.Red)
                 }
             }
         }

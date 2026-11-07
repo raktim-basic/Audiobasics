@@ -27,6 +27,7 @@ import coil.compose.AsyncImage
 import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Artist
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
@@ -97,7 +98,7 @@ fun SearchArtistsScreen(
                         CircularProgressIndicator(color = Color.Red)
                     }
                     artists.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No artists found", fontFamily = NothingFont, color = Color.Gray)
+                        Text("No artists found", fontFamily = BodyFont, color = Color.Gray)
                     }
                     else -> {
                         LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
@@ -146,7 +147,7 @@ fun ArtistRowItem(
         Column {
             Text(
                 text = artist.name,
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = textColor,
@@ -155,7 +156,7 @@ fun ArtistRowItem(
             )
             Text(
                 text = "(ARTIST)",
-                fontFamily = NothingFont,
+                fontFamily = BodyFont,
                 fontSize = 13.sp,
                 color = subTextColor
             )

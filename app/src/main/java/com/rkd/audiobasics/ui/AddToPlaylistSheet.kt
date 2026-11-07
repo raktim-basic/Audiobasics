@@ -20,6 +20,7 @@ import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.data.db.PlaylistEntity
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import kotlinx.coroutines.launch
 
@@ -158,7 +159,7 @@ fun AddToPlaylistSheet(
                 ) {
                     Text(
                         "+ New playlist",
-                        fontFamily = NothingFont,
+                        fontFamily = BodyFont,
                         color = textColor,
                         fontSize = 14.sp
                     )
@@ -201,7 +202,7 @@ fun AddToPlaylistSheet(
                                 color = Color.White
                             )
                         } else {
-                            Text("Done", fontFamily = NothingFont, color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Done", fontFamily = BodyFont, color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -246,7 +247,7 @@ private fun PlaylistPickerRow(
 
         Text(
             text = label,
-            fontFamily = NothingFont,
+            fontFamily = BodyFont,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             color = textColor,
