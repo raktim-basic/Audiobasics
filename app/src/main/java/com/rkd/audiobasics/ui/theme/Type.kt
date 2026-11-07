@@ -30,18 +30,34 @@ val NothingFont: FontFamily =
     if (EasterEggUtils.isAprilFoolsDay()) SwankyMooMooFont else NothingFontRegular
 
 // Body font: Roboto Flex, weight axis only (res/font/roboto_flex.ttf). One variable file covers every
-// weight from Thin to Black, so one Font entry per weight just sets that weight on the same file.
-// minSdk is 26, so variable font axes are always supported (no static fallback needed).
+// weight from Thin to Black. minSdk is 26, so variable font axes are always supported.
+//
+// BODY_WEIGHT_OFFSET makes every body weight render a bit thinner than the weight that was asked for
+// (Normal 400 renders as 350, Bold 700 as 650). Change this one number to tune the whole app.
+const val BODY_WEIGHT_OFFSET = -50
+
 @OptIn(ExperimentalTextApi::class)
-private val RobotoFlexBody = FontFamily(
-    (100..900 step 100).map { w ->
-        Font(
-            resId = R.font.roboto_flex,
-            weight = FontWeight(w),
-            variationSettings = FontVariation.Settings(FontVariation.weight(w)),
-        )
-    }
+private fun flexFont(weight: Int): Font = Font(
+    resId = R.font.roboto_flex,
+    weight = FontWeight(weight),
+    variationSettings = FontVariation.Settings(
+        FontVariation.weight((weight + BODY_WEIGHT_OFFSET).coerceIn(1, 1000))
+    ),
 )
+
+// Standard weights (100..900), used by normal Text(fontWeight = FontWeight.Bold) calls.
+private val RobotoFlexBody = FontFamily((100..900 step 100).map { flexFont(it) })
+
+// Any exact weight, for animated weights (tabs, lyrics). Cached per weight so a transition that passes
+// through many values only builds each typeface once. Callers should round weights to a multiple of 10.
+// Use together with fontWeight = FontWeight(weight) so Compose never fakes a bold on top.
+private val exactWeightCache = java.util.concurrent.ConcurrentHashMap<Int, FontFamily>()
+
+fun bodyFontAt(weight: Int): FontFamily {
+    if (EasterEggUtils.isAprilFoolsDay()) return SwankyMooMooFont
+    val w = weight.coerceIn(100, 900)
+    return exactWeightCache.getOrPut(w) { FontFamily(flexFont(w)) }
+}
 
 // NothingFont stays on headers and titles; BodyFont is for body text, lists, rows, buttons and
 // settings text. The April 1st egg replaces BOTH, so the whole app still flips to one font that day.
