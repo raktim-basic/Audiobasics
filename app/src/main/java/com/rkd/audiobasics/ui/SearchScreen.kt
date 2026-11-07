@@ -47,6 +47,8 @@ import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.bodyFontAt
+import com.rkd.audiobasics.ui.theme.animatedBodyWeight
 import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 import com.rkd.audiobasics.utils.NightOwl
@@ -820,10 +822,11 @@ private fun SearchPill(
                 .padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(28.dp)
         ) {
+            val linksWeight = animatedBodyWeight(false)
             Text(
                 text = "Links",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
+                fontFamily = bodyFontAt(linksWeight),
+                fontWeight = FontWeight(linksWeight),
                 fontSize = 18.sp,
                 maxLines = 1,
                 color = textColor,
@@ -838,10 +841,11 @@ private fun SearchPill(
                 SearchResultFilter.ARTISTS to "Artists",
                 SearchResultFilter.YT to "YT"
             ).forEach { (filter, label) ->
+                val tabWeight = animatedBodyWeight(selectedFilterIndex == filter.ordinal)
                 Text(
                     text = label,
-                    fontFamily = NothingFont,
-                    fontWeight = FontWeight.Bold,
+                    fontFamily = bodyFontAt(tabWeight),
+                    fontWeight = FontWeight(tabWeight),
                     fontSize = 18.sp,
                     maxLines = 1,
                     color = if (selectedFilterIndex == filter.ordinal) Color.Red else textColor,

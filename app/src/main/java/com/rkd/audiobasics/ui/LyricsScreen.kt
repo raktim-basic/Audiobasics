@@ -1,5 +1,19 @@
 package com.rkd.audiobasics.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import com.rkd.audiobasics.ui.theme.animatedBodyWeight
+import com.rkd.audiobasics.ui.theme.bodyFontAt
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -117,12 +131,22 @@ fun LyricsCardContent(
         idx
     }
 
+    // Glide the active line to a fixed spot (about a third of the way down) with a slow ease, instead of
+    // snapping. A new line cancels the previous glide and carries on from where it is, so it stays smooth.
     LaunchedEffect(currentLineIndex) {
         if (isRealTime && currentLineIndex >= 0) {
-            scope.launch {
-                listState.animateScrollToItem(
-                    (currentLineIndex - 2).coerceAtLeast(0)
+            val info = listState.layoutInfo
+            val target = info.visibleItemsInfo.firstOrNull { it.index == currentLineIndex }
+            if (target != null) {
+                val viewportH = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+                val desiredTop = viewportH * 0.33f - target.size / 2f
+                listState.animateScrollBy(
+                    value = target.offset - desiredTop,
+                    animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing)
                 )
+            } else {
+                // Far away (first open, or a seek): jump close first.
+                listState.animateScrollToItem((currentLineIndex - 2).coerceAtLeast(0))
             }
         }
     }
@@ -136,10 +160,12 @@ fun LyricsCardContent(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val realTimeWeight = animatedBodyWeight(isRealTime)
+            val staticWeight = animatedBodyWeight(!isRealTime)
             Text(
                 text = "Real-time",
-                fontFamily = BodyFont,
-                fontWeight = FontWeight.Bold,
+                fontFamily = bodyFontAt(realTimeWeight),
+                fontWeight = FontWeight(realTimeWeight),
                 fontSize = 16.sp,
                 color = if (isRealTime) Color.Red else Color.Gray,
                 modifier = Modifier.clickable {
@@ -150,8 +176,8 @@ fun LyricsCardContent(
             Spacer(Modifier.width(24.dp))
             Text(
                 text = "Static",
-                fontFamily = BodyFont,
-                fontWeight = FontWeight.Bold,
+                fontFamily = bodyFontAt(staticWeight),
+                fontWeight = FontWeight(staticWeight),
                 fontSize = 16.sp,
                 color = if (!isRealTime) Color.Red else Color.Gray,
                 modifier = Modifier.clickable {
@@ -216,23 +242,53 @@ fun LyricsCardContent(
                 }
                 isRealTime && lyricsResult!!.hasSynced -> {
                     val syncedLines = lyricsResult!!.syncedLines
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(vertical = 16.dp)
-                    ) {
-                        itemsIndexed(syncedLines) { index, line ->
-                            val isCurrent = index == currentLineIndex
-                            Text(
-                                text = line.text.ifBlank { " " },
-                                fontFamily = BodyFont,
-                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 18.sp,
-                                color = if (isCurrent) Color.Red else Color.Gray,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
+                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                        val textMeasurer = rememberTextMeasurer()
+                        val widthPx = with(LocalDensity.current) { maxWidth.toPx() }
+                        // Decide every line's wrapping once, using the heaviest weight and the grown size,
+                        // and bake it into the text. A line then has the same number of lines whether it is
+                        // thin or active, so it never jumps from one line to two when it grows.
+                        val wrapped = remember(syncedLines, widthPx) {
+                            val style = TextStyle(
+                                fontFamily = bodyFontAt(LYRIC_ACTIVE_WEIGHT),
+                                fontWeight = FontWeight(LYRIC_ACTIVE_WEIGHT),
+                                fontSize = LYRIC_FONT_SIZE.sp,
+                                textAlign = TextAlign.Center
                             )
+                            syncedLines.map { line ->
+                                prewrapLyric(line.text, style, textMeasurer, (widthPx / LYRIC_ACTIVE_SCALE).toInt())
+                            }
+                        }
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(vertical = 16.dp)
+                        ) {
+                            itemsIndexed(syncedLines) { index, _ ->
+                                val isCurrent = index == currentLineIndex
+                                val t by animateFloatAsState(
+                                    targetValue = if (isCurrent) 1f else 0f,
+                                    animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+                                    label = "lyricActive"
+                                )
+                                val weight = (((LYRIC_THIN_WEIGHT + (LYRIC_ACTIVE_WEIGHT - LYRIC_THIN_WEIGHT) * t) + 5f) / 10f).toInt() * 10
+                                Text(
+                                    text = wrapped.getOrElse(index) { " " },
+                                    fontFamily = bodyFontAt(weight),
+                                    fontWeight = FontWeight(weight),
+                                    fontSize = LYRIC_FONT_SIZE.sp,
+                                    color = lerp(Color.Gray, Color.Red, t),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .graphicsLayer {
+                                            val scale = 1f + (LYRIC_ACTIVE_SCALE - 1f) * t
+                                            scaleX = scale
+                                            scaleY = scale
+                                        }
+                                )
+                            }
                         }
                     }
                 }
@@ -292,4 +348,27 @@ fun LyricsCardContent(
             }
         }
     }
+}
+
+// ── Lyric look: tweak these to taste ────────────────────────────
+private const val LYRIC_FONT_SIZE = 18
+private const val LYRIC_THIN_WEIGHT = 350      // idle lines
+private const val LYRIC_ACTIVE_WEIGHT = 800    // the line being sung
+private const val LYRIC_ACTIVE_SCALE = 1.12f   // the active line also grows by this factor
+
+/** Inserts line breaks where [text] would wrap at [widthPx] with [style], so the wrapping is fixed. */
+private fun prewrapLyric(text: String, style: TextStyle, measurer: TextMeasurer, widthPx: Int): String {
+    if (text.isBlank()) return " "
+    if (widthPx <= 0) return text
+    val result = measurer.measure(AnnotatedString(text), style, constraints = Constraints(maxWidth = widthPx))
+    if (result.lineCount <= 1) return text
+    val sb = StringBuilder()
+    var start = 0
+    for (i in 0 until result.lineCount) {
+        val end = result.getLineEnd(i)
+        sb.append(text.substring(start, end).trimEnd())
+        if (i < result.lineCount - 1) sb.append('\n')
+        start = end
+    }
+    return sb.toString()
 }

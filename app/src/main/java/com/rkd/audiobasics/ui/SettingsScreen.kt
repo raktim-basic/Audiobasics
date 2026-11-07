@@ -58,6 +58,8 @@ import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.api.account.AccountManager
 import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.bodyFontAt
+import com.rkd.audiobasics.ui.theme.animatedBodyWeight
 import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -450,7 +452,7 @@ private fun SettingsMainPage(
                     ) {
                         Text(
                             text = "Audiobasics GitHub",
-                            fontFamily = BodyFont,
+                            fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = Color(0xFF1565C0),
@@ -475,7 +477,7 @@ private fun SettingsMainPage(
                     ) {
                         Text(
                             text = "Discord server",
-                            fontFamily = BodyFont,
+                            fontFamily = NothingFont,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = Color(0xFF1565C0),
@@ -499,12 +501,12 @@ private fun SettingsMainPage(
                 ) {
         val madeByText = buildAnnotatedString {
                         withStyle(SpanStyle(
-                            fontFamily = BodyFont,
+                            fontFamily = NothingFont,
                             fontSize = 14.sp,
                             color = textColor
                         )) { append("Made by ") }
                         withStyle(SpanStyle(
-                            fontFamily = BodyFont,
+                            fontFamily = NothingFont,
                             fontSize = 14.sp,
                             color = Color(0xFF1565C0),
                             textDecoration = TextDecoration.Underline
@@ -640,10 +642,11 @@ private fun AppearancePage(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
+                            val segWeight = animatedBodyWeight(isSelected)
                             Text(
                                 text = label,
-                                fontFamily = BodyFont,
-                                fontWeight = FontWeight.Bold,
+                                fontFamily = bodyFontAt(segWeight),
+                                fontWeight = FontWeight(segWeight),
                                 fontSize = 13.sp,
                                 color = if (isSelected) Color.White else textColor
                             )
@@ -713,10 +716,11 @@ private fun AppearancePage(
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            val segWeight = animatedBodyWeight(isSelected)
                             Text(
                                 text = label,
-                                fontFamily = BodyFont,
-                                fontWeight = FontWeight.Bold,
+                                fontFamily = bodyFontAt(segWeight),
+                                fontWeight = FontWeight(segWeight),
                                 fontSize = 13.sp,
                                 color = if (isSelected) Color.White else textColor
                             )
@@ -1021,10 +1025,11 @@ private fun GeneralPage(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
+                            val segWeight = animatedBodyWeight(isSelected)
                             Text(
                                 text = label,
-                                fontFamily = BodyFont,
-                                fontWeight = FontWeight.Bold,
+                                fontFamily = bodyFontAt(segWeight),
+                                fontWeight = FontWeight(segWeight),
                                 fontSize = 13.sp,
                                 color = if (isSelected) Color.White else textColor
                             )
