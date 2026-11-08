@@ -177,8 +177,11 @@ fun CustomPlaylistScreen(
 
     val cachingSongIds by vm.cachingSongIds.collectAsState()
 
-    val uncachedCount = remember(playlistSongs, context, cachingSongIds) {
-        playlistSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.songId) }
+    // Stream-only mode: nothing is downloaded, so nothing counts as "not downloaded".
+    val streamOnly = LocalStreamOnly.current
+    val uncachedCount = remember(playlistSongs, context, cachingSongIds, streamOnly) {
+        if (streamOnly) 0
+        else playlistSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.songId) }
     }
 
     val isPlaylistCaching = remember(playlistSongs, cachingSongIds) {
@@ -365,7 +368,7 @@ fun CustomPlaylistScreen(
                             isExplicit = entity.isExplicit,
                             albumId = entity.albumId,
                             isCached = songIsCached,
-                            cacheFailed = !songIsCached,
+                            cacheFailed = !songIsCached && !streamOnly,
                             artistNames = Song.decodeArtistNames(entity.artistNames),
                             artistIds = Song.decodeArtistIds(entity.artistIds)
                         )

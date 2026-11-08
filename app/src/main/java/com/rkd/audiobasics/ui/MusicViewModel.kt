@@ -34,6 +34,7 @@ import com.rkd.audiobasics.api.account.LibraryUpload
 import com.rkd.audiobasics.api.account.PlaylistAccess
 import com.rkd.audiobasics.api.account.PlaylistNameCodec
 import com.rkd.audiobasics.cache.CacheManager
+import com.rkd.audiobasics.cache.LoudnessStore
 import com.rkd.audiobasics.lyrics.LyricsCache
 import com.rkd.audiobasics.lyrics.LyricsRepository
 import com.rkd.audiobasics.cache.CacheResult
@@ -77,7 +78,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     private var progressJob: Job? = null
     private var syncJob: Job? = null
     private var cacheAllJob: Job? = null
-    private var artistBackfillJob: Job? = null
+    private var loudnessBackfillJob: Job? = null
 
     private val cacheSemaphore = Semaphore(3)
     private val autoCacheMutex = Mutex()
@@ -417,6 +418,68 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("share_show_youtube_option", _shareYoutubeLinkEnabled.value).apply()
     }
 
+    // Loudness normalisation (General settings). MusicService watches this same preference and
+    // re-applies the volume straight away, so the switch takes effect mid-song.
+    private val _loudnessNormalization = MutableStateFlow(
+        prefs.getBoolean(com.rkd.audiobasics.player.MusicService.LOUDNESS_PREF_KEY, true)
+    )
+    val loudnessNormalization: StateFlow<Boolean> = _loudnessNormalization
+
+    fun toggleLoudnessNormalization() {
+        _loudnessNormalization.value = !_loudnessNormalization.value
+        prefs.edit()
+            .putBoolean(com.rkd.audiobasics.player.MusicService.LOUDNESS_PREF_KEY, _loudnessNormalization.value)
+            .apply()
+    }
+
+    // Stream-only mode (General settings): nothing is downloaded any more, songs just play
+    // over the internet. Turning it on is a deliberate choice about the downloads already on
+    // the device (see setStreamOnly); turning it off only affects songs added from then on.
+    private val _streamOnly = MutableStateFlow(prefs.getBoolean("stream_only", false))
+    val streamOnly: StateFlow<Boolean> = _streamOnly
+
+    // A song whose files "Clear downloads" had to leave alone because it was playing; they go
+    // as soon as something else is current.
+    private var pendingClearSongId: String? = null
+
+    /**
+     * @param clearDownloads only meaningful when enabling: also delete the downloads that are
+     * already on the device (the library itself — liked songs, playlists, albums — is untouched).
+     * When false, existing downloads stay and keep working offline; only new ones stop.
+     */
+    fun setStreamOnly(enabled: Boolean, clearDownloads: Boolean = false) {
+        _streamOnly.value = enabled
+        prefs.edit().putBoolean("stream_only", enabled).apply()
+        if (!enabled) return
+        // Stop any "Download all" that is still running.
+        cacheAllJob?.cancel()
+        if (clearDownloads) clearAllDownloads()
+    }
+
+    private fun clearAllDownloads() {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(400) // let a cancelled "Download all" finish unwinding first
+            val playingId = _currentSong.value?.id
+            val keep = setOfNotNull(playingId)
+            pendingClearSongId = playingId
+            CacheManager.clearAllDownloads(app, keep)
+            withContext(Dispatchers.Main) {
+                _cacheProgress.value = null
+                cancelCacheNotification()
+                _likedSongs.value = _likedSongs.value.map {
+                    if (it.id in keep) it else it.copy(isCached = false, cacheFailed = false)
+                }
+                saveLikedSongs()
+                refreshCacheSize()
+                _openPlaylistId.value?.let { pid ->
+                    _openPlaylistSongs.value = withContext(Dispatchers.IO) { playlistDao.getPlaylistSongs(pid) }
+                }
+                Toast.makeText(app, "Downloads cleared", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     // Streaming audio quality: Auto (High on Wi-Fi, Basic on mobile data) / High / Basic (low).
     // Read directly from prefs by Innertube at stream-resolve time — no restart needed.
     private val _audioQuality = MutableStateFlow(
@@ -678,10 +741,22 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
             delay(3_000)
             sweepOrphanedCacheNow()
         }
+        // "Clear downloads" leaves the playing song's files; remove them once it's no longer current.
+        viewModelScope.launch {
+            _currentSong.collect { cur ->
+                val pending = pendingClearSongId ?: return@collect
+                if (cur?.id != pending) {
+                    pendingClearSongId = null
+                    withContext(Dispatchers.IO) { CacheManager.removeCachedSong(app, pending) }
+                    updateLikedSongCacheStatus(pending, isCached = false, cacheFailed = false)
+                    refreshCacheSize()
+                }
+            }
+        }
         checkForUpdate()
         MigrationMessageProvider.loadCache(app)
         fetchHomeHeader()
-        runArtistIdBackfillIfNeeded()
+        runLoudnessBackfillIfNeeded()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1386,6 +1461,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun retryCache(song: Song) {
+        if (_streamOnly.value) return
         updateLikedSongCacheStatus(song.id, isCached = false, cacheFailed = false)
         CacheManager.removeCachedSong(getApplication(), song.id)
         viewModelScope.launch {
@@ -1398,6 +1474,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Retry downloading a single song not tracked as liked or in a playlist (e.g. from an album view). */
     fun retryCacheStandalone(song: Song) {
+        if (_streamOnly.value) return
         CacheManager.removeCachedSong(getApplication(), song.id)
         viewModelScope.launch {
             cacheSemaphore.withPermit { cacheSongSilently(song) }
@@ -1415,6 +1492,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         existingSongIds: Set<String>
     ) {
         if (songs.isEmpty() && albums.isEmpty()) return
+        if (_streamOnly.value) return
 
         viewModelScope.launch {
             autoCacheMutex.withLock {
@@ -1479,6 +1557,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cacheAllLiked() {
+        if (_streamOnly.value) return
         if (_cacheProgress.value != null) {
             Toast.makeText(getApplication(), "Already downloading...", Toast.LENGTH_SHORT).show()
             return
@@ -1517,6 +1596,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Download every song in the whole library: liked songs, every custom playlist, and every saved album, deduplicated. */
     fun cacheAllLibrary() {
+        if (_streamOnly.value) return
         if (_cacheProgress.value != null) {
             Toast.makeText(getApplication(), "Already downloading...", Toast.LENGTH_SHORT).show()
             return
@@ -1664,6 +1744,9 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun cacheSongSilently(song: Song): Boolean {
+        // Stream-only mode: every download in the app goes through here, so this is the one
+        // place that guarantees nothing new is saved. Not a failure — nothing is marked.
+        if (_streamOnly.value) return false
         // Resolve this song's album metadata in the background if not already known,
         // so it's ready (and persisted) by the time the song is played offline or
         // Song Info is opened — no need to wait for the user to open Song Info first.
@@ -2398,6 +2481,7 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Retry downloading a single song that belongs to a custom playlist (not liked). */
     fun retryCacheInPlaylist(song: Song) {
+        if (_streamOnly.value) return
         viewModelScope.launch {
             CacheManager.removeCachedSong(getApplication(), song.id)
             cacheSemaphore.withPermit { cacheSongSilently(song) }
@@ -2734,10 +2818,8 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Artist ID backfill / manual refresh
+    // Loudness backfill
     // ─────────────────────────────────────────────────────────────────────────
-
-    private fun Song.hasArtistIds(): Boolean = artistIds.any { !it.isNullOrBlank() }
 
     private fun JSONObject.readArtistNames(): List<String> =
         optJSONArray("artistNames")?.let { arr ->
@@ -2750,123 +2832,60 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         } ?: emptyList()
 
     /**
-     * Writes corrected artist names/IDs onto every copy of each song in [updates] (song id ->
-     * names to ids): liked songs, saved-album songs, every custom-playlist row, and the
-     * currently playing song. Only touches artistNames/artistIds — nothing else about a song
-     * is changed.
+     * One-time pass (flag: needs_loudness_backfill) that looks up YouTube's loudness for songs
+     * that were downloaded before it was recorded, so volume normalisation also works for them
+     * (streamed songs pick it up on their own the first time they play, and new downloads record
+     * it as they go). If nothing needs looking up the flag is cleared silently with no toasts.
+     * If nothing at all could be resolved (most likely offline) the flag stays set and it retries
+     * next launch.
      */
-    private suspend fun applyArtistInfo(updates: Map<String, Pair<List<String>, List<String?>>>) {
-        if (updates.isEmpty()) return
-        withContext(Dispatchers.IO) {
-            updates.forEach { (id, info) ->
-                playlistDao.updateSongArtists(
-                    id, Song.encodeArtistNames(info.first), Song.encodeArtistIds(info.second)
-                )
-            }
-        }
-        fun Song.withInfo(): Song = updates[id]?.let { copy(artistNames = it.first, artistIds = it.second) } ?: this
-
-        _likedSongs.value = _likedSongs.value.map { it.withInfo() }
-        saveLikedSongs()
-        _savedAlbumSongs.value = _savedAlbumSongs.value.mapValues { (_, songs) -> songs.map { it.withInfo() } }
-        saveSavedAlbumSongs()
-        _currentSong.value = _currentSong.value?.withInfo()
-        _openPlaylistId.value?.let { pid ->
-            _openPlaylistSongs.value = withContext(Dispatchers.IO) { playlistDao.getPlaylistSongs(pid) }
-        }
-    }
-
-    /**
-     * One-time pass (flag: needs_artist_id_backfill) that fills in real YTM artist channel IDs
-     * for songs saved before IDs were persisted. Songs that already have IDs are skipped, and
-     * if nothing is missing the flag is cleared silently with no toasts. If nothing at all
-     * could be resolved (most likely offline) the flag stays set and it retries next launch.
-     */
-    fun runArtistIdBackfillIfNeeded() {
-        if (!prefs.getBoolean("needs_artist_id_backfill", true)) return
-        if (artistBackfillJob?.isActive == true) return
-        artistBackfillJob = viewModelScope.launch(Dispatchers.IO) {
+    fun runLoudnessBackfillIfNeeded() {
+        if (!prefs.getBoolean("needs_loudness_backfill", true)) return
+        if (loudnessBackfillJob?.isActive == true) return
+        loudnessBackfillJob = viewModelScope.launch(Dispatchers.IO) {
             delay(4000) // let startup settle before doing network work
+            val app = getApplication<Application>()
 
-            val playlistSongs = playlistDao.getPlaylists().flatMap { p ->
-                playlistDao.getPlaylistSongs(p.id).map { it.toSong() }
-            }
-            val needingSearch = LinkedHashMap<String, Song>()
-            (_likedSongs.value + playlistSongs).forEach {
-                if (!it.hasArtistIds()) needingSearch.putIfAbsent(it.id, it)
-            }
-            val albumsNeeding = _savedAlbumSongs.value
-                .filter { (_, songs) -> songs.any { !it.hasArtistIds() } }
-                .keys.toList()
+            val missing = CacheManager.getCacheDir(app).listFiles()
+                ?.filter { it.isFile && it.extension == "m4a" && it.length() > 0 }
+                ?.map { it.nameWithoutExtension }
+                ?.filter { !LoudnessStore.isKnown(app, it) }
+                ?: emptyList()
 
-            if (needingSearch.isEmpty() && albumsNeeding.isEmpty()) {
-                prefs.edit().putBoolean("needs_artist_id_backfill", false).apply()
+            if (missing.isEmpty()) {
+                prefs.edit().putBoolean("needs_loudness_backfill", false).apply()
                 return@launch
             }
 
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Optimising metadata, please wait a while", Toast.LENGTH_LONG).show()
+                Toast.makeText(app, "Optimising metadata, please wait a while", Toast.LENGTH_LONG).show()
             }
 
             val sem = Semaphore(4)
-            val searchResults = coroutineScope {
-                needingSearch.values.map { song ->
-                    async { sem.withPermit { song.id to Innertube.refreshSongMetadata(song) } }
-                }.map { it.await() }
-            }
-            val albumResults = coroutineScope {
-                albumsNeeding.map { albumId ->
-                    async {
-                        sem.withPermit {
-                            val fallbackArtist = _savedAlbums.value.firstOrNull { it.id == albumId }?.artist ?: ""
-                            try {
-                                Innertube.getAlbumSongs(albumId, fallbackArtist, caller = "artistIdBackfill").second
-                            } catch (e: Exception) {
-                                Log.e("YTLite", "artist ID backfill: album $albumId failed: ${e.message}")
-                                emptyList()
-                            }
-                        }
-                    }
+            val results = coroutineScope {
+                missing.map { id ->
+                    async { sem.withPermit { id to Innertube.fetchLoudnessDb(id) } }
                 }.map { it.await() }
             }
 
-            val updates = HashMap<String, Pair<List<String>, List<String?>>>()
-            searchResults.forEach { (id, fresh) ->
-                if (fresh.hasArtistIds()) updates[id] = fresh.artistNames to fresh.artistIds
-            }
-            // Album tracklists are the more authoritative source, so they win on overlap.
-            albumResults.flatten().forEach { s ->
-                if (s.hasArtistIds()) updates[s.id] = s.artistNames to s.artistIds
+            var resolved = 0
+            results.forEach { (id, r) ->
+                when (r) {
+                    is Innertube.LoudnessLookup.Found -> { LoudnessStore.put(app, id, r.db); resolved++ }
+                    is Innertube.LoudnessLookup.Missing -> { LoudnessStore.markMissing(app, id); resolved++ }
+                    is Innertube.LoudnessLookup.Failed -> {}
+                }
             }
 
-            if (updates.isEmpty()) {
-                Log.w("YTLite", "artist ID backfill: nothing resolved, will retry next launch")
+            if (resolved == 0) {
+                Log.w("YTLite", "loudness backfill: nothing resolved, will retry next launch")
                 return@launch
             }
-            applyArtistInfo(updates)
-            prefs.edit().putBoolean("needs_artist_id_backfill", false).apply()
+            // Songs that failed individually stay unknown; they're picked up when they play.
+            prefs.edit().putBoolean("needs_loudness_backfill", false).apply()
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Optimisation complete, enjoy :)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(app, "Optimisation complete, enjoy :)", Toast.LENGTH_SHORT).show()
             }
-        }
-    }
-
-    /** Manual "refresh artist info" for the currently playing song (Song Info back face). */
-    fun refreshArtistInfo(songId: String) {
-        val song = _currentSong.value?.takeIf { it.id == songId } ?: return
-        viewModelScope.launch {
-            val fresh = withContext(Dispatchers.IO) { Innertube.refreshSongMetadata(song) }
-            if (!fresh.hasArtistIds()) {
-                Toast.makeText(getApplication(), "Couldn't find artist info for this song", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val changed = fresh.artistNames != song.artistNames || fresh.artistIds != song.artistIds
-            applyArtistInfo(mapOf(songId to (fresh.artistNames to fresh.artistIds)))
-            Toast.makeText(
-                getApplication(),
-                if (changed) "Artist info updated" else "Artist info is already up to date",
-                Toast.LENGTH_SHORT
-            ).show()
         }
     }
 
@@ -3191,11 +3210,6 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
                     if (hasCustomPlaylists) append(", $importedPlaylistCount playlists ($importedPlaylistSongCount songs)")
                 }
                 Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
-
-                // Older backups carry no artist IDs; re-run the one-time backfill so the
-                // imported library gets them (silently does nothing if they're all present).
-                prefs.edit().putBoolean("needs_artist_id_backfill", true).apply()
-                runArtistIdBackfillIfNeeded()
             } catch (e: Exception) {
                 Toast.makeText(context, "Import failed :( ${e.message}", Toast.LENGTH_LONG).show()
             }

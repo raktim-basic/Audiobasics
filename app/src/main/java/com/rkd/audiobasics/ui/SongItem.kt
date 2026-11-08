@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.animatedPulseWeight
 import com.rkd.audiobasics.ui.theme.animatedReorderWeight
 import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
@@ -64,17 +65,22 @@ fun SongItem(
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
 
-    // Picked-up row goes heavy, every other row goes thin; normal weights when not reordering.
-    // The same emphasis plays briefly when a song is played (normal > thick/thin > normal).
-    val playPulse = LocalPlayPulse.current
-    val pulsedHere = playPulse.active && playPulse.songId == song.id
-    val emphasised = isDragging || pulsedHere
-    val othersThin = reorderActive || playPulse.active
-    val titleWeight = animatedReorderWeight(armed = emphasised, reorderActive = othersThin)
-    val subWeight = animatedReorderWeight(
-        armed = emphasised, reorderActive = othersThin,
+    // Reorder mode: picked-up row goes heavy, every other row goes thin.
+    val reorderTitle = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
+    val reorderSub = animatedReorderWeight(
+        armed = isDragging, reorderActive = reorderActive,
         base = 400, armedWeight = 650, thinWeight = 200
     )
+    // Play pulse (reverse): the song you just pressed goes thin, every other song goes heavy.
+    val playPulse = LocalPlayPulse.current
+    val pulsedHere = playPulse.active && playPulse.songId == song.id
+    val pulseTitle = animatedPulseWeight(pressed = pulsedHere, pulseActive = playPulse.active)
+    val pulseSub = animatedPulseWeight(
+        pressed = pulsedHere, pulseActive = playPulse.active,
+        base = 400, pressedWeight = 200, othersWeight = 650
+    )
+    val titleWeight = if (reorderTitle != 700) reorderTitle else pulseTitle
+    val subWeight = if (reorderSub != 400) reorderSub else pulseSub
 
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -223,7 +229,7 @@ fun SongItem(
         }
 
         // 💔 not-downloaded / ❤️‍🩹 downloading indicator
-        if (showCacheIndicator && song.cacheFailed) {
+        if (showCacheIndicator && song.cacheFailed && !LocalStreamOnly.current) {
             Text(
                 text = if (isCaching) "❤️‍🩹" else "💔",
                 fontSize = 20.sp,

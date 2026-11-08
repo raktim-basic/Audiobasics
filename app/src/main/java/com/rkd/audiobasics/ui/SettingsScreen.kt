@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Hd
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -805,6 +807,96 @@ private fun GeneralPage(
     val tempoPitchApplyToAll by vm.tempoPitchApplyToAll.collectAsState()
     val shareYoutubeLinkEnabled by vm.shareYoutubeLinkEnabled.collectAsState()
     val audioQuality by vm.audioQuality.collectAsState()
+    val loudnessNormalization by vm.loudnessNormalization.collectAsState()
+    val streamOnly by vm.streamOnly.collectAsState()
+    val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
+    var showStreamOnlyChoice by remember { mutableStateOf(false) }
+
+    // Turning Stream-only on asks what to do with the downloads already on the device.
+    if (showStreamOnlyChoice) {
+        MorphAlertDialog(
+            onDismissRequest = { showStreamOnlyChoice = false },
+            isDarkMode = isDarkMode,
+            title = {
+                Text(
+                    text = "Stream-only mode",
+                    fontFamily = NothingFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = textColor
+                )
+            },
+            text = {
+                Text(
+                    text = "Songs will play over the internet and nothing new gets downloaded. " +
+                        "What should happen to the songs you've already downloaded? " +
+                        "Your library stays as it is either way.",
+                    fontFamily = BodyFont,
+                    fontSize = 14.sp,
+                    color = subTextColor
+                )
+            },
+            confirmButton = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Red)
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                showStreamOnlyChoice = false
+                                vm.setStreamOnly(true, clearDownloads = true)
+                            }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Clear downloads (keep the library)",
+                            fontFamily = BodyFont,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0))
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                showStreamOnlyChoice = false
+                                vm.setStreamOnly(true, clearDownloads = false)
+                            }
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Stop downloading more",
+                            fontFamily = BodyFont,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                                showStreamOnlyChoice = false
+                            }
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Cancel", fontFamily = BodyFont, color = Color.Gray)
+                    }
+                }
+            }
+        )
+    }
 
     val scrollState = rememberScrollState()
 
@@ -965,6 +1057,92 @@ private fun GeneralPage(
                 )
             }
 
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.VolumeUp,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Loudness normalisation",
+                        fontFamily = BodyFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor
+                    )
+                    Text(
+                        text = "Turns down songs that are mastered louder, so volume stays even between songs",
+                        fontSize = 12.sp,
+                        color = textColor.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(
+                    checked = loudnessNormalization,
+                    onCheckedChange = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.toggleLoudnessNormalization()
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color.Red,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Cloud,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Stream-only mode",
+                        fontFamily = BodyFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor
+                    )
+                    Text(
+                        text = "Don't download songs, play everything over the internet",
+                        fontSize = 12.sp,
+                        color = textColor.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(
+                    checked = streamOnly,
+                    onCheckedChange = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        if (streamOnly) vm.setStreamOnly(false) else showStreamOnlyChoice = true
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color.Red,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
+                )
+            }
+
             Spacer(Modifier.height(24.dp))
 
             Column(
@@ -1062,6 +1240,7 @@ private fun LibraryPage(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val cacheSize by vm.cacheSize.collectAsState()
     val cacheProgress by vm.cacheProgress.collectAsState()
+    val streamOnly by vm.streamOnly.collectAsState()
     val textColor = if (isDarkMode) Color.White else Color.Black
     val bgColor = if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5)
     val bodyColor = if (isDarkMode) AmoledBlack else bgColor
@@ -1193,7 +1372,8 @@ private fun LibraryPage(
                     )
                 }
 
-                item {
+                // Nothing downloads in Stream-only mode, so there's nothing to "Download All".
+                if (!streamOnly) item {
                     val isCurrentlyCaching = cacheProgress != null
 
                     SettingsRow(

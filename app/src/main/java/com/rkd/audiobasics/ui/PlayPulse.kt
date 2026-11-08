@@ -8,11 +8,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 
 /** How long the "just played" emphasis is held before every row eases back to normal. */
-const val PLAY_PULSE_HOLD_MS = 550L
+const val PLAY_PULSE_HOLD_MS = 280L
 
 /**
  * A short, global "you just played this" pulse. Tapping a song calls [trigger]; while [active]
- * is true the tapped song's text is heavy and every other song's is thin (same weights as
+ * is true the tapped song's text is thin and every other song's is heavy (the reverse of
  * reorder mode), then MainActivity clears [active] after [PLAY_PULSE_HOLD_MS] and everything
  * glides back to normal. [token] changes on every trigger so a fast second tap restarts the timer.
  */

@@ -60,7 +60,7 @@ import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
-import com.rkd.audiobasics.ui.theme.animatedReorderWeight
+import com.rkd.audiobasics.ui.theme.animatedPulseWeight
 import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -303,8 +303,10 @@ fun AlbumScreen(
         if (cacheProgress == null) cacheRefreshTick++
     }
 
-    val uncachedInAlbumCount = remember(albumSongs, cacheRefreshTick, isSaved, cachingSongIds) {
-        if (!isSaved) 0
+    // Stream-only mode: nothing is downloaded, so nothing counts as "not downloaded".
+    val streamOnly = LocalStreamOnly.current
+    val uncachedInAlbumCount = remember(albumSongs, cacheRefreshTick, isSaved, cachingSongIds, streamOnly) {
+        if (!isSaved || streamOnly) 0
         else albumSongs.count { !com.rkd.audiobasics.cache.CacheManager.isCached(context, it.id) }
     }
     val isAlbumCaching = remember(albumSongs, cachingSongIds) {
@@ -659,8 +661,8 @@ fun AlbumScreen(
                                 val isLiked = likedSongs.any { it.id == song.id }
                                 val isPlaying = currentSong?.id == song.id
                                 val thisSongCaching = song.id in cachingSongIds
-                                val songIsCached = remember(song.id, cacheRefreshTick, isSaved, thisSongCaching) {
-                                    !isSaved || com.rkd.audiobasics.cache.CacheManager.isCached(context, song.id)
+                                val songIsCached = remember(song.id, cacheRefreshTick, isSaved, thisSongCaching, streamOnly) {
+                                    !isSaved || streamOnly || com.rkd.audiobasics.cache.CacheManager.isCached(context, song.id)
                                 }
                                 AlbumSongRow(
                                     trackNumber = index + 1,
@@ -776,13 +778,13 @@ fun AlbumSongRow(
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
 
-    // "Just played" emphasis: this song goes heavy and the rest thin for a moment, then back.
+    // "Just played" pulse: the pressed song goes thin and the rest heavy for a moment, then back.
     val playPulse = LocalPlayPulse.current
     val pulsedHere = playPulse.active && playPulse.songId == song.id
-    val titleWeight = animatedReorderWeight(armed = pulsedHere, reorderActive = playPulse.active)
-    val subWeight = animatedReorderWeight(
-        armed = pulsedHere, reorderActive = playPulse.active,
-        base = 400, armedWeight = 650, thinWeight = 200
+    val titleWeight = animatedPulseWeight(pressed = pulsedHere, pulseActive = playPulse.active)
+    val subWeight = animatedPulseWeight(
+        pressed = pulsedHere, pulseActive = playPulse.active,
+        base = 400, pressedWeight = 200, othersWeight = 650
     )
 
     Row(

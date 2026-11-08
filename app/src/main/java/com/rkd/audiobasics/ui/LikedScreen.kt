@@ -139,8 +139,10 @@ fun LikedScreen(
         }
     }
 
-    val uncachedCount = remember(likedSongs) {
-        likedSongs.count { !it.isCached }
+    // Stream-only mode: nothing is downloaded, so nothing counts as "not downloaded".
+    val streamOnly = LocalStreamOnly.current
+    val uncachedCount = remember(likedSongs, streamOnly) {
+        if (streamOnly) 0 else likedSongs.count { !it.isCached }
     }
 
     val cachingSongIds by vm.cachingSongIds.collectAsState()
