@@ -64,9 +64,8 @@ fun AppTheme(
                     darkTheme -> 0xFF121212.toInt()
                     else -> 0xFFF5F5F5.toInt()
                 }
-                @Suppress("DEPRECATION")
-                window.navigationBarColor = if (darkTheme) 0xFF1E1E1E.toInt() else 0xFFE8E8E8.toInt()
-                controller.isAppearanceLightNavigationBars = !darkTheme
+                // The navigation bar (colour, icons, dimming) is handled in AudiobasicsApp so it can
+                // follow the mini player and any dimmed floating window.
             }
         }
     }
