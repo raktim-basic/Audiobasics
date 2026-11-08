@@ -374,6 +374,18 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("new_player_design", enabled).apply()
     }
 
+    // Fullscreen player: the third option of Settings > Appearance > Player design. When on, the
+    // player is a full-screen sheet that slides up from the player bar (FullscreenPlayer.kt)
+    // instead of the card popup; newPlayerDesign above is left untouched so it still applies to
+    // the card whenever this is off.
+    private val _fullscreenPlayer = MutableStateFlow(prefs.getBoolean("fullscreen_player", false))
+    val fullscreenPlayer: StateFlow<Boolean> = _fullscreenPlayer
+
+    fun setFullscreenPlayer(enabled: Boolean) {
+        _fullscreenPlayer.value = enabled
+        prefs.edit().putBoolean("fullscreen_player", enabled).apply()
+    }
+
     // Auto-immerse (new player design only): while playback is running, the player face
     // automatically hides its controls 4s after entering/staying on the Player face; it does
     // not trigger while paused. See PlayerDialog's own LaunchedEffect for the timer itself —

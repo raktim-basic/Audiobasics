@@ -551,6 +551,7 @@ private fun AppearancePage(
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
     val themeMode by vm.themeMode.collectAsState()
     val newPlayerDesign by vm.newPlayerDesign.collectAsState()
+    val fullscreenPlayer by vm.fullscreenPlayer.collectAsState()
     val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
 
     val scrollState = rememberScrollState()
@@ -701,9 +702,13 @@ private fun AppearancePage(
                         .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    val playerDesignOptions = listOf(false to "Classic", true to "New")
+                    // 0 = Classic, 1 = New (art-first card), 2 = Fullscreen (slide-up sheet).
+                    // Fullscreen keeps the Classic/New choice stored underneath, so it is a
+                    // separate flag rather than a third value of newPlayerDesign.
+                    val selectedDesign = if (fullscreenPlayer) 2 else if (newPlayerDesign) 1 else 0
+                    val playerDesignOptions = listOf(0 to "Classic", 1 to "New", 2 to "Fullscreen")
                     playerDesignOptions.forEach { (value, label) ->
-                        val isSelected = newPlayerDesign == value
+                        val isSelected = selectedDesign == value
                         Row(
                             modifier = Modifier
                                 .weight(1f)
@@ -715,7 +720,11 @@ private fun AppearancePage(
                                         return@clickable
                                     }
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    vm.setNewPlayerDesign(value)
+                                    when (value) {
+                                        0 -> { vm.setFullscreenPlayer(false); vm.setNewPlayerDesign(false) }
+                                        1 -> { vm.setFullscreenPlayer(false); vm.setNewPlayerDesign(true) }
+                                        else -> vm.setFullscreenPlayer(true)
+                                    }
                                 }
                                 .padding(vertical = 10.dp),
                             horizontalArrangement = Arrangement.Center,
@@ -735,10 +744,10 @@ private fun AppearancePage(
             }
 
             // Auto-immerse: only meaningful for the new player design, so it's greyed out
-            // (disabled, dimmed) whenever Classic is selected above, or on the Feb 22 anniversary
+            // (disabled, dimmed) whenever Classic or Fullscreen is selected above, or on the Feb 22 anniversary
             // (when the player is force-classic'd regardless of the stored preference) — rather
             // than hidden, which keeps its position stable and hints at the dependency.
-            val autoImmerseRowAlpha = if (newPlayerDesign && !isAnniversaryDay) 1f else 0.4f
+            val autoImmerseRowAlpha = if (newPlayerDesign && !fullscreenPlayer && !isAnniversaryDay) 1f else 0.4f
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -773,7 +782,7 @@ private fun AppearancePage(
                 }
                 Switch(
                     checked = autoImmerseEnabled,
-                    enabled = newPlayerDesign && !isAnniversaryDay,
+                    enabled = newPlayerDesign && !fullscreenPlayer && !isAnniversaryDay,
                     onCheckedChange = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.setAutoImmerseEnabled(it)

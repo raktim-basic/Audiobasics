@@ -941,7 +941,7 @@ private fun PlayerFrontContent(
  * either one opens the exact same menu.
  */
 @Composable
-private fun rememberOverflowMenuOpener(
+internal fun rememberOverflowMenuOpener(
     vm: MusicViewModel,
     context: android.content.Context,
     hapticsEnabled: Boolean,
@@ -1048,7 +1048,7 @@ private fun rememberOverflowMenuOpener(
  * so the menu itself only exists once.
  */
 @Composable
-private fun PlayerOverflowMenuButton(
+internal fun PlayerOverflowMenuButton(
     vm: MusicViewModel,
     context: android.content.Context,
     hapticsEnabled: Boolean,
