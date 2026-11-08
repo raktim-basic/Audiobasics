@@ -19,13 +19,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Bedtime
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -305,69 +302,32 @@ private fun FullscreenPlayerContent(
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val pillBg = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
 
-    val openOverflowMenu = rememberOverflowMenuOpener(
-        vm, context, hapticsEnabled, song,
-        onCollapse, onNavigateQueue,
-        { showShareChoice = true }, { showSleepDialog = true }, { showTempoPitchDialog = true }
-    )
+    // The three dots turn red while a sleep timer or a tempo/pitch change is active, replacing
+    // the little indicator icons the top bar used to carry.
+    val featureActive = sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF ||
+        tempoPitchSpeed != 1.0f || tempoPitchPitch != 0
 
+    // Same composition as ViMusic's player: a fixed top margin, then the artwork (weight 1.25)
+    // above the controls block (weight 1) whose spacers share the leftover height. The gap
+    // between the playback controls and the bottom row is Audiobasics' own, and the whole
+    // bottom row is lifted a little off the screen edge.
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
             .windowInsetsPadding(WindowInsets.systemBars)
+            .padding(top = 54.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // ── Top bar: active-feature indicators on the left, close on the right ──────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (sleepTimerMode != MusicViewModel.SLEEP_TIMER_OFF) {
-                    val sleepAnchor = rememberMorphAnchor()
-                    IconButton(
-                        onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            openOverflowMenu(sleepAnchor.bounds())
-                        },
-                        modifier = Modifier.morphAnchor(sleepAnchor)
-                    ) {
-                        Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer active", tint = Color.Red, modifier = Modifier.size(24.dp))
-                    }
-                }
-                if (tempoPitchSpeed != 1.0f || tempoPitchPitch != 0) {
-                    val tempoAnchor = rememberMorphAnchor()
-                    IconButton(
-                        onClick = {
-                            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                            openOverflowMenu(tempoAnchor.bounds())
-                        },
-                        modifier = Modifier.morphAnchor(tempoAnchor)
-                    ) {
-                        Icon(Icons.Default.Speed, contentDescription = "Tempo and pitch active", tint = Color.Red, modifier = Modifier.size(24.dp))
-                    }
-                }
-            }
-            IconButton(onClick = {
-                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                onCollapse()
-            }) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = fg, modifier = Modifier.size(30.dp))
-            }
-        }
-
-        // ── Artwork: square, as wide as the design allows, shrinks on short screens ─────
+        // ── Artwork: square, shrinks on short screens ───────────────────────────────────
         BoxWithConstraints(
             modifier = Modifier
-                .weight(1f)
+                .weight(1.25f)
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(horizontal = 32.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
-            val side = minOf(maxWidth * 0.835f, maxHeight)
+            val side = minOf(maxWidth, maxHeight)
             val cachedThumbPath = remember(song?.id) {
                 song?.id?.let { com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, it) }
             }
@@ -387,6 +347,16 @@ private fun FullscreenPlayerContent(
                 )
             }
         }
+
+        // ── Controls block (ViMusic: weight 1, spacers 1 / 0.5 / 1 around the content) ───
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+        Spacer(Modifier.weight(1f))
 
         // ── Title / artist, centered. Long titles fade out instead of ending in "..." ────
         Box(
@@ -439,7 +409,7 @@ private fun FullscreenPlayerContent(
             )
         }
 
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.weight(0.5f))
 
         // ── Progress ────────────────────────────────────────────────────────────────────
         val displayPosition = dragPosition ?: position
@@ -486,7 +456,7 @@ private fun FullscreenPlayerContent(
             )
         }
 
-        Spacer(Modifier.height(28.dp))
+        Spacer(Modifier.weight(1f))
 
         // ── Playback controls: previous · play/pause pill · next ────────────────────────
         Row(
@@ -519,7 +489,7 @@ private fun FullscreenPlayerContent(
                 modifier = Modifier
                     .width(168.dp)
                     .height(58.dp)
-                    .clip(RoundedCornerShape(29.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(pillBg)
                     .clickable {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
@@ -569,6 +539,8 @@ private fun FullscreenPlayerContent(
             }
         }
 
+        }
+
         Spacer(Modifier.height(10.dp))
 
         // ── Bottom row: info · add · LYRICS · more · speakers ───────────────────────────
@@ -611,7 +583,7 @@ private fun FullscreenPlayerContent(
                 context = context,
                 hapticsEnabled = hapticsEnabled,
                 song = song,
-                iconTint = fg,
+                iconTint = if (featureActive) Color.Red else fg,
                 onDismiss = onCollapse,
                 onNavigateQueue = onNavigateQueue,
                 onShowShareChoice = { showShareChoice = true },
@@ -626,6 +598,9 @@ private fun FullscreenPlayerContent(
                 Icon(Icons.Default.SpeakerGroup, contentDescription = null, tint = fg, modifier = Modifier.size(28.dp))
             }
         }
+
+        // Lifts the bottom row off the screen edge.
+        Spacer(Modifier.height(16.dp))
     }
 
     // ── Popups: same ones the card player opens, stacked above the sheet ─────────────────
