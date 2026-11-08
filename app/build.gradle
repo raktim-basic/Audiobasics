@@ -15,8 +15,8 @@ android {
         applicationId 'com.rkd.audiobasics'
         minSdk 26
         targetSdk 36
-        versionCode 23
-        versionName '3.0.2'
+        versionCode 24
+        versionName '3.1'
     }
 
     signingConfigs {
@@ -92,7 +92,7 @@ dependencies {
 
     implementation 'sh.calvin.reorderable:reorderable:3.1.0'
 
-    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.5'
+    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.27.0'
 
     implementation 'com.google.dagger:hilt-android:2.57.1'
     ksp 'com.google.dagger:hilt-compiler:2.57.1'
