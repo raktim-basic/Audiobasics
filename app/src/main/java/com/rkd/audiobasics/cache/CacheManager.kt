@@ -266,6 +266,19 @@ object CacheManager {
         return ids
     }
 
+    /**
+     * Deletes every downloaded file (audio, thumbnails, lyrics, half-finished downloads) except
+     * those of [keepSongIds] — used for "Clear downloads", where the song that is playing right
+     * now is left alone so its file isn't pulled out from under the player.
+     */
+    fun clearAllDownloads(context: Context, keepSongIds: Set<String> = emptySet()) {
+        for (dir in listOf(getCacheDir(context), getThumbDir(context), getLyricsDir(context))) {
+            dir.listFiles()?.forEach { f ->
+                if (f.isFile && f.name.substringBeforeLast('.') !in keepSongIds) f.delete()
+            }
+        }
+    }
+
     fun removeCachedSong(context: Context, songId: String) {
         getCacheFile(context, songId).let { if (it.exists()) it.delete() }
         getThumbFile(context, songId).let { if (it.exists()) it.delete() }
