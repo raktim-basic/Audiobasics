@@ -63,6 +63,7 @@ import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.ui.theme.animatedBodyWeight
+import com.rkd.audiobasics.ui.theme.animatedSettingWeight
 import com.rkd.audiobasics.ui.theme.animatedPulseWeight
 import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
@@ -754,10 +755,11 @@ private fun AppearancePage(
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    val settingWeight = animatedSettingWeight(autoImmerseEnabled)
                     Text(
                         text = "Auto-immerse",
-                        fontFamily = bodyFontAt(if (autoImmerseEnabled) 400 else 200),
-                        fontWeight = FontWeight(if (autoImmerseEnabled) 400 else 200),
+                        fontFamily = bodyFontAt(settingWeight),
+                        fontWeight = FontWeight(settingWeight),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -950,10 +952,11 @@ private fun GeneralPage(
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(16.dp))
+                val settingWeight = animatedSettingWeight(hapticsEnabled)
                 Text(
                     text = "Haptic feedback (vibration)",
-                    fontFamily = bodyFontAt(if (hapticsEnabled) 400 else 200),
-                    fontWeight = FontWeight(if (hapticsEnabled) 400 else 200),
+                    fontFamily = bodyFontAt(settingWeight),
+                    fontWeight = FontWeight(settingWeight),
                     fontSize = 15.sp,
                     color = textColor,
                     modifier = Modifier.weight(1f)
@@ -988,10 +991,11 @@ private fun GeneralPage(
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    val settingWeight = animatedSettingWeight(tempoPitchApplyToAll)
                     Text(
                         text = "Tempo/Pitch applies to all songs",
-                        fontFamily = bodyFontAt(if (tempoPitchApplyToAll) 400 else 200),
-                        fontWeight = FontWeight(if (tempoPitchApplyToAll) 400 else 200),
+                        fontFamily = bodyFontAt(settingWeight),
+                        fontWeight = FontWeight(settingWeight),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -1031,10 +1035,11 @@ private fun GeneralPage(
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    val settingWeight = animatedSettingWeight(shareYoutubeLinkEnabled)
                     Text(
                         text = "Show YouTube Link option on share",
-                        fontFamily = bodyFontAt(if (shareYoutubeLinkEnabled) 400 else 200),
-                        fontWeight = FontWeight(if (shareYoutubeLinkEnabled) 400 else 200),
+                        fontFamily = bodyFontAt(settingWeight),
+                        fontWeight = FontWeight(settingWeight),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -1074,10 +1079,11 @@ private fun GeneralPage(
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    val settingWeight = animatedSettingWeight(loudnessNormalization)
                     Text(
                         text = "Loudness normalisation",
-                        fontFamily = bodyFontAt(if (loudnessNormalization) 400 else 200),
-                        fontWeight = FontWeight(if (loudnessNormalization) 400 else 200),
+                        fontFamily = bodyFontAt(settingWeight),
+                        fontWeight = FontWeight(settingWeight),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -1117,10 +1123,11 @@ private fun GeneralPage(
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    val settingWeight = animatedSettingWeight(streamOnly)
                     Text(
                         text = "Stream-only mode",
-                        fontFamily = bodyFontAt(if (streamOnly) 400 else 200),
-                        fontWeight = FontWeight(if (streamOnly) 400 else 200),
+                        fontFamily = bodyFontAt(settingWeight),
+                        fontWeight = FontWeight(settingWeight),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -1628,10 +1635,11 @@ private fun DevToolsPage(
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val settingWeight = animatedSettingWeight(logsEnabled)
                 Text(
                     text = "The LOGS",
-                    fontFamily = bodyFontAt(if (logsEnabled) 400 else 200),
-                    fontWeight = FontWeight(if (logsEnabled) 400 else 200),
+                    fontFamily = bodyFontAt(settingWeight),
+                    fontWeight = FontWeight(settingWeight),
                     fontSize = 15.sp,
                     color = textColor,
                     modifier = Modifier.weight(1f)
