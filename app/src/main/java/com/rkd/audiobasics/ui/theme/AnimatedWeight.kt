@@ -31,6 +31,25 @@ fun animatedBodyWeight(
 }
 
 /**
+ * Smooth typography state for enabled/disabled settings rows.
+ * Disabled settings stay thin; enabled settings use a visibly heavier medium weight.
+ */
+@Composable
+fun animatedSettingWeight(
+    enabled: Boolean,
+    enabledWeight: Int = 500,
+    disabledWeight: Int = 200,
+    durationMs: Int = 220,
+): Int {
+    val w by animateIntAsState(
+        targetValue = if (enabled) enabledWeight else disabledWeight,
+        animationSpec = tween(durationMs, easing = FastOutSlowInEasing),
+        label = "settingWeight",
+    )
+    return ((w + 5) / 10) * 10
+}
+
+/**
  * Weight for rows that can be reordered. While nothing is being reordered every row keeps its
  * normal [base] weight. Once a row is picked up ([armed]) it glides to a heavy [armedWeight] and
  * every other row ([reorderActive] but not armed) glides to a thin [thinWeight], so the picked
