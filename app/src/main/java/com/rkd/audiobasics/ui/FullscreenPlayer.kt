@@ -324,7 +324,7 @@ private fun FullscreenPlayerContent(
             modifier = Modifier
                 .weight(1.25f)
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp, vertical = 8.dp),
+                .padding(start = 32.dp, end = 32.dp, top = 8.dp),
             contentAlignment = Alignment.Center
         ) {
             val side = minOf(maxWidth, maxHeight)
@@ -352,11 +352,15 @@ private fun FullscreenPlayerContent(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .padding(top = 8.dp),
+                .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-        Spacer(Modifier.weight(1f))
+        // Gap 1 (artwork -> title) and gap 2 (artist -> progress bar) share the same weight, so
+        // they are always the same size. The extra 8dp here makes them look equal too: the
+        // progress row has about that much more empty space around its bar than the title has
+        // above its letters.
+        Spacer(Modifier.weight(0.5f))
+        Spacer(Modifier.height(8.dp))
 
         // ── Title / artist, centered. Long titles fade out instead of ending in "..." ────
         Box(
@@ -409,6 +413,7 @@ private fun FullscreenPlayerContent(
             )
         }
 
+        // Gap 2: same weight as gap 1 above.
         Spacer(Modifier.weight(0.5f))
 
         // ── Progress ────────────────────────────────────────────────────────────────────
@@ -541,7 +546,9 @@ private fun FullscreenPlayerContent(
 
         }
 
-        Spacer(Modifier.height(10.dp))
+        // Space between the playback controls and the bottom row (was 10dp; a little more moves
+        // the controls up).
+        Spacer(Modifier.height(22.dp))
 
         // ── Bottom row: info · add · LYRICS · more · speakers ───────────────────────────
         Row(
