@@ -69,7 +69,7 @@ fun animatedPulseWeight(
     base: Int = 700,
     pressedWeight: Int = 300,
     othersWeight: Int = 900,
-    durationMs: Int = 150,
+    durationMs: Int = 110,
 ): Int {
     val w by animateIntAsState(
         targetValue = when {
