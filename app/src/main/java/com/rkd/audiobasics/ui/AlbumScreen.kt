@@ -817,14 +817,12 @@ fun AlbumSongRow(
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
+            FadeText(
                 text = song.title,
                 fontFamily = bodyFontAt(titleWeight),
                 fontWeight = FontWeight(titleWeight),
                 fontSize = 14.sp,
                 color = titleColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -848,14 +846,12 @@ fun AlbumSongRow(
                     }
                     Spacer(Modifier.width(5.dp))
                 }
-                Text(
+                FadeText(
                     text = songArtistLine(song),
                     fontFamily = bodyFontAt(subWeight),
                     fontWeight = FontWeight(subWeight),
                     fontSize = 12.sp,
                     color = if (isPlaying) Color(0xFFFF8A80) else subTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -1035,13 +1031,11 @@ private fun OtherVersionCard(
                     ExplicitBadge(isDarkMode)
                     Spacer(Modifier.width(5.dp))
                 }
-                Text(
+                FadeText(
                     text = album.artist,
                     fontFamily = BodyFont,
                     fontSize = 11.sp,
                     color = subTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

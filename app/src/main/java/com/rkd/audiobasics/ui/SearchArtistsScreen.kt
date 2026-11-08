@@ -152,14 +152,12 @@ fun ArtistRowItem(
         )
         Spacer(Modifier.width(16.dp))
         Column {
-            Text(
+            FadeText(
                 text = artist.name,
                 fontFamily = bodyFontAt(titleWeight),
                 fontWeight = FontWeight(titleWeight),
                 fontSize = 16.sp,
                 color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = "(ARTIST)",

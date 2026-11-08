@@ -442,28 +442,24 @@ fun AlbumItem(
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
+            FadeText(
                 text = album.title,
                 fontFamily = bodyFontAt(titleDisplayWeight),
                 fontWeight = FontWeight(titleDisplayWeight),
                 fontSize = 14.sp,
                 color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isExplicit) {
                     ExplicitBadge(isDarkMode)
                     Spacer(Modifier.width(5.dp))
                 }
-                Text(
+                FadeText(
                     text = album.artist,
                     fontFamily = bodyFontAt(subDisplayWeight),
                     fontWeight = FontWeight(subDisplayWeight),
                     fontSize = 12.sp,
                     color = subTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
             }
             if (album.songCount > 0) {

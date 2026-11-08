@@ -455,13 +455,11 @@ fun SearchScreen(
                                 ) {
                                     Text("🔍", fontSize = 14.sp)
                                     Spacer(Modifier.width(12.dp))
-                                    Text(
+                                    FadeText(
                                         text = suggestion,
                                         fontFamily = BodyFont,
                                         fontSize = 14.sp,
                                         color = textColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -578,13 +576,11 @@ fun SearchScreen(
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(Modifier.width(12.dp))
-                                    Text(
+                                    FadeText(
                                         text = pastQuery,
                                         fontFamily = BodyFont,
                                         fontSize = 14.sp,
                                         color = textColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
                                     )
                                     IconButton(

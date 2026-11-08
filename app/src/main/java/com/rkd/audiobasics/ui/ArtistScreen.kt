@@ -496,8 +496,8 @@ fun AlbumRowItem(
         )
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = album.title, fontFamily = bodyFontAt(titleWeight), fontWeight = FontWeight(titleWeight),
-                fontSize = 15.sp, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            FadeText(text = album.title, fontFamily = bodyFontAt(titleWeight), fontWeight = FontWeight(titleWeight),
+                fontSize = 15.sp, color = textColor)
             val sub = when {
                 showYear && album.year.isNotBlank() -> album.year
                 showYear && album.youtubeUrl.matches(Regex("\\d{4}")) -> album.youtubeUrl
@@ -509,8 +509,8 @@ fun AlbumRowItem(
                         ExplicitBadge(isDarkMode)
                         Spacer(Modifier.width(5.dp))
                     }
-                    Text(text = sub, fontFamily = bodyFontAt(subWeight), fontWeight = FontWeight(subWeight), fontSize = 13.sp,
-                        color = subTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    FadeText(text = sub, fontFamily = bodyFontAt(subWeight), fontWeight = FontWeight(subWeight), fontSize = 13.sp,
+                        color = subTextColor)
                 }
             }
         }

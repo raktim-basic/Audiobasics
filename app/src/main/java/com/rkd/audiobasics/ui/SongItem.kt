@@ -189,14 +189,12 @@ fun SongItem(
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
+            FadeText(
                 text = song.title,
                 fontFamily = bodyFontAt(titleWeight),
                 fontWeight = FontWeight(titleWeight),
                 fontSize = 14.sp,
                 color = titleColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
 
             Spacer(Modifier.height(3.dp))
@@ -220,14 +218,12 @@ fun SongItem(
                     }
                     Spacer(Modifier.width(5.dp))
                 }
-                Text(
+                FadeText(
                     text = songArtistLine(song),
                     fontFamily = bodyFontAt(subWeight),
                     fontWeight = FontWeight(subWeight),
                     fontSize = 12.sp,
                     color = if (isPlaying) Color(0xFFFF8A80) else subTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -500,13 +496,11 @@ fun BrokenHeartDialog(
                     )
                 }
                 Spacer(Modifier.height(6.dp))
-                Text(
+                FadeText(
                     text = song.title,
                     fontFamily = BodyFont,
                     fontSize = 13.sp,
                     color = textColor.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(16.dp))
                 buildList {

@@ -732,14 +732,12 @@ private fun PlayerFrontContent(
                         }
                         Spacer(Modifier.width(5.dp))
                     }
-                    Text(
+                    FadeText(
                         text = song?.artist ?: "Artist",
                         fontFamily = NothingFont,
                         fontWeight = FontWeight.Normal,
                         fontSize = 16.sp,
                         color = subTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1313,14 +1311,12 @@ private fun PlayerFrontContentV2(
                             }
                             Spacer(Modifier.width(5.dp))
                         }
-                        Text(
+                        FadeText(
                             text = song?.artist ?: "Artist",
                             fontFamily = NothingFont,
                             fontWeight = FontWeight.Normal,
                             fontSize = 18.sp,
                             color = Color.White.copy(alpha = 0.75f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

@@ -184,12 +184,10 @@ private fun SmartInputsContent(
                             overflow = TextOverflow.Ellipsis
                         )
                         if (linkSong.artist.isNotBlank()) {
-                            Text(
+                            FadeText(
                                 text = songArtistLine(linkSong),
                                 fontSize = 14.sp,
                                 color = subTextColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -291,21 +289,17 @@ private fun SmartInputMatchRow(
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
+            FadeText(
                 text = song.title,
                 fontFamily = BodyFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
-            Text(
+            FadeText(
                 text = songArtistLine(song),
                 fontSize = 13.sp,
                 color = subTextColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
         }
 

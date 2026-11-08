@@ -64,14 +64,12 @@ fun PlayerBar(
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
+                FadeText(
                     text = "Nothing is playing",
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = textColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = " ",
@@ -114,14 +112,12 @@ fun PlayerBar(
         Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
+            FadeText(
                 text = song.title,
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (song.isExplicit) {
@@ -144,14 +140,12 @@ fun PlayerBar(
                     }
                     Spacer(Modifier.width(5.dp))
                 }
-                Text(
+                FadeText(
                     text = song.artist,
                     fontFamily = NothingFont,
                     fontWeight = FontWeight.Normal,
                     fontSize = 12.sp,
                     color = subTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
