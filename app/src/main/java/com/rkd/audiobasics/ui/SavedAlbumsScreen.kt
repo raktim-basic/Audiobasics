@@ -48,6 +48,7 @@ import com.rkd.audiobasics.data.Album
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.ui.theme.animatedReorderWeight
+import com.rkd.audiobasics.ui.theme.animatedPulseWeight
 import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
 import sh.calvin.reorderable.ReorderableItem
