@@ -778,12 +778,13 @@ fun AlbumSongRow(
     val titleColor = if (isPlaying) Color.Red else textColor
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
+    var contextMenuOpen by remember { mutableStateOf(false) }
 
     // "Just played" pulse: the pressed song goes thin and the rest heavy for a moment, then back.
     val playPulse = LocalPlayPulse.current
     val pulsedHere = playPulse.active && playPulse.songId == "song:${song.id}"
-    val titleWeight = animatedPulseWeight(pressed = pulsedHere, pulseActive = playPulse.active)
-    val subWeight = animatedPulseWeight(
+    val titleWeight = if (contextMenuOpen) 900 else animatedPulseWeight(pressed = pulsedHere, pulseActive = playPulse.active)
+    val subWeight = if (contextMenuOpen) 700 else animatedPulseWeight(
         pressed = pulsedHere, pulseActive = playPulse.active,
         base = 400, pressedWeight = 200, othersWeight = 650
     )
@@ -878,7 +879,12 @@ fun AlbumSongRow(
             val menuAnchor = rememberMorphAnchor()
 
             fun openMenu() {
-                overlay.show(anchor = menuAnchor.bounds(), placement = MorphPlacement.Anchored) { close ->
+                contextMenuOpen = true
+                overlay.show(
+                    anchor = menuAnchor.bounds(),
+                    placement = MorphPlacement.Anchored,
+                    onDismissRequest = { contextMenuOpen = false }
+                ) { close ->
                     MorphMenuColumn {
                         MorphMenuItem(
                             text = "Share",

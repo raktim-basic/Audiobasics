@@ -453,6 +453,7 @@ private fun LibraryRow(
     reorderActive: Boolean = false,
     onReorder: (() -> Unit)? = null
 ) {
+    var contextMenuOpen by remember { mutableStateOf(false) }
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val labelWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
@@ -460,7 +461,7 @@ private fun LibraryRow(
     val playPulse = LocalPlayPulse.current
     val pulsedHere = playPulse.active && playPulse.songId == pulseId
     val pulseWeight = animatedPulseWeight(pulsedHere, playPulse.active)
-    val displayWeight = if (labelWeight != 700) labelWeight else pulseWeight
+    val displayWeight = if (contextMenuOpen) 900 else if (labelWeight != 700) labelWeight else pulseWeight
     val pulseInteraction = rememberPlayPulseInteractionSource(pulseId, enabled = !reorderActive)
     // Bounds of the whole row — used only so the 3-dot menu can keep this row in color while
     // the rest of the list goes monochrome (see MorphOverlay's MonochromeExcept). The menu
@@ -506,10 +507,12 @@ private fun LibraryRow(
             IconButton(
                 onClick = {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                    contextMenuOpen = true
                     overlay.show(
                         anchor = menuAnchor.bounds(),
                         placement = MorphPlacement.Anchored,
-                        highlightBounds = rowAnchor.bounds()
+                        highlightBounds = rowAnchor.bounds(),
+                        onDismissRequest = { contextMenuOpen = false }
                     ) { close ->
                         MorphMenuColumn {
                             if (onRename != null) {

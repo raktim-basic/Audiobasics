@@ -756,8 +756,8 @@ private fun AppearancePage(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Auto-immerse",
-                        fontFamily = BodyFont,
-                        fontWeight = FontWeight.Bold,
+                        fontFamily = bodyFontAt(if (autoImmerseEnabled) 400 else 200),
+                        fontWeight = FontWeight(if (autoImmerseEnabled) 400 else 200),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -833,7 +833,7 @@ private fun GeneralPage(
                     text = "Songs will play over the internet and nothing new gets downloaded. " +
                         "What should happen to the songs you've already downloaded? " +
                         "Your library stays as it is either way.",
-                    fontFamily = BodyFont,
+                    fontFamily = bodyFontAt(if (streamOnly) 400 else 200),
                     fontSize = 14.sp,
                     color = subTextColor
                 )
@@ -855,8 +855,8 @@ private fun GeneralPage(
                     ) {
                         Text(
                             "Clear downloads (keep the library)",
-                            fontFamily = BodyFont,
-                            fontWeight = FontWeight.Bold,
+                            fontFamily = bodyFontAt(if (streamOnly) 400 else 200),
+                            fontWeight = FontWeight(if (streamOnly) 400 else 200),
                             color = Color.White
                         )
                     }
@@ -877,7 +877,7 @@ private fun GeneralPage(
                         Text(
                             "Stop downloading more",
                             fontFamily = BodyFont,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight(if (streamOnly) 400 else 200),
                             color = textColor
                         )
                     }
@@ -952,8 +952,8 @@ private fun GeneralPage(
                 Spacer(Modifier.width(16.dp))
                 Text(
                     text = "Haptic feedback (vibration)",
-                    fontFamily = BodyFont,
-                    fontWeight = FontWeight.Bold,
+                    fontFamily = bodyFontAt(if (hapticsEnabled) 400 else 200),
+                    fontWeight = FontWeight(if (hapticsEnabled) 400 else 200),
                     fontSize = 15.sp,
                     color = textColor,
                     modifier = Modifier.weight(1f)
@@ -990,8 +990,8 @@ private fun GeneralPage(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Tempo/Pitch applies to all songs",
-                        fontFamily = BodyFont,
-                        fontWeight = FontWeight.Bold,
+                        fontFamily = bodyFontAt(if (tempoPitchApplyToAll) 400 else 200),
+                        fontWeight = FontWeight(if (tempoPitchApplyToAll) 400 else 200),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -1033,8 +1033,8 @@ private fun GeneralPage(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Show YouTube Link option on share",
-                        fontFamily = BodyFont,
-                        fontWeight = FontWeight.Bold,
+                        fontFamily = bodyFontAt(if (shareYoutubeLinkEnabled) 400 else 200),
+                        fontWeight = FontWeight(if (shareYoutubeLinkEnabled) 400 else 200),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -1076,8 +1076,8 @@ private fun GeneralPage(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Loudness normalisation",
-                        fontFamily = BodyFont,
-                        fontWeight = FontWeight.Bold,
+                        fontFamily = bodyFontAt(if (loudnessNormalization) 400 else 200),
+                        fontWeight = FontWeight(if (loudnessNormalization) 400 else 200),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -1119,8 +1119,8 @@ private fun GeneralPage(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Stream-only mode",
-                        fontFamily = BodyFont,
-                        fontWeight = FontWeight.Bold,
+                        fontFamily = bodyFontAt(if (streamOnly) 400 else 200),
+                        fontWeight = FontWeight(if (streamOnly) 400 else 200),
                         fontSize = 15.sp,
                         color = textColor
                     )
@@ -1630,8 +1630,8 @@ private fun DevToolsPage(
             ) {
                 Text(
                     text = "The LOGS",
-                    fontFamily = BodyFont,
-                    fontWeight = FontWeight.Bold,
+                    fontFamily = bodyFontAt(if (logsEnabled) 400 else 200),
+                    fontWeight = FontWeight(if (logsEnabled) 400 else 200),
                     fontSize = 15.sp,
                     color = textColor,
                     modifier = Modifier.weight(1f)

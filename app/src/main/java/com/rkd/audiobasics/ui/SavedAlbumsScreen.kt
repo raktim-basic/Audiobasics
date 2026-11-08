@@ -379,6 +379,7 @@ fun AlbumItem(
     onReorder: (() -> Unit)? = null,
     onRemoveFromSave: (() -> Unit)? = null
 ) {
+    var contextMenuOpen by remember { mutableStateOf(false) }
     val titleWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
     val subWeight = animatedReorderWeight(
         armed = isDragging, reorderActive = reorderActive,
@@ -388,8 +389,8 @@ fun AlbumItem(
     val pulsedHere = playPulse.active && playPulse.songId == "album:${album.id}"
     val pulseTitle = animatedPulseWeight(pulsedHere, playPulse.active)
     val pulseSub = animatedPulseWeight(pulsedHere, playPulse.active, base = 400, pressedWeight = 200, othersWeight = 650)
-    val titleDisplayWeight = if (titleWeight != 700) titleWeight else pulseTitle
-    val subDisplayWeight = if (subWeight != 400) subWeight else pulseSub
+    val titleDisplayWeight = if (contextMenuOpen) 900 else if (titleWeight != 700) titleWeight else pulseTitle
+    val subDisplayWeight = if (contextMenuOpen) 700 else if (subWeight != 400) subWeight else pulseSub
     val pulseInteraction = rememberPlayPulseInteractionSource("album:${album.id}", enabled = !reorderActive)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -480,10 +481,12 @@ fun AlbumItem(
         IconButton(
             onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                contextMenuOpen = true
                 overlay.show(
                     anchor = menuAnchor.bounds(),
                     placement = MorphPlacement.Anchored,
-                    highlightBounds = rowAnchor.bounds()
+                    highlightBounds = rowAnchor.bounds(),
+                    onDismissRequest = { contextMenuOpen = false }
                 ) { close ->
                     MorphMenuColumn {
                         if (onReorder != null) {

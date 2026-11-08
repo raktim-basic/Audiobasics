@@ -65,6 +65,7 @@ fun SongItem(
 ) {
     var showBrokenHeartDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
+    var contextMenuOpen by remember { mutableStateOf(false) }
 
     // Reorder mode: picked-up row goes heavy, every other row goes thin.
     val reorderTitle = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
@@ -81,8 +82,8 @@ fun SongItem(
         base = 400, pressedWeight = 200, othersWeight = 650
     )
     val pulseInteraction = rememberPlayPulseInteractionSource("song:${song.id}", enabled = !reorderActive)
-    val titleWeight = if (reorderTitle != 700) reorderTitle else pulseTitle
-    val subWeight = if (reorderSub != 400) reorderSub else pulseSub
+    val titleWeight = if (contextMenuOpen) 900 else if (reorderTitle != 700) reorderTitle else pulseTitle
+    val subWeight = if (contextMenuOpen) 700 else if (reorderSub != 400) reorderSub else pulseSub
 
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -251,10 +252,12 @@ fun SongItem(
             val menuAnchor = rememberMorphAnchor()
 
             fun openMenu() {
+                contextMenuOpen = true
                 overlay.show(
                     anchor = menuAnchor.bounds(),
                     placement = MorphPlacement.Anchored,
-                    highlightBounds = rowAnchor.bounds()
+                    highlightBounds = rowAnchor.bounds(),
+                    onDismissRequest = { contextMenuOpen = false }
                 ) { close ->
                     MorphMenuColumn {
                         if (isInQueue) {
