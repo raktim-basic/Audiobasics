@@ -1,6 +1,7 @@
 package com.rkd.audiobasics.ui
 
 import com.rkd.audiobasics.ui.theme.AmoledBlack
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -28,6 +29,8 @@ import com.rkd.audiobasics.api.Innertube
 import com.rkd.audiobasics.data.Artist
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.bodyFontAt
+import com.rkd.audiobasics.ui.theme.animatedPulseWeight
 import com.rkd.audiobasics.utils.HapticUtils
 
 @Composable
@@ -127,11 +130,15 @@ fun ArtistRowItem(
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+    val playPulse = LocalPlayPulse.current
+    val pulsedHere = playPulse.active && playPulse.songId == "artist:${artist.id}"
+    val titleWeight = animatedPulseWeight(pulsedHere, playPulse.active)
+    val pulseInteraction = rememberPlayPulseInteractionSource("artist:${artist.id}")
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = pulseInteraction, indication = LocalIndication.current, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -147,8 +154,8 @@ fun ArtistRowItem(
         Column {
             Text(
                 text = artist.name,
-                fontFamily = BodyFont,
-                fontWeight = FontWeight.Bold,
+                fontFamily = bodyFontAt(titleWeight),
+                fontWeight = FontWeight(titleWeight),
                 fontSize = 16.sp,
                 color = textColor,
                 maxLines = 1,

@@ -4,6 +4,7 @@ import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -382,6 +383,13 @@ fun AlbumItem(
         armed = isDragging, reorderActive = reorderActive,
         base = 400, armedWeight = 650, thinWeight = 200
     )
+    val playPulse = LocalPlayPulse.current
+    val pulsedHere = playPulse.active && playPulse.songId == "album:${album.id}"
+    val pulseTitle = animatedPulseWeight(pulsedHere, playPulse.active)
+    val pulseSub = animatedPulseWeight(pulsedHere, playPulse.active, base = 400, pressedWeight = 200, othersWeight = 650)
+    val titleDisplayWeight = if (titleWeight != 700) titleWeight else pulseTitle
+    val subDisplayWeight = if (subWeight != 400) subWeight else pulseSub
+    val pulseInteraction = rememberPlayPulseInteractionSource("album:${album.id}", enabled = !reorderActive)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) AmoledBlack else Color.White
@@ -393,7 +401,10 @@ fun AlbumItem(
             .fillMaxWidth()
             .morphAnchor(rowAnchor)
             .background(bgColor)
-            .clickable {
+            .clickable(
+                interactionSource = pulseInteraction,
+                indication = LocalIndication.current
+            ) {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onClick()
             }
@@ -431,8 +442,8 @@ fun AlbumItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = album.title,
-                fontFamily = bodyFontAt(titleWeight),
-                fontWeight = FontWeight(titleWeight),
+                fontFamily = bodyFontAt(titleDisplayWeight),
+                fontWeight = FontWeight(titleDisplayWeight),
                 fontSize = 14.sp,
                 color = textColor,
                 maxLines = 1,
@@ -445,8 +456,8 @@ fun AlbumItem(
                 }
                 Text(
                     text = album.artist,
-                    fontFamily = bodyFontAt(subWeight),
-                    fontWeight = FontWeight(subWeight),
+                    fontFamily = bodyFontAt(subDisplayWeight),
+                    fontWeight = FontWeight(subDisplayWeight),
                     fontSize = 12.sp,
                     color = subTextColor,
                     maxLines = 1,

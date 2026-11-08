@@ -1,7 +1,9 @@
 package com.rkd.audiobasics.ui
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
+import com.rkd.audiobasics.ui.theme.animatedPulseWeight
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.launch
 import android.content.Intent
@@ -473,9 +475,16 @@ fun AlbumRowItem(
 ) {
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
+    val playPulse = LocalPlayPulse.current
+    val pulsedHere = playPulse.active && playPulse.songId == "album:${album.id}"
+    val titleWeight = animatedPulseWeight(pulsedHere, playPulse.active)
+    val subWeight = animatedPulseWeight(pulsedHere, playPulse.active, base = 400, pressedWeight = 200, othersWeight = 650)
+    val pulseInteraction = rememberPlayPulseInteractionSource("album:${album.id}")
 
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().clickable(
+            interactionSource = pulseInteraction, indication = LocalIndication.current, onClick = onClick
+        )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -487,7 +496,7 @@ fun AlbumRowItem(
         )
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = album.title, fontFamily = BodyFont, fontWeight = FontWeight.Bold,
+            Text(text = album.title, fontFamily = bodyFontAt(titleWeight), fontWeight = FontWeight(titleWeight),
                 fontSize = 15.sp, color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val sub = when {
                 showYear && album.year.isNotBlank() -> album.year
@@ -500,7 +509,7 @@ fun AlbumRowItem(
                         ExplicitBadge(isDarkMode)
                         Spacer(Modifier.width(5.dp))
                     }
-                    Text(text = sub, fontFamily = BodyFont, fontSize = 13.sp,
+                    Text(text = sub, fontFamily = bodyFontAt(subWeight), fontWeight = FontWeight(subWeight), fontSize = 13.sp,
                         color = subTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }

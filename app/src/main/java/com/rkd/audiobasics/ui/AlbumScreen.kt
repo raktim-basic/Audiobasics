@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import android.content.Intent
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -780,20 +781,23 @@ fun AlbumSongRow(
 
     // "Just played" pulse: the pressed song goes thin and the rest heavy for a moment, then back.
     val playPulse = LocalPlayPulse.current
-    val pulsedHere = playPulse.active && playPulse.songId == song.id
+    val pulsedHere = playPulse.active && playPulse.songId == "song:${song.id}"
     val titleWeight = animatedPulseWeight(pressed = pulsedHere, pulseActive = playPulse.active)
     val subWeight = animatedPulseWeight(
         pressed = pulsedHere, pulseActive = playPulse.active,
         base = 400, pressedWeight = 200, othersWeight = 650
     )
+    val pulseInteraction = rememberPlayPulseInteractionSource("song:${song.id}")
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
-            .clickable {
+            .clickable(
+                interactionSource = pulseInteraction,
+                indication = LocalIndication.current
+            ) {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                playPulse.trigger(song.id)
                 onClick()
             }
             .padding(horizontal = 16.dp, vertical = 10.dp),

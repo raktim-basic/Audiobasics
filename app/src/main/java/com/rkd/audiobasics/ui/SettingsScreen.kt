@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -62,6 +63,7 @@ import com.rkd.audiobasics.api.account.AccountState
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.ui.theme.animatedBodyWeight
+import com.rkd.audiobasics.ui.theme.animatedPulseWeight
 import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.utils.HapticUtils
 
@@ -1499,12 +1501,17 @@ fun SettingsRow(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
     val bgColor = if (isDarkMode) AmoledBlack else Color.White
+    val pulseId = "setting:$title"
+    val playPulse = LocalPlayPulse.current
+    val pulsedHere = playPulse.active && playPulse.songId == pulseId
+    val titleWeight = animatedPulseWeight(pulsedHere, playPulse.active)
+    val pulseInteraction = rememberPlayPulseInteractionSource(pulseId)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
-            .clickable { onClick() }
+            .clickable(interactionSource = pulseInteraction, indication = LocalIndication.current, onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1513,8 +1520,8 @@ fun SettingsRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontFamily = BodyFont,
-                fontWeight = FontWeight.Bold,
+                fontFamily = bodyFontAt(titleWeight),
+                fontWeight = FontWeight(titleWeight),
                 fontSize = 15.sp,
                 color = textColor
             )

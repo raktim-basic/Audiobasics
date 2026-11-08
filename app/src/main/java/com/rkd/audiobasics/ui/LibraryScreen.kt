@@ -3,6 +3,7 @@ package com.rkd.audiobasics.ui
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -454,13 +455,21 @@ private fun LibraryRow(
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val labelWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
+    val pulseId = "playlist:$label"
+    val playPulse = LocalPlayPulse.current
+    val pulsedHere = playPulse.active && playPulse.songId == pulseId
+    val pulseWeight = animatedPulseWeight(pulsedHere, playPulse.active)
+    val displayWeight = if (labelWeight != 700) labelWeight else pulseWeight
+    val pulseInteraction = rememberPlayPulseInteractionSource(pulseId, enabled = !reorderActive)
     // Bounds of the whole row — used only so the 3-dot menu can keep this row in color while
     // the rest of the list goes monochrome (see MorphOverlay's MonochromeExcept). The menu
     // itself still grows from the icon (menuAnchor below), this is a separate, wider rect.
     val rowAnchor = rememberMorphAnchor()
 
     Row(
-        modifier = Modifier.fillMaxWidth().morphAnchor(rowAnchor).clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().morphAnchor(rowAnchor)
+            .clickable(interactionSource = pulseInteraction, indication = LocalIndication.current,
+                onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -488,7 +497,7 @@ private fun LibraryRow(
             }
         }
         Spacer(Modifier.width(16.dp))
-        Text(text = label, fontFamily = bodyFontAt(labelWeight), fontWeight = FontWeight(labelWeight),
+        Text(text = label, fontFamily = bodyFontAt(displayWeight), fontWeight = FontWeight(displayWeight),
             fontSize = 16.sp, color = textColor, modifier = Modifier.weight(1f))
         if (showMenu) {
             val overlay = LocalMorphOverlay.current

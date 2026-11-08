@@ -2,6 +2,7 @@ package com.rkd.audiobasics.ui
 
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import android.content.Intent
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -73,12 +74,13 @@ fun SongItem(
     )
     // Play pulse (reverse): the song you just pressed goes thin, every other song goes heavy.
     val playPulse = LocalPlayPulse.current
-    val pulsedHere = playPulse.active && playPulse.songId == song.id
+    val pulsedHere = playPulse.active && playPulse.songId == "song:${song.id}"
     val pulseTitle = animatedPulseWeight(pressed = pulsedHere, pulseActive = playPulse.active)
     val pulseSub = animatedPulseWeight(
         pressed = pulsedHere, pulseActive = playPulse.active,
         base = 400, pressedWeight = 200, othersWeight = 650
     )
+    val pulseInteraction = rememberPlayPulseInteractionSource("song:${song.id}", enabled = !reorderActive)
     val titleWeight = if (reorderTitle != 700) reorderTitle else pulseTitle
     val subWeight = if (reorderSub != 400) reorderSub else pulseSub
 
@@ -144,10 +146,11 @@ fun SongItem(
             .fillMaxWidth()
             .morphAnchor(rowAnchor)
             .background(bgColor)
-            .clickable {
+            .clickable(
+                interactionSource = pulseInteraction,
+                indication = LocalIndication.current
+            ) {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                // Taps are ignored while reordering, so don't pulse then.
-                if (!reorderActive) playPulse.trigger(song.id)
                 onClick()
             }
             .padding(horizontal = 16.dp, vertical = 8.dp),

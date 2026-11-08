@@ -1,34 +1,49 @@
 package com.rkd.audiobasics.ui
 
+import androidx.compose.foundation.interaction.Interaction
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.flow.collect
 
-/** How long the "just played" emphasis is held before every row eases back to normal. */
-const val PLAY_PULSE_HOLD_MS = 280L
-
-/**
- * A short, global "you just played this" pulse. Tapping a song calls [trigger]; while [active]
- * is true the tapped song's text is thin and every other song's is heavy (the reverse of
- * reorder mode), then MainActivity clears [active] after [PLAY_PULSE_HOLD_MS] and everything
- * glides back to normal. [token] changes on every trigger so a fast second tap restarts the timer.
- */
+/** Global typography response to the currently held item press. */
 @Stable
 class PlayPulseState {
     var songId by mutableStateOf<String?>(null)
         private set
     var active by mutableStateOf(false)
-    var token by mutableIntStateOf(0)
         private set
 
-    fun trigger(id: String) {
+    fun press(id: String) {
         songId = id
         active = true
-        token++
     }
+
+    fun release(id: String) {
+        if (songId == id) active = false
+    }
+}
+
+/** Shares each clickable's press lifecycle with the global typography animation. */
+@Composable
+fun rememberPlayPulseInteractionSource(id: String, enabled: Boolean = true): MutableInteractionSource {
+    val source = androidx.compose.runtime.remember { MutableInteractionSource() }
+    val pulse = LocalPlayPulse.current
+    LaunchedEffect(source, id, pulse, enabled) {
+        source.interactions.collect { interaction: Interaction ->
+            when (interaction) {
+                is PressInteraction.Press -> if (enabled) pulse.press(id)
+                is PressInteraction.Release, is PressInteraction.Cancel -> pulse.release(id)
+            }
+        }
+    }
+    return source
 }
 
 val LocalPlayPulse = staticCompositionLocalOf { PlayPulseState() }
