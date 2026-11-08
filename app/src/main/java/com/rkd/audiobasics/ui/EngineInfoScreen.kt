@@ -30,7 +30,7 @@ import org.json.JSONArray
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.BodyFont
 
-private const val NEWPIPE_CURRENT = "v0.26.5"
+private const val NEWPIPE_CURRENT = "v0.27.0"
 private const val YTM_CURRENT = "1.20261018.16.00"
 
 private suspend fun fetchLatestNewPipeVersion(): String? = withContext(Dispatchers.IO) {
