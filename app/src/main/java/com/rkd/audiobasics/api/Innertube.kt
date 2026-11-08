@@ -11,6 +11,7 @@ import com.rkd.audiobasics.api.cipher.PlayerJsFetcher
 import com.rkd.audiobasics.api.potoken.PoTokenGenerator
 import com.rkd.audiobasics.api.potoken.PoTokenResult
 import com.rkd.audiobasics.data.Album
+import com.rkd.audiobasics.cache.LoudnessStore
 import com.rkd.audiobasics.data.Song
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -1492,6 +1493,42 @@ object Innertube {
         }
     }
 
+    // Loudness (dB vs. YouTube's reference level) seen in player responses, by video id. Filled
+    // by every player lookup; getStreamUrl() persists it to LoudnessStore.
+    private val loudnessSeen = ConcurrentHashMap<String, Float>()
+
+    sealed class LoudnessLookup {
+        data class Found(val db: Float) : LoudnessLookup()
+        /** YouTube answered but has no loudness value for this song. */
+        object Missing : LoudnessLookup()
+        /** No usable answer (offline, blocked, ...) — worth trying again later. */
+        object Failed : LoudnessLookup()
+    }
+
+    /**
+     * Looks up just the loudness of [videoId] — a player request, no stream URL work. Only the
+     * clients that need no poToken are used, so it stays light enough for a library-wide pass.
+     */
+    suspend fun fetchLoudnessDb(videoId: String): LoudnessLookup = withContext(Dispatchers.IO) {
+        if (visitorData == null) fetchVisitorData()
+        var sawOk = false
+        for (client in STREAM_CLIENTS) {
+            if (client.usePoTokenInBody) continue
+            try {
+                val r = tryClientForStream(
+                    videoId, client, null, null, null, AUDIO_QUALITY_HIGH, null, loudnessOnly = true
+                )
+                if (r is StreamAttemptResult.Success) {
+                    sawOk = true
+                    loudnessSeen[videoId]?.let { return@withContext LoudnessLookup.Found(it) }
+                }
+            } catch (e: Exception) {
+                Log.w("Innertube", "Loudness lookup via ${client.clientName} failed: ${e.message}")
+            }
+        }
+        if (sawOk) LoudnessLookup.Missing else LoudnessLookup.Failed
+    }
+
     private sealed class StreamAttemptResult {
         data class Success(val url: String) : StreamAttemptResult()
         // Player endpoint or CDN URL rejected the request with 403 — usually means
@@ -1513,7 +1550,9 @@ object Innertube {
         streamingDataPoToken: String?,
         sigTimestamp: Int?,
         quality: String,
-        trail: MutableList<String>? = null
+        trail: MutableList<String>? = null,
+        // Only read the loudness out of the response and stop (no format/URL work).
+        loudnessOnly: Boolean = false
     ): StreamAttemptResult {
         val clientContext = JSONObject()
             .put("clientName", client.clientName)
@@ -1613,6 +1652,15 @@ object Innertube {
             else StreamAttemptResult.OtherFailure
         }
 
+        // YouTube's own loudness figure for the track (positive = louder than its reference).
+        json.optJSONObject("playerConfig")?.optJSONObject("audioConfig")?.let { cfg ->
+            if (cfg.has("loudnessDb") && !cfg.isNull("loudnessDb")) {
+                val db = cfg.optDouble("loudnessDb", Double.NaN)
+                if (!db.isNaN()) loudnessSeen[videoId] = db.toFloat()
+            }
+        }
+        if (loudnessOnly) return StreamAttemptResult.Success("")
+
         val adaptiveFormats = json.optJSONObject("streamingData")
             ?.optJSONArray("adaptiveFormats") ?: run {
                 trail.note("${client.clientName}: no streamingData")
@@ -1629,6 +1677,10 @@ object Innertube {
             val f = adaptiveFormats.getJSONObject(i)
             val mimeType = f.optString("mimeType", "")
             if (!mimeType.startsWith("audio/")) continue
+            if (!loudnessSeen.containsKey(videoId) && f.has("loudnessDb") && !f.isNull("loudnessDb")) {
+                val db = f.optDouble("loudnessDb", Double.NaN)
+                if (!db.isNaN()) loudnessSeen[videoId] = db.toFloat()
+            }
             val contentLength = f.optString("contentLength", "")
             if (contentLength.isBlank() || contentLength == "0") continue
 
@@ -1809,6 +1861,20 @@ object Innertube {
         videoId: String,
         forceFallback: Boolean = false,
         forDownload: Boolean = false
+    ): Pair<String, Long>? {
+        val result = getStreamUrlShared(context, videoId, forceFallback, forDownload)
+        // The lookup also saw the song's loudness; keep it for volume normalisation.
+        if (result != null) {
+            loudnessSeen[videoId]?.let { LoudnessStore.put(context, videoId, it) }
+        }
+        return result
+    }
+
+    private suspend fun getStreamUrlShared(
+        context: Context,
+        videoId: String,
+        forceFallback: Boolean,
+        forDownload: Boolean
     ): Pair<String, Long>? {
         val key = "$videoId|$forceFallback|${effectiveAudioQuality(context, forDownload)}"
         val mine = streamScope.async(start = CoroutineStart.LAZY) {
