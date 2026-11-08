@@ -61,6 +61,8 @@ import com.rkd.audiobasics.ui.MorphPopup
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -512,6 +514,8 @@ fun AudiobasicsApp(
     val hasDimmedFloatingWindow = showStorageLow || morphOverlay.entries.any {
         it.placement == MorphPlacement.Center
     }
+    // Must stay identical to PlayerBar's background (bgColor) so the nav bar reads as part of it.
+    val miniPlayerBarColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE0E0E0)
     val view = LocalView.current
     SideEffect {
         val window = (view.context as android.app.Activity).window
@@ -524,6 +528,30 @@ fun AudiobasicsApp(
             !isDarkMode && !hasDimmedFloatingWindow
         } else {
             !isDarkMode
+        }
+
+        // Navigation bar: same logic as the status bar above. The icon appearance used to be set
+        // only on Android 14 and below, so on 15+ the bar kept its default (light icons) and the
+        // system drew a dark contrast scrim over the app in light mode. Turn the scrim off so the
+        // strip we draw behind the bar (the mini player's colour) is what shows, and pick icons
+        // the same way as the status bar.
+        controller.isAppearanceLightNavigationBars = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            !isDarkMode && !hasDimmedFloatingWindow
+        } else {
+            !isDarkMode
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
+        // Android 14 and below: the window isn't edge-to-edge, so the bar is a plain opaque colour.
+        // Match the mini player, and pre-blend the popup scrim (50% black, see MorphOverlay) so the
+        // bar dims together with the rest of the screen.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            val base = miniPlayerBarColor
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = (
+                if (hasDimmedFloatingWindow) Color.Black.copy(alpha = 0.5f).compositeOver(base) else base
+            ).toArgb()
         }
     }
 
@@ -737,8 +765,10 @@ fun AudiobasicsApp(
             .drawBehind {
                 // Drawn before systemBarsPadding, so these land in the inset areas.
                 drawRect(stripColor, topLeft = Offset.Zero, size = Size(size.width, statusBarPx))
+                // Navigation-bar strip = the mini player's colour, in both themes. It is drawn
+                // under the popup scrim (MorphOverlayHost), so it dims with the rest of the app.
                 drawRect(
-                    stripColor,
+                    miniPlayerBarColor,
                     topLeft = Offset(0f, size.height - navBarPx),
                     size = Size(size.width, navBarPx)
                 )
