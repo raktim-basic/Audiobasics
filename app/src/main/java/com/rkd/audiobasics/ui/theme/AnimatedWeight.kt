@@ -56,3 +56,29 @@ fun animatedReorderWeight(
     )
     return ((w + 5) / 10) * 10
 }
+
+/**
+ * Weight for the brief "just played" pulse (the reverse of reorder mode): while the pulse is
+ * [pulseActive] the pressed row glides to a thin [pressedWeight] and every other row to a heavy
+ * [othersWeight]; otherwise [base]. Quicker than the reorder glide on purpose.
+ */
+@Composable
+fun animatedPulseWeight(
+    pressed: Boolean,
+    pulseActive: Boolean,
+    base: Int = 700,
+    pressedWeight: Int = 300,
+    othersWeight: Int = 900,
+    durationMs: Int = 150,
+): Int {
+    val w by animateIntAsState(
+        targetValue = when {
+            !pulseActive -> base
+            pressed -> pressedWeight
+            else -> othersWeight
+        },
+        animationSpec = tween(durationMs, easing = FastOutSlowInEasing),
+        label = "pulseWeight",
+    )
+    return ((w + 5) / 10) * 10
+}
