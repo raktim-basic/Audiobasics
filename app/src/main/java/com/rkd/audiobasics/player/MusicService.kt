@@ -1,7 +1,9 @@
 package com.rkd.audiobasics.player
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -31,6 +33,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.rkd.audiobasics.cache.CacheManager
+import com.rkd.audiobasics.cache.LoudnessStore
 import java.io.File
 import com.rkd.audiobasics.MainActivity
 import com.rkd.audiobasics.api.Innertube
@@ -198,6 +201,32 @@ class MusicService : MediaLibraryService() {
     }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // ── Loudness normalisation ───────────────────────────────────────────────────────────
+    // YouTube reports how loud each track is (dB above its reference level). When the setting
+    // is on, tracks louder than that are turned down by the difference through the player's own
+    // volume, so songs sit at a similar level. Quiet tracks are left alone (never boosted, so
+    // nothing can clip). Unknown loudness = untouched.
+    private val settingsPrefs: SharedPreferences by lazy {
+        getSharedPreferences("ytlite", Context.MODE_PRIVATE)
+    }
+    private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == LOUDNESS_PREF_KEY) saveHandler.post { applyLoudness() }
+    }
+
+    /** Sets the player volume for whatever is current. Main thread only. */
+    private fun applyLoudness() {
+        val player = mediaSession?.player ?: return
+        val enabled = settingsPrefs.getBoolean(LOUDNESS_PREF_KEY, true)
+        val db = if (enabled) {
+            player.currentMediaItem?.mediaId?.takeIf { it.isNotBlank() }
+                ?.let { LoudnessStore.get(this, it) }
+        } else null
+        val volume = if (db != null && db > 0f) {
+            Math.pow(10.0, -db / 20.0).toFloat().coerceIn(0.1f, 1f)
+        } else 1f
+        if (player.volume != volume) player.volume = volume
+    }
+
     // Cache: videoId -> Pair(streamUrl, expiryTimeMs)
     private val songUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
 
@@ -215,6 +244,8 @@ class MusicService : MediaLibraryService() {
         // wait ends early (and retries once) as soon as the lookup itself finishes without a
         // URL, instead of sitting out a fixed timer.
         private const val RESOLVE_WAIT_MS = 30_000
+
+        const val LOUDNESS_PREF_KEY = "loudness_normalization"
 
         private const val BROWSE_ROOT_ID = "audiobasics_root"
         private const val RECENT_ROOT_ID = "audiobasics_recent"
@@ -375,6 +406,7 @@ class MusicService : MediaLibraryService() {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) saveSession()
+                if (playbackState == Player.STATE_READY) applyLoudness()
             }
         })
 
@@ -384,6 +416,7 @@ class MusicService : MediaLibraryService() {
                 reason: Int
             ) {
                 saveSessionSoon()
+                applyLoudness()
                 val uri = mediaItem?.localConfiguration?.uri?.toString() ?: return
                 val videoId = extractVideoId(uri) ?: return
                 preResolveUrl(videoId, force = false)
@@ -408,6 +441,9 @@ class MusicService : MediaLibraryService() {
         mediaSession = MediaLibrarySession.Builder(this, player, libraryCallback)
             .setSessionActivity(pendingIntent)
             .build()
+
+        settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)
+        applyLoudness()
     }
 
     fun preResolveUrl(videoId: String, force: Boolean = false) {
@@ -430,6 +466,11 @@ class MusicService : MediaLibraryService() {
             if (result != null) {
                 val (url, expiryMs) = result
                 songUrlCache[urlKey(videoId)] = url to expiryMs
+                // This lookup also learned the song's loudness; if it's the one about to play,
+                // apply it now.
+                saveHandler.post {
+                    if (mediaSession?.player?.currentMediaItem?.mediaId == videoId) applyLoudness()
+                }
                 Timber.d("preResolve: cached stream for $videoId ✅ (expires in ${(expiryMs - System.currentTimeMillis()) / 60000}min)")
 
                 // Probe URL to confirm it's alive
@@ -485,6 +526,7 @@ class MusicService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        settingsPrefs.unregisterOnSharedPreferenceChangeListener(settingsListener)
         saveHandler.removeCallbacks(periodicSaveTask)
         saveHandler.removeCallbacks(saveNowTask)
         saveSession()
