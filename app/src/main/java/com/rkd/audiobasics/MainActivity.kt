@@ -25,6 +25,8 @@ import androidx.navigation3.runtime.NavKey
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -50,7 +52,9 @@ import com.rkd.audiobasics.ui.LocalPlayPulse
 import com.rkd.audiobasics.ui.LocalStreamOnly
 import com.rkd.audiobasics.ui.PlayPulseState
 import com.rkd.audiobasics.ui.SongInfoPopup
+import com.rkd.audiobasics.ui.FullscreenPlayerSheet
 import com.rkd.audiobasics.ui.MonochromeExcept
+import com.rkd.audiobasics.ui.PlayerBarHeight
 import com.rkd.audiobasics.ui.MorphAlertDialog
 import com.rkd.audiobasics.ui.MorphOverlayHost
 import androidx.compose.ui.text.font.FontWeight
@@ -392,6 +396,11 @@ fun AudiobasicsApp(
 
     val backStack = rememberNavBackStack(HomeKey)
     var showPlayerDialog by remember { mutableStateOf(false) }
+    // Settings > Appearance > Player design > Fullscreen: the player is a slide-up sheet that
+    // grows out of the player bar (FullscreenPlayerSheet) instead of the card popup. The
+    // Feb 22 anniversary egg forces the classic card for the day, so it also overrides this.
+    val fullscreenPlayerPref by vm.fullscreenPlayer.collectAsState()
+    val useFullscreenPlayer = fullscreenPlayerPref && !vm.isAnniversaryDay
     var addToSheetSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
     var songInfoSong by remember { mutableStateOf<com.rkd.audiobasics.data.Song?>(null) }
     // Press-driven typography emphasis; each clickable releases it on finger-up/cancel.
@@ -978,17 +987,33 @@ fun AudiobasicsApp(
                 .fillMaxWidth()
                 .background(if (isDarkMode) AmoledBlack else Color(0xFFF5F5F5))
         ) {
-            PlayerBar(
-                vm = vm,
-                song = currentSong,
-                isPlaying = isPlaying,
-                isLoading = isLoading,
-                isDarkMode = isDarkMode,
-                onToggle = vm::togglePlayPause,
-                onAddTo = { currentSong?.let { addToSheetSong = it } },
-                onTap = { showPlayerDialog = true }
-            )
+            if (useFullscreenPlayer) {
+                // The real bar lives inside FullscreenPlayerSheet below (it is the sheet's
+                // collapsed content); this just keeps the layout space it sits in.
+                Spacer(Modifier.height(PlayerBarHeight))
+            } else {
+                PlayerBar(
+                    vm = vm,
+                    song = currentSong,
+                    isPlaying = isPlaying,
+                    isLoading = isLoading,
+                    isDarkMode = isDarkMode,
+                    onToggle = vm::togglePlayPause,
+                    onAddTo = { currentSong?.let { addToSheetSong = it } },
+                    onTap = { showPlayerDialog = true }
+                )
+            }
         }
+    }
+    if (useFullscreenPlayer) {
+        // Inside MonochromeExcept so popups opened from the player desaturate it like the rest.
+        FullscreenPlayerSheet(
+            vm = vm,
+            isDarkMode = isDarkMode,
+            collapseSignal = topKey,
+            onAddTo = { song -> addToSheetSong = song },
+            onNavigateQueue = { push(QueueKey) }
+        )
     }
     }
     MorphOverlayHost(state = morphOverlay)
