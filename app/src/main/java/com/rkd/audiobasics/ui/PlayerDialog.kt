@@ -485,6 +485,7 @@ fun PlayerDialog(
                                 resolvedAlbumCache = resolvedAlbumCache,
                                 onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
                                 livePlaybackDurationMs = duration,
+                                onDurationResolved = { id, durationMs -> vm.persistResolvedSongDuration(id, durationMs) },
                                 hapticsEnabled = hapticsEnabled,
                                 onDismiss = { scope.launch { flipTo(0f) } },
                                 onArtistClick = { artistName, artistId ->

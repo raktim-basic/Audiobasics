@@ -45,6 +45,7 @@ fun SongInfoCardContent(
     resolvedAlbumCache: Map<String, Album> = emptyMap(),
     onCacheResolvedAlbum: (Album) -> Unit = {},
     livePlaybackDurationMs: Long? = null,
+    onDurationResolved: (String, Long) -> Unit = { _, _ -> },
     hapticsEnabled: Boolean = false,
     onDismiss: () -> Unit,
     onArtistClick: (String, String?) -> Unit,
@@ -100,11 +101,23 @@ fun SongInfoCardContent(
 
     var resolvedDurationMs by remember(song.id) { mutableLongStateOf(0L) }
     LaunchedEffect(song.id, song.duration, livePlaybackDurationMs) {
-        if (song.duration <= 0 && (livePlaybackDurationMs ?: 0L) <= 0 && resolvedDurationMs <= 0) {
-            resolvedDurationMs = try {
-                Innertube.getVideoMetadata(song.id)?.duration?.takeIf { it > 0 } ?: 0L
-            } catch (_: Exception) {
-                0L
+        // Prefer the duration already known by the active Media3 player. This is the most
+        // accurate value for the exact stream currently loaded and also repairs playlist rows.
+        if (song.duration <= 0) {
+            val liveDuration = livePlaybackDurationMs?.takeIf { it > 0 }
+            if (liveDuration != null) {
+                resolvedDurationMs = liveDuration
+                onDurationResolved(song.id, liveDuration)
+            } else if (resolvedDurationMs <= 0) {
+                // Playlist entries can have no duration stored. Resolve it from the video's
+                // metadata by ID, then backfill every local playlist copy of that track.
+                resolvedDurationMs = try {
+                    Innertube.getVideoMetadata(song.id)?.duration?.takeIf { it > 0 }?.also { durationMs ->
+                        onDurationResolved(song.id, durationMs)
+                    } ?: 0L
+                } catch (_: Exception) {
+                    0L
+                }
             }
         }
     }

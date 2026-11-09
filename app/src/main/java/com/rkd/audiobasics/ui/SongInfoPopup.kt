@@ -47,6 +47,7 @@ fun SongInfoPopup(
             savedAlbums = savedAlbums,
             resolvedAlbumCache = resolvedAlbumCache,
             onCacheResolvedAlbum = { vm.cacheResolvedAlbum(it) },
+            onDurationResolved = { id, durationMs -> vm.persistResolvedSongDuration(id, durationMs) },
             hapticsEnabled = hapticsEnabled,
             onDismiss = close,
             onArtistClick = { name, id ->

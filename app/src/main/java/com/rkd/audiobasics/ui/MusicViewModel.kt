@@ -1038,6 +1038,23 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Persist a duration resolved from the canonical video metadata without touching other fields. */
+    fun persistResolvedSongDuration(songId: String, durationMs: Long) {
+        if (songId.isBlank() || durationMs <= 0L) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                playlistDao.updateSongDuration(songId, durationMs)
+                val playlistId = _openPlaylistId.value
+                if (playlistId != null) {
+                    val refreshed = playlistDao.getPlaylistSongs(playlistId)
+                    withContext(Dispatchers.Main) { _openPlaylistSongs.value = refreshed }
+                }
+            } catch (e: Exception) {
+                Log.e("YTLite", "Failed to persist duration for $songId: ${e.message}", e)
+            }
+        }
+    }
+
     fun play(song: Song) {
         viewModelScope.launch {
             fallbackRetryCount = 0
