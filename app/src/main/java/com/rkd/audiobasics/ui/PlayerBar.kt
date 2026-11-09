@@ -15,10 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -36,7 +38,10 @@ fun PlayerBar(
     onToggle: () -> Unit,
     onAddTo: () -> Unit,
     onTap: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Height of the navigation bar under the bar. The background and the played shade cover it too
+    // (so the bar runs to the bottom edge of the screen); the content stays in the area above it.
+    bottomInset: Dp = 0.dp
 ) {
     val context = LocalContext.current
     val hapticsEnabled by vm.hapticsEnabled.collectAsState()
@@ -54,6 +59,7 @@ fun PlayerBar(
                 .clip(barShape)
                 .background(bgColor)
                 .clickable(enabled = false) { }
+                .padding(bottom = bottomInset)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -108,6 +114,7 @@ fun PlayerBar(
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onTap()
             }
+            .padding(bottom = bottomInset)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -196,4 +203,44 @@ fun PlayerBar(
             }
         }
     }
+}
+
+
+/**
+ * A strip exactly as tall as the navigation bar, pinned to the bottom of the screen above the
+ * player sheet. While the sheet slides it hides whatever the expanded player has under the
+ * navigation bar (the artwork edge) by fading from the bar's colour to [playerBg]; once the sheet
+ * is nearly open it fades out so the player's own background takes over. [progress] is 0 when the
+ * sheet is collapsed and 1 when expanded, and is only read while drawing.
+ */
+@Composable
+fun PlayerBarNavCap(
+    vm: MusicViewModel,
+    isDarkMode: Boolean,
+    playerBg: Color,
+    progress: () -> Float,
+    modifier: Modifier = Modifier
+) {
+    // Same colours as PlayerBar's background and played shade.
+    val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE0E0E0)
+    val playedShade = if (isDarkMode) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.07f)
+    val positionState = vm.currentPosition.collectAsState()
+    val durationState = vm.duration.collectAsState()
+
+    Spacer(
+        modifier = modifier.drawBehind {
+            val p = progress().coerceIn(0f, 1f)
+            val alpha = 1f - ((p - 0.85f) / 0.15f).coerceIn(0f, 1f)
+            if (alpha <= 0f) return@drawBehind
+            drawRect(color = lerp(barColor, playerBg, p).copy(alpha = alpha))
+            val d = durationState.value
+            if (d > 0L) {
+                val played = (positionState.value.toFloat() / d.toFloat()).coerceIn(0f, 1f)
+                drawRect(
+                    color = playedShade.copy(alpha = playedShade.alpha * (1f - p) * alpha),
+                    size = androidx.compose.ui.geometry.Size(size.width * played, size.height)
+                )
+            }
+        }
+    )
 }

@@ -336,11 +336,25 @@ fun FullscreenPlayerSheet(
                         onToggle = vm::togglePlayPause,
                         onAddTo = { currentSong?.let(onAddTo) },
                         onTap = state::expandSoft,
-                        modifier = Modifier.height(PlayerBarHeight)
+                        modifier = Modifier.height(PlayerBarHeight + navBottom),
+                        bottomInset = navBottom
                     )
                 }
             }
         }
+
+        // Covers the navigation-bar area while the sheet slides, so the expanded player's artwork
+        // never shows through it and the colour doesn't jump when the sheet lands.
+        PlayerBarNavCap(
+            vm = vm,
+            isDarkMode = isDarkMode,
+            playerBg = if (isDarkMode) Color.Black else Color(0xFFE8E8E8),
+            progress = { state.progress },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(navBottom)
+        )
     }
 }
 
