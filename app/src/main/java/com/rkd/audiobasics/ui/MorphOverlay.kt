@@ -96,13 +96,11 @@ private const val MORPH_ENTER_MS = 280
 private const val MORPH_EXIT_MS = 200
 private val MorphEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 
-// Dialogs that grow out of a button/tap point travel much farther than a menu does, so they get
-// a longer run and Material's "emphasized" curves (fast start, long soft landing) — the same
-// feel as the Android 12+ Quick Settings tile -> dialog transition. Menus keep the values above.
-private const val MORPH_SOURCE_ENTER_MS = 300
-private const val MORPH_SOURCE_EXIT_MS = 220
-private val MorphSourceEnterEasing = CubicBezierEasing(0.65f, 0.13f, 0.37f, 1f)
-private val MorphSourceExitEasing = CubicBezierEasing(0.65f, 0.13f, 0.37f, 1f)
+// Centered popup dialogs use the same motion whether or not a tap source was captured.
+// Anchored menus retain the shorter Material curve above.
+private const val MORPH_DIALOG_ENTER_MS = 300
+private const val MORPH_DIALOG_EXIT_MS = 220
+private val MorphDialogEasing = CubicBezierEasing(0.65f, 0.13f, 0.37f, 1f)
 
 /** A tap is considered "the thing that opened this popup" while held, and for this long after release. */
 private const val MORPH_TAP_FRESH_MS = 800L
@@ -610,8 +608,9 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
 
     val requestClose = remember(entry) { { state.requestClose(entry) } }
 
-    // Dialogs that grow from a button / tap point get the longer emphasized transform and a
-    // content fade on its own timeline (so the text doesn't pop in during the fast first half).
+    // Centered popup dialogs use dialog motion regardless of source capture. Source capture
+    // controls only the origin/trigger treatment, never which easing curve the popup receives.
+    val isPopupDialog = entry.placement == MorphPlacement.Center && !entry.bare
     val sourced = entry.autoSourced
     val contentFade = remember { Animatable(0f) }
     val sourceButton = entry.sourceAnchor
@@ -620,19 +619,26 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     DisposableEffect(entry) { onDispose { sourceButton?.setHidden(entry, 0f) } }
 
     LaunchedEffect(entry.closing) {
-        if (sourced) {
-            if (entry.closing) {
-                launch { contentFade.animateTo(0f, tween(90, easing = LinearEasing)) }
-                progress.animateTo(0f, tween(MORPH_SOURCE_EXIT_MS, easing = MorphSourceExitEasing)) {
-                    sourceButton?.setHidden(entry, sourceHideAmount(value))
-                }
-                state.remove(entry)
-            } else {
-                launch { contentFade.animateTo(1f, tween(170, delayMillis = 85, easing = LinearEasing)) }
-                progress.animateTo(1f, tween(MORPH_SOURCE_ENTER_MS, easing = MorphSourceEnterEasing)) {
-                    sourceButton?.setHidden(entry, sourceHideAmount(value))
+        if (isPopupDialog) {
+            if (sourced) {
+                if (entry.closing) {
+                    launch { contentFade.animateTo(0f, tween(90, easing = LinearEasing)) }
+                } else {
+                    launch { contentFade.animateTo(1f, tween(170, delayMillis = 85, easing = LinearEasing)) }
                 }
             }
+
+            val target = if (entry.closing) 0f else 1f
+            progress.animateTo(
+                target,
+                tween(
+                    durationMillis = if (entry.closing) MORPH_DIALOG_EXIT_MS else MORPH_DIALOG_ENTER_MS,
+                    easing = MorphDialogEasing
+                )
+            ) {
+                if (sourced) sourceButton?.setHidden(entry, sourceHideAmount(value))
+            }
+            if (entry.closing) state.remove(entry)
         } else if (entry.closing) {
             progress.animateTo(0f, tween(MORPH_EXIT_MS, easing = MorphEasing)) {
                 sourceButton?.setHidden(entry, sourceHideAmount(value))
