@@ -28,6 +28,10 @@ import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.HapticUtils
 
+/** Colour laid over the played part of the player bar (and the navigation bar under it). */
+fun playerBarPlayedShade(isDarkMode: Boolean): Color =
+    if (isDarkMode) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.07f)
+
 @Composable
 fun PlayerBar(
     vm: MusicViewModel,
@@ -96,7 +100,7 @@ fun PlayerBar(
     // states are only read while drawing, so the bar redraws as the song plays but never recomposes.
     val positionState = vm.currentPosition.collectAsState()
     val durationState = vm.duration.collectAsState()
-    val playedShade = if (isDarkMode) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.07f)
+    val playedShade = playerBarPlayedShade(isDarkMode)
 
     Row(
         modifier = modifier
@@ -223,7 +227,7 @@ fun PlayerBarNavCap(
 ) {
     // Same colours as PlayerBar's background and played shade.
     val barColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFE0E0E0)
-    val playedShade = if (isDarkMode) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.07f)
+    val playedShade = playerBarPlayedShade(isDarkMode)
     val positionState = vm.currentPosition.collectAsState()
     val durationState = vm.duration.collectAsState()
 
