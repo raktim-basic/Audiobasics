@@ -108,6 +108,11 @@ private val MorphSourceExitEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 private const val MORPH_TAP_FRESH_MS = 800L
 private val MorphTapRectSize = 40.dp
 
+// The trigger button fades out over the first quarter of the open animation (while the container
+// is still covering it) and fades back in over the last quarter of the close, so it is never
+// left sitting on screen next to a dialog that grew out of it.
+private fun sourceHideAmount(p: Float): Float = (p / 0.25f).coerceIn(0f, 1f)
+
 private val MorphMenuMaxWidth = 280.dp
 private val MorphDialogMaxWidth = 560.dp
 private val MorphMenuMargin = 8.dp
@@ -147,7 +152,9 @@ class MorphEntry internal constructor(
      */
     internal val liveAnchor: (() -> Rect?)? = null,
     /** True when [anchor] was picked automatically from the tap that opened a dialog. */
-    internal val autoSourced: Boolean = false
+    internal val autoSourced: Boolean = false,
+    /** The tagged trigger button to fade out while this popup is open (null if there isn't one). */
+    internal val sourceAnchor: MorphAnchor? = null
 ) {
     /** True once dismissal has started; the host plays the shrink animation, then removes the entry. */
     var closing by mutableStateOf(false)
@@ -180,6 +187,7 @@ class MorphOverlayState {
     // without an explicit anchor grows from that source.
     private var tapSource: (() -> Rect?)? = null
     private var tapInitial: Rect? = null
+    private var tapAnchor: MorphAnchor? = null
     private var tapDown = false
     private var tapLastEventMs = 0L
     private var tapConsumed = true
@@ -192,6 +200,7 @@ class MorphOverlayState {
 
         var source: (() -> Rect?)? = null
         var initial: Rect? = null
+        var sourceAnchor: MorphAnchor? = null
         if (top != null) {
             val menuAnchor = top.anchor
             if (top.placement == MorphPlacement.Anchored && menuAnchor != null) {
@@ -199,6 +208,7 @@ class MorphOverlayState {
                 // itself grew from, which is exactly where that menu is collapsing back to.
                 initial = menuAnchor
                 source = { menuAnchor }
+                sourceAnchor = MorphSources.findByBounds(menuAnchor)
             } else {
                 // A tap inside a dialog/card: use a tagged button inside it if there is one,
                 // otherwise the touch point.
@@ -206,6 +216,7 @@ class MorphOverlayState {
                 if (hit != null) {
                     initial = hit.bounds()
                     source = hit.liveOrLast(initial)
+                    sourceAnchor = hit
                 }
             }
         } else if (live.isEmpty()) {
@@ -213,11 +224,13 @@ class MorphOverlayState {
             if (hit != null) {
                 initial = hit.bounds()
                 source = hit.liveOrLast(initial)
+                sourceAnchor = hit
             }
         } else {
             // Tap on a backdrop outside every open popup: that dismisses, it doesn't open anything.
             tapSource = null
             tapInitial = null
+            tapAnchor = null
             tapDown = true
             tapLastEventMs = SystemClock.uptimeMillis()
             tapConsumed = true
@@ -226,9 +239,11 @@ class MorphOverlayState {
         if (initial == null) {
             initial = pointRect
             source = { pointRect }
+            sourceAnchor = null
         }
         tapSource = source
         tapInitial = initial
+        tapAnchor = sourceAnchor
         tapDown = true
         tapLastEventMs = SystemClock.uptimeMillis()
         tapConsumed = false
@@ -240,14 +255,16 @@ class MorphOverlayState {
     }
 
     /** The source for a popup opening right now, or null if nothing was tapped recently. Single use per tap. */
-    private fun consumeTapSource(): Pair<Rect, () -> Rect?>? {
+    private fun consumeTapSource(): TapSource? {
         if (tapConsumed) return null
         val fresh = tapDown || SystemClock.uptimeMillis() - tapLastEventMs <= MORPH_TAP_FRESH_MS
         tapConsumed = true
         val initial = tapInitial ?: return null
         val source = tapSource ?: return null
-        return if (fresh) initial to source else null
+        return if (fresh) TapSource(initial, source, tapAnchor) else null
     }
+
+    internal class TapSource(val initial: Rect, val live: () -> Rect?, val anchor: MorphAnchor?)
 
     /**
      * Opens a popup on top of whatever's already open. [anchor] is the trigger's bounds (from
@@ -294,9 +311,11 @@ class MorphOverlayState {
         val tapped = consumeTapSource()
         val auto = if (anchor == null && placement == MorphPlacement.Center && !bare) tapped else null
         val e = MorphEntry(
-            auto?.first ?: anchor, placement, containerColor, highlightBounds, wide, bare,
+            auto?.initial ?: anchor, placement, containerColor, highlightBounds, wide, bare,
             onDismissRequest, content, dismissOnOutsideTap, isLocked,
-            liveAnchor = auto?.second, autoSourced = auto != null
+            liveAnchor = auto?.live, autoSourced = auto != null,
+            sourceAnchor = if (auto != null) auto.anchor
+                else if (anchor != null && !bare) MorphSources.findByBounds(anchor) else null
         )
         _entries.add(e)
         return e
@@ -333,6 +352,20 @@ class MorphAnchor {
     private var coordinates: LayoutCoordinates? = null
     internal var seq: Long = 0L
 
+    /** 0 = fully visible, 1 = hidden. Driven by the popup(s) that grew out of this trigger. */
+    internal var hidden by mutableStateOf(0f)
+        private set
+
+    // More than one popup can claim the same button at once (a menu collapsing into it while the
+    // dialog it opened grows out of it). Each reports its own amount; the button follows the
+    // largest, so it stays hidden through the hand-over instead of flickering between writers.
+    private val hideClaims = HashMap<Any, Float>()
+
+    internal fun setHidden(owner: Any, amount: Float) {
+        if (amount <= 0f) hideClaims.remove(owner) else hideClaims[owner] = amount
+        hidden = hideClaims.values.maxOrNull() ?: 0f
+    }
+
     internal fun update(c: LayoutCoordinates) {
         coordinates = c
     }
@@ -361,6 +394,17 @@ internal object MorphSources {
 
     fun unregister(a: MorphAnchor) {
         anchors.remove(a)
+    }
+
+    /** The registered button whose bounds equal [r] (to within a pixel), or null. */
+    fun findByBounds(r: Rect): MorphAnchor? {
+        for (a in anchors) {
+            val b = a.bounds() ?: continue
+            if (kotlin.math.abs(b.left - r.left) < 1f && kotlin.math.abs(b.top - r.top) < 1f &&
+                kotlin.math.abs(b.right - r.right) < 1f && kotlin.math.abs(b.bottom - r.bottom) < 1f
+            ) return a
+        }
+        return null
     }
 
     /** Smallest registered button containing [p] that was composed after [afterSeq], or null. */
@@ -422,6 +466,8 @@ private fun Modifier.morphTapTracker(state: MorphOverlayState): Modifier =
 
 fun Modifier.morphAnchor(anchor: MorphAnchor): Modifier =
     this.onGloballyPositioned { anchor.update(it) }
+        // Read inside the layer block, so fading only redraws this button — no recomposition.
+        .graphicsLayer { alpha = 1f - anchor.hidden }
 
 /**
  * For popups driven by an outer `var show... by remember { mutableStateOf(false) }` (the
@@ -568,22 +614,34 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     // content fade on its own timeline (so the text doesn't pop in during the fast first half).
     val sourced = entry.autoSourced
     val contentFade = remember { Animatable(0f) }
+    val sourceButton = entry.sourceAnchor
+
+    // Never leave the trigger hidden if this popup disappears for any reason.
+    DisposableEffect(entry) { onDispose { sourceButton?.setHidden(entry, 0f) } }
 
     LaunchedEffect(entry.closing) {
         if (sourced) {
             if (entry.closing) {
                 launch { contentFade.animateTo(0f, tween(90, easing = LinearEasing)) }
-                progress.animateTo(0f, tween(MORPH_SOURCE_EXIT_MS, easing = MorphSourceExitEasing))
+                progress.animateTo(0f, tween(MORPH_SOURCE_EXIT_MS, easing = MorphSourceExitEasing)) {
+                    sourceButton?.setHidden(entry, sourceHideAmount(value))
+                }
                 state.remove(entry)
             } else {
                 launch { contentFade.animateTo(1f, tween(200, delayMillis = 110, easing = LinearEasing)) }
-                progress.animateTo(1f, tween(MORPH_SOURCE_ENTER_MS, easing = MorphSourceEnterEasing))
+                progress.animateTo(1f, tween(MORPH_SOURCE_ENTER_MS, easing = MorphSourceEnterEasing)) {
+                    sourceButton?.setHidden(entry, sourceHideAmount(value))
+                }
             }
         } else if (entry.closing) {
-            progress.animateTo(0f, tween(MORPH_EXIT_MS, easing = MorphEasing))
+            progress.animateTo(0f, tween(MORPH_EXIT_MS, easing = MorphEasing)) {
+                sourceButton?.setHidden(entry, sourceHideAmount(value))
+            }
             state.remove(entry)
         } else {
-            progress.animateTo(1f, tween(MORPH_ENTER_MS, easing = MorphEasing))
+            progress.animateTo(1f, tween(MORPH_ENTER_MS, easing = MorphEasing)) {
+                sourceButton?.setHidden(entry, sourceHideAmount(value))
+            }
         }
     }
 
