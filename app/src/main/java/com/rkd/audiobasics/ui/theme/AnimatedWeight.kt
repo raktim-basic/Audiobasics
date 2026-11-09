@@ -1,10 +1,19 @@
 package com.rkd.audiobasics.ui.theme
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 
 /**
  * A font weight that glides between a thin and a thick value when [selected] changes, for tabs and
@@ -100,4 +109,84 @@ fun animatedPulseWeight(
         label = "pulseWeight",
     )
     return ((w + 5) / 10) * 10
+}
+
+
+/**
+ * Tracks where one list row sits on screen so its weight animation can be skipped when the row is
+ * far outside the viewport. Not Compose state: it is read once, when the row's target changes, so
+ * scrolling never recomposes anything.
+ */
+@Stable
+class WeightWindow {
+    internal var coords: LayoutCoordinates? = null
+
+    /** True when the row is on screen or within [bufferRows] row-heights above or below it. */
+    fun isNear(bufferRows: Int = 2): Boolean {
+        val c = coords ?: return true
+        if (!c.isAttached) return false
+        val h = c.size.height
+        val top = c.positionInWindow().y
+        val rootH = c.findRootCoordinates().size.height
+        return top + h > -bufferRows * h && top < rootH + bufferRows * h
+    }
+}
+
+@Composable
+fun rememberWeightWindow(): WeightWindow = remember { WeightWindow() }
+
+/** Put on the row's outermost modifier, before any padding, so the height is the whole row. */
+fun Modifier.trackWeightWindow(window: WeightWindow): Modifier =
+    onGloballyPositioned { window.coords = it }
+
+// Glide time per mode, in the order menu, reorder, pulse. Returning to normal uses the one left.
+private val RowDurations = intArrayOf(280, 300, 110)
+
+/**
+ * One weight animation for a list row, replacing the separate menu, reorder and pulse ones.
+ * Priority: [menuOpen], then [reorderActive], then [pulseActive], then [base]. A row near the
+ * viewport (see [WeightWindow]) glides to its target; a row far outside it jumps there.
+ */
+@Composable
+fun animatedRowWeight(
+    window: WeightWindow,
+    menuOpen: Boolean = false,
+    reorderActive: Boolean = false,
+    armed: Boolean = false,
+    pulseActive: Boolean = false,
+    pulsed: Boolean = false,
+    base: Int = 700,
+    menuWeight: Int = 900,
+    armedWeight: Int = 900,
+    thinWeight: Int = 300,
+    pulsedWeight: Int = 300,
+    othersWeight: Int = 900,
+): Int {
+    val mode = when {
+        menuOpen -> 0
+        reorderActive -> 1
+        pulseActive -> 2
+        else -> 3
+    }
+    val target = when (mode) {
+        0 -> menuWeight
+        1 -> if (armed) armedWeight else thinWeight
+        2 -> if (pulsed) pulsedWeight else othersWeight
+        else -> base
+    }
+    val anim = remember { Animatable(target.toFloat()) }
+    val lastMode = remember { intArrayOf(2) }
+    LaunchedEffect(mode, target) {
+        if (mode != 3) lastMode[0] = mode
+        if (anim.value == target.toFloat()) return@LaunchedEffect
+        if (window.isNear()) {
+            anim.animateTo(
+                target.toFloat(),
+                tween(RowDurations[lastMode[0]], easing = FastOutSlowInEasing)
+            )
+        } else {
+            anim.snapTo(target.toFloat())
+        }
+    }
+    return ((anim.value.toInt() + 5) / 10) * 10
 }
