@@ -445,10 +445,8 @@ private fun FullscreenPlayerContent(
                     .graphicsLayer { alpha = lyricsProgress.value }
             )
             // The pill hides while the lyrics are being scrolled and comes back by itself.
-            AnimatedVisibility(
+            PillVisibility(
                 visible = lyricsMode && !lyricsUserScrolling,
-                enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
-                exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 2 },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp)
             ) {
                 LyricsPill(
@@ -814,5 +812,26 @@ private fun FullscreenPlayerContent(
             onReset = { vm.resetTempoPitch() },
             onDismiss = { showTempoPitchDialog = false }
         )
+    }
+}
+
+/**
+ * Fades and slides its content in and out. Kept as its own function because AnimatedVisibility
+ * called straight from inside the player's Column > Box resolves to Column's version of it,
+ * which the compiler refuses there.
+ */
+@Composable
+private fun PillVisibility(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
+        exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 2 }
+    ) {
+        content()
     }
 }
