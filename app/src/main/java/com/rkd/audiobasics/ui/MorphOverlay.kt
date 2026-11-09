@@ -99,10 +99,10 @@ private val MorphEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 // Dialogs that grow out of a button/tap point travel much farther than a menu does, so they get
 // a longer run and Material's "emphasized" curves (fast start, long soft landing) — the same
 // feel as the Android 12+ Quick Settings tile -> dialog transition. Menus keep the values above.
-private const val MORPH_SOURCE_ENTER_MS = 380
-private const val MORPH_SOURCE_EXIT_MS = 280
-private val MorphSourceEnterEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-private val MorphSourceExitEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
+private const val MORPH_SOURCE_ENTER_MS = 300
+private const val MORPH_SOURCE_EXIT_MS = 220
+private val MorphSourceEnterEasing = CubicBezierEasing(0.65f, 0.13f, 0.37f, 1f)
+private val MorphSourceExitEasing = CubicBezierEasing(0.65f, 0.13f, 0.37f, 1f)
 
 /** A tap is considered "the thing that opened this popup" while held, and for this long after release. */
 private const val MORPH_TAP_FRESH_MS = 800L
@@ -628,7 +628,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                 }
                 state.remove(entry)
             } else {
-                launch { contentFade.animateTo(1f, tween(200, delayMillis = 110, easing = LinearEasing)) }
+                launch { contentFade.animateTo(1f, tween(170, delayMillis = 85, easing = LinearEasing)) }
                 progress.animateTo(1f, tween(MORPH_SOURCE_ENTER_MS, easing = MorphSourceEnterEasing)) {
                     sourceButton?.setHidden(entry, sourceHideAmount(value))
                 }

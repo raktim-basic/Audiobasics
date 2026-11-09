@@ -176,10 +176,13 @@ fun PlayerBar(
         }
 
         // + button (Add to playlist)
-        IconButton(onClick = {
-            if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-            onAddTo()
-        }) {
+        IconButton(
+            onClick = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                onAddTo()
+            },
+            modifier = Modifier.morphSource()
+        ) {
             Icon(
                 imageVector = Icons.Default.Add,
                 contentDescription = "Add to playlist",
