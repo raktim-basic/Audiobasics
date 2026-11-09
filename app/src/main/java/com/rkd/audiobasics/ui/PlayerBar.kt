@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -85,11 +86,24 @@ fun PlayerBar(
         return
     }
 
+    // How much of the song has played, as a slightly different shade on the left of the bar. The
+    // states are only read while drawing, so the bar redraws as the song plays but never recomposes.
+    val positionState = vm.currentPosition.collectAsState()
+    val durationState = vm.duration.collectAsState()
+    val playedShade = if (isDarkMode) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.07f)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(barShape)
             .background(bgColor)
+            .drawBehind {
+                val d = durationState.value
+                if (d > 0L) {
+                    val progress = (positionState.value.toFloat() / d.toFloat()).coerceIn(0f, 1f)
+                    drawRect(color = playedShade, size = androidx.compose.ui.geometry.Size(size.width * progress, size.height))
+                }
+            }
             .clickable {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 onTap()

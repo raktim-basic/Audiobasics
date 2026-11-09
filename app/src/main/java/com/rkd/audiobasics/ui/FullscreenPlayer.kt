@@ -481,21 +481,15 @@ private fun FullscreenPlayerContent(
         Spacer(Modifier.weight(0.5f))
         Spacer(Modifier.height(8.dp))
 
-        // ── Title / artist, centered. Long titles fade out instead of ending in "..." ────
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            FadeText(
-                text = song?.title ?: "Song Name",
-                fontFamily = NothingFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = 26.sp,
-                color = fg
-            )
-        }
+        // ── Title / artist, centered. A long title can be dragged sideways and returns to the start 1.5s after it is let go ────
+        ScrollReturnText(
+            text = song?.title ?: "Song Name",
+            modifier = Modifier.padding(horizontal = 24.dp),
+            fontFamily = NothingFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 26.sp,
+            color = fg
+        )
         Spacer(Modifier.height(4.dp))
         Row(
             modifier = Modifier
