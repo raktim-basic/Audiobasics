@@ -99,6 +99,10 @@ interface PlaylistDao {
         artistIds: String
     )
 
+    // Backfills duration independently so resolving it never overwrites other playlist metadata.
+    @Query("UPDATE playlist_songs SET duration = :duration WHERE songId = :songId AND duration <= 0")
+    suspend fun updateSongDuration(songId: String, duration: Long)
+
     // Writes corrected artist info onto every playlist row for this song (a song can sit in
     // several playlists, each with its own row).
     @Query("UPDATE playlist_songs SET artistNames = :artistNames, artistIds = :artistIds WHERE songId = :songId")
