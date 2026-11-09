@@ -2,12 +2,18 @@ package com.rkd.audiobasics.ui
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,14 +38,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +60,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.rkd.audiobasics.cache.CacheManager
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.utils.AudiobasicsLinks
@@ -116,6 +129,54 @@ class PlayerSheetState internal constructor(
     fun snapTo(value: Dp) {
         coroutineScope.launch { animatable.snapTo(value) }
     }
+
+    /**
+     * ViMusic's preUpPostDownNestedScrollConnection: lets a scrolling child (the lyrics) hand a
+     * downward drag at its very top over to the sheet, so swiping down from the top of the
+     * lyrics closes the player, and drags the sheet back up if the finger reverses.
+     */
+    val preUpPostDownNestedScrollConnection: NestedScrollConnection
+        get() = object : NestedScrollConnection {
+            var isTopReached = false
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (isExpanded && available.y < 0) isTopReached = false
+                return if (isTopReached && available.y < 0 && source == NestedScrollSource.UserInput) {
+                    dispatchRawDelta(available.y)
+                    available
+                } else {
+                    Offset.Zero
+                }
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (!isTopReached) isTopReached = consumed.y == 0f && available.y > 0
+                return if (isTopReached && source == NestedScrollSource.UserInput) {
+                    dispatchRawDelta(available.y)
+                    available
+                } else {
+                    Offset.Zero
+                }
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                return if (isTopReached) {
+                    performFling(-available.y)
+                    available
+                } else {
+                    Velocity.Zero
+                }
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                isTopReached = false
+                return Velocity.Zero
+            }
+        }
 
     /** [velocity] is positive when the finger moved up (towards expanding). */
     fun performFling(velocity: Float) {
@@ -233,9 +294,11 @@ fun FullscreenPlayerSheet(
         ) {
             if (!state.isCollapsed && hasSong) {
                 BackHandler(onBack = state::collapseSoft)
+                val sheetNestedScroll = remember(state) { state.preUpPostDownNestedScrollConnection }
                 FullscreenPlayerContent(
                     vm = vm,
                     isDarkMode = isDarkMode,
+                    sheetNestedScroll = sheetNestedScroll,
                     onCollapse = state::collapseSoft,
                     onNavigateQueue = onNavigateQueue
                 )
@@ -272,6 +335,7 @@ fun FullscreenPlayerSheet(
 private fun FullscreenPlayerContent(
     vm: MusicViewModel,
     isDarkMode: Boolean,
+    sheetNestedScroll: NestedScrollConnection,
     onCollapse: () -> Unit,
     onNavigateQueue: () -> Unit
 ) {
@@ -293,14 +357,32 @@ private fun FullscreenPlayerContent(
     var showSleepDialog by remember { mutableStateOf(false) }
     var showTempoPitchDialog by remember { mutableStateOf(false) }
     var showShareChoice by remember { mutableStateOf(false) }
-    var showLyrics by remember { mutableStateOf(false) }
+    // Lyrics mode: the artwork gives way to the lyrics, the bottom row slides away (taking the
+    // title and controls down with it) and a floating pill takes over (back, mode, refresh).
+    var lyricsMode by remember { mutableStateOf(false) }
+    var isRealTime by remember { mutableStateOf(true) }
+    var lyricsRefresh by remember { mutableStateOf(0) }
+    var lyricsUserScrolling by remember { mutableStateOf(false) }
+    val lyricsProgress = animateFloatAsState(
+        targetValue = if (lyricsMode) 1f else 0f,
+        animationSpec = tween(350),
+        label = "fullscreenLyricsProgress"
+    )
+    val lyricsVisible by remember { derivedStateOf { lyricsProgress.value > 0f } }
     var dragPosition by remember { mutableStateOf<Long?>(null) }
 
     // Light: the soft grey of the design. Dark: pure black, like the reference player.
-    val bgColor = if (isDarkMode) Color.Black else Color(0xFFE8E8E8)
+    val baseBg = if (isDarkMode) Color.Black else Color(0xFFE8E8E8)
+    val lyricsBg = if (isDarkMode) Color.Black else Color.White
     val fg = if (isDarkMode) Color.White else Color.Black
     val subColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
-    val pillBg = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
+    val basePillBg = if (isDarkMode) Color(0xFF2A2A2A) else Color.White
+    val lyricsPillBg = if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE8E8E8)
+    val bgColor = lerp(baseBg, lyricsBg, lyricsProgress.value)
+    val pillBg = lerp(basePillBg, lyricsPillBg, lyricsProgress.value)
+
+    // Back closes the lyrics first, then (via the sheet's own handler) the player.
+    BackHandler(enabled = lyricsMode) { lyricsMode = false }
 
     // The three dots turn red while a sleep timer or a tempo/pitch change is active, replacing
     // the little indicator icons the top bar used to carry.
@@ -320,16 +402,17 @@ private fun FullscreenPlayerContent(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // ── Artwork: square, shrinks on short screens ───────────────────────────────────
+        Box(modifier = Modifier.weight(1.25f).fillMaxWidth()) {
         BoxWithConstraints(
             modifier = Modifier
-                .weight(1.25f)
-                .fillMaxWidth()
+                .fillMaxSize()
+                .graphicsLayer { alpha = 1f - lyricsProgress.value }
                 .padding(start = 32.dp, end = 32.dp, top = 8.dp),
             contentAlignment = Alignment.Center
         ) {
             val side = minOf(maxWidth, maxHeight)
             val cachedThumbPath = remember(song?.id) {
-                song?.id?.let { com.rkd.audiobasics.cache.CacheManager.getCachedThumbPath(context, it) }
+                song?.id?.let { CacheManager.getCachedThumbPath(context, it) }
             }
             Crossfade(
                 targetState = song?.id to (cachedThumbPath ?: song?.thumbnail),
@@ -346,6 +429,51 @@ private fun FullscreenPlayerContent(
                         .clip(RoundedCornerShape(6.dp))
                 )
             }
+        }
+
+        if (lyricsVisible) {
+            FullscreenLyricsArea(
+                vm = vm,
+                textColor = fg,
+                isRealTime = isRealTime,
+                refreshKey = lyricsRefresh,
+                userScrolling = lyricsUserScrolling,
+                onUserScrolling = { lyricsUserScrolling = it },
+                sheetNestedScroll = sheetNestedScroll,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = lyricsProgress.value }
+            )
+            // The pill hides while the lyrics are being scrolled and comes back by itself.
+            AnimatedVisibility(
+                visible = lyricsMode && !lyricsUserScrolling,
+                enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
+                exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 2 },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp)
+            ) {
+                LyricsPill(
+                    isDarkMode = isDarkMode,
+                    isRealTime = isRealTime,
+                    onBack = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        lyricsMode = false
+                    },
+                    onRealTime = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        isRealTime = true
+                    },
+                    onStatic = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        isRealTime = false
+                    },
+                    onRefresh = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        song?.let { CacheManager.getLyricsFile(context, it.id).delete() }
+                        lyricsRefresh++
+                    }
+                )
+            }
+        }
         }
 
         // ── Controls block (ViMusic: weight 1, spacers 1 / 0.5 / 1 around the content) ───
@@ -546,6 +674,18 @@ private fun FullscreenPlayerContent(
 
         }
 
+        // The spacer, the bottom row and the lift below it share one box that shrinks to nothing
+        // in lyrics mode, which is what slides the title and controls down.
+        Column(
+            modifier = Modifier
+                .graphicsLayer { alpha = 1f - lyricsProgress.value }
+                .clipToBounds()
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    val h = (placeable.height * (1f - lyricsProgress.value)).toInt()
+                    layout(placeable.width, h) { placeable.place(0, 0) }
+                }
+        ) {
         // Space between the playback controls and the bottom row (was 10dp; a little more moves
         // the controls up).
         Spacer(Modifier.height(22.dp))
@@ -581,7 +721,7 @@ private fun FullscreenPlayerContent(
                 color = fg,
                 modifier = Modifier.clickable {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                    showLyrics = true
+                    lyricsMode = true
                 }
             )
 
@@ -608,12 +748,10 @@ private fun FullscreenPlayerContent(
 
         // Lifts the bottom row off the screen edge.
         Spacer(Modifier.height(16.dp))
+        }
     }
 
     // ── Popups: same ones the card player opens, stacked above the sheet ─────────────────
-    if (showLyrics) {
-        FullscreenLyricsPopup(vm = vm, isDarkMode = isDarkMode, onDismiss = { showLyrics = false })
-    }
     if (showAddToSheet && song != null) {
         AddToPlaylistSheet(
             song = song!!,
@@ -676,26 +814,5 @@ private fun FullscreenPlayerContent(
             onReset = { vm.resetTempoPitch() },
             onDismiss = { showTempoPitchDialog = false }
         )
-    }
-}
-
-/** Lyrics as a regular centered popup (the card player shows them on the back of its flip card). */
-@Composable
-private fun FullscreenLyricsPopup(
-    vm: MusicViewModel,
-    isDarkMode: Boolean,
-    onDismiss: () -> Unit
-) {
-    val bgColor = if (isDarkMode) Color(0xFF1E1E1E) else Color(0xFFF0F0F0)
-    val popupHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
-    MorphPopup(
-        onDismissRequest = onDismiss,
-        placement = MorphPlacement.Center,
-        containerColor = bgColor,
-        wide = true
-    ) { close ->
-        Box(modifier = Modifier.fillMaxWidth().height(popupHeight)) {
-            LyricsCardContent(vm = vm, isDarkMode = isDarkMode, onBack = close)
-        }
     }
 }

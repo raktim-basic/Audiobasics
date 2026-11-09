@@ -352,13 +352,13 @@ fun LyricsCardContent(
 }
 
 // ── Lyric look: tweak these to taste ────────────────────────────
-private const val LYRIC_FONT_SIZE = 18
-private const val LYRIC_THIN_WEIGHT = 350      // idle lines
-private const val LYRIC_ACTIVE_WEIGHT = 800    // the line being sung
-private const val LYRIC_ACTIVE_SCALE = 1.20f   // the active line also grows by this factor
+internal const val LYRIC_FONT_SIZE = 18
+internal const val LYRIC_THIN_WEIGHT = 350      // idle lines
+internal const val LYRIC_ACTIVE_WEIGHT = 800    // the line being sung
+internal const val LYRIC_ACTIVE_SCALE = 1.20f   // the active line also grows by this factor
 
 /** Inserts line breaks where [text] would wrap at [widthPx] with [style], so the wrapping is fixed. */
-private fun prewrapLyric(text: String, style: TextStyle, measurer: TextMeasurer, widthPx: Int): String {
+internal fun prewrapLyric(text: String, style: TextStyle, measurer: TextMeasurer, widthPx: Int): String {
     if (text.isBlank()) return " "
     if (widthPx <= 0) return text
     val result = measurer.measure(AnnotatedString(text), style, constraints = Constraints(maxWidth = widthPx))
