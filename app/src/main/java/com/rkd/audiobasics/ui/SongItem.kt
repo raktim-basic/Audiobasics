@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.rkd.audiobasics.data.Song
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.animatedBodyWeight
 import com.rkd.audiobasics.ui.theme.animatedPulseWeight
 import com.rkd.audiobasics.ui.theme.animatedReorderWeight
 import com.rkd.audiobasics.ui.theme.bodyFontAt
@@ -82,8 +83,20 @@ fun SongItem(
         base = 400, pressedWeight = 200, othersWeight = 650
     )
     val pulseInteraction = rememberPlayPulseInteractionSource("song:${song.id}", enabled = !reorderActive)
-    val titleWeight = if (contextMenuOpen) 900 else if (reorderTitle != 700) reorderTitle else pulseTitle
-    val subWeight = if (contextMenuOpen) 700 else if (reorderSub != 400) reorderSub else pulseSub
+    val menuTitleWeight = animatedBodyWeight(
+        selected = contextMenuOpen,
+        selectedWeight = 900,
+        unselectedWeight = 700,
+        durationMs = 280
+    )
+    val menuSubWeight = animatedBodyWeight(
+        selected = contextMenuOpen,
+        selectedWeight = 700,
+        unselectedWeight = 400,
+        durationMs = 280
+    )
+    val titleWeight = if (contextMenuOpen) menuTitleWeight else if (reorderTitle != 700) reorderTitle else pulseTitle
+    val subWeight = if (contextMenuOpen) menuSubWeight else if (reorderSub != 400) reorderSub else pulseSub
 
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)

@@ -45,6 +45,7 @@ import com.rkd.audiobasics.lyrics.LyricsOutcome
 import com.rkd.audiobasics.lyrics.LyricsRepository
 import com.rkd.audiobasics.lyrics.LyricsResult
 import com.rkd.audiobasics.ui.theme.BodyFont
+import com.rkd.audiobasics.ui.theme.NothingFont
 import com.rkd.audiobasics.ui.theme.animatedBodyWeight
 import com.rkd.audiobasics.ui.theme.bodyFontAt
 import kotlinx.coroutines.delay
@@ -180,8 +181,21 @@ fun FullscreenLyricsArea(
         }
     }
 
-    Box(
-        modifier = modifier
+    Column(modifier = modifier.fillMaxSize()) {
+        Text(
+            text = "Powered by LRCLIB",
+            fontFamily = NothingFont,
+            fontSize = 12.sp,
+            color = textColor.copy(alpha = 0.58f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 4.dp),
+            textAlign = TextAlign.Center
+        )
+        Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
                 drawContent()
@@ -301,6 +315,7 @@ fun FullscreenLyricsArea(
                     }
                 }
             }
+        }
         }
     }
 }

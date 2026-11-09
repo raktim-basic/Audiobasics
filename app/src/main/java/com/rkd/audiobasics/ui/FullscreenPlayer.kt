@@ -194,9 +194,14 @@ class PlayerSheetState internal constructor(
 }
 
 @Composable
-fun rememberPlayerSheetState(collapsedBound: Dp, expandedBound: Dp): PlayerSheetState {
+fun rememberPlayerSheetState(
+    collapsedBound: Dp,
+    expandedBound: Dp,
+    onAnchorChanged: (Int) -> Unit = {}
+): PlayerSheetState {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+    val currentOnAnchorChanged by rememberUpdatedState(onAnchorChanged)
 
     var previousAnchor by rememberSaveable { mutableStateOf(SheetCollapsedAnchor) }
 
@@ -211,7 +216,10 @@ fun rememberPlayerSheetState(collapsedBound: Dp, expandedBound: Dp): PlayerSheet
                     animatable.snapTo(animatable.value - with(density) { delta.toDp() })
                 }
             },
-            onAnchorChanged = { previousAnchor = it },
+            onAnchorChanged = { anchor ->
+                previousAnchor = anchor
+                currentOnAnchorChanged(anchor)
+            },
             coroutineScope = coroutineScope,
             animatable = animatable,
             collapsedBound = collapsedBound
@@ -249,9 +257,14 @@ fun FullscreenPlayerSheet(
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val navBottom = with(density) { navBars.getBottom(density).toDp() }
+        val context = LocalContext.current
+        val hapticsEnabled by vm.hapticsEnabled.collectAsState()
         val state = rememberPlayerSheetState(
             collapsedBound = PlayerBarHeight + navBottom,
-            expandedBound = maxHeight
+            expandedBound = maxHeight,
+            onAnchorChanged = {
+                if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+            }
         )
 
         // Navigating somewhere (artist, album, queue...) from the player closes it.

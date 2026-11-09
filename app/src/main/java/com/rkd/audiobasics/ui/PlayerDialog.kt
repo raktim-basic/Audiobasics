@@ -985,6 +985,7 @@ internal fun rememberOverflowMenuOpener(
                     text = "Queue",
                     leadingIcon = Icons.Default.QueueMusic,
                     onClick = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         close()
                         onDismiss()
                         onNavigateQueue()

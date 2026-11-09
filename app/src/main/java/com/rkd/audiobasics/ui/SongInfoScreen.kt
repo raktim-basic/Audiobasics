@@ -98,8 +98,20 @@ fun SongInfoCardContent(
         } else "N/A"
     }
 
-    val durationText = remember(song.duration, livePlaybackDurationMs) {
-        val ms = livePlaybackDurationMs?.takeIf { it > 0 } ?: song.duration
+    var resolvedDurationMs by remember(song.id) { mutableLongStateOf(0L) }
+    LaunchedEffect(song.id, song.duration, livePlaybackDurationMs) {
+        if (song.duration <= 0 && (livePlaybackDurationMs ?: 0L) <= 0 && resolvedDurationMs <= 0) {
+            resolvedDurationMs = try {
+                Innertube.getVideoMetadata(song.id)?.duration?.takeIf { it > 0 } ?: 0L
+            } catch (_: Exception) {
+                0L
+            }
+        }
+    }
+    val durationText = remember(song.duration, livePlaybackDurationMs, resolvedDurationMs) {
+        val ms = livePlaybackDurationMs?.takeIf { it > 0 }
+            ?: song.duration.takeIf { it > 0 }
+            ?: resolvedDurationMs
         if (ms > 0) {
             val totalSeconds = ms / 1000
             val m = totalSeconds / 60
