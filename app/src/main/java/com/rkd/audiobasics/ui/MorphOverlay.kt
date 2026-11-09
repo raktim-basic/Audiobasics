@@ -3,7 +3,6 @@ package com.rkd.audiobasics.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -622,9 +621,9 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
         if (isPopupDialog) {
             if (sourced) {
                 if (entry.closing) {
-                    launch { contentFade.animateTo(0f, tween(90, easing = LinearEasing)) }
+                    launch { contentFade.animateTo(0f, tween(90, easing = MorphDialogEasing)) }
                 } else {
-                    launch { contentFade.animateTo(1f, tween(170, delayMillis = 85, easing = LinearEasing)) }
+                    launch { contentFade.animateTo(1f, tween(170, delayMillis = 85, easing = MorphDialogEasing)) }
                 }
             }
 
