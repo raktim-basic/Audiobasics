@@ -3,6 +3,7 @@ package com.rkd.audiobasics.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -55,6 +57,8 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.*
+import android.os.SystemClock
+import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -92,6 +96,18 @@ private const val MORPH_ENTER_MS = 280
 private const val MORPH_EXIT_MS = 200
 private val MorphEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 
+// Dialogs that grow out of a button/tap point travel much farther than a menu does, so they get
+// a longer run and Material's "emphasized" curves (fast start, long soft landing) — the same
+// feel as the Android 12+ Quick Settings tile -> dialog transition. Menus keep the values above.
+private const val MORPH_SOURCE_ENTER_MS = 380
+private const val MORPH_SOURCE_EXIT_MS = 280
+private val MorphSourceEnterEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+private val MorphSourceExitEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
+
+/** A tap is considered "the thing that opened this popup" while held, and for this long after release. */
+private const val MORPH_TAP_FRESH_MS = 800L
+private val MorphTapRectSize = 40.dp
+
 private val MorphMenuMaxWidth = 280.dp
 private val MorphDialogMaxWidth = 560.dp
 private val MorphMenuMargin = 8.dp
@@ -123,10 +139,26 @@ class MorphEntry internal constructor(
      * (called by its content when the work finishes) still closes it. Read live, so it can
      * be backed by Compose state.
      */
-    val isLocked: () -> Boolean = { false }
+    val isLocked: () -> Boolean = { false },
+    /**
+     * Live bounds of the trigger, read every frame so the popup collapses back into where the
+     * button is NOW (not where it was when the popup opened). Null for entries opened with an
+     * explicit [anchor] rect (menus) — those keep using that rect.
+     */
+    internal val liveAnchor: (() -> Rect?)? = null,
+    /** True when [anchor] was picked automatically from the tap that opened a dialog. */
+    internal val autoSourced: Boolean = false
 ) {
     /** True once dismissal has started; the host plays the shrink animation, then removes the entry. */
     var closing by mutableStateOf(false)
+
+    /** Creation order, so [MorphSources] can tell which tagged buttons were composed inside this popup. */
+    internal val seq: Long = MorphSources.nextSeq()
+
+    /** Where the popup was last laid out (root coordinates); written during layout, read on taps. */
+    internal var layoutBounds: Rect? = null
+
+    internal fun currentAnchor(): Rect? = liveAnchor?.invoke() ?: anchor
 }
 
 /**
@@ -140,6 +172,82 @@ class MorphEntry internal constructor(
 class MorphOverlayState {
     private val _entries = mutableStateListOf<MorphEntry>()
     internal val entries: List<MorphEntry> get() = _entries
+
+    // ---- Where did the user just tap? -------------------------------------------------------
+    // Dialogs are opened by `if (showX) SomeDialog(...)` flags, far from the button that set the
+    // flag, so they can't be handed an anchor. Instead every pointer-down is recorded here (by
+    // [morphTapTracker]) together with the best "source" for it, and the next popup that opens
+    // without an explicit anchor grows from that source.
+    private var tapSource: (() -> Rect?)? = null
+    private var tapInitial: Rect? = null
+    private var tapDown = false
+    private var tapLastEventMs = 0L
+    private var tapConsumed = true
+
+    internal fun onTapDown(position: Offset, tapRectPx: Float) {
+        val half = tapRectPx / 2f
+        val pointRect = Rect(position.x - half, position.y - half, position.x + half, position.y + half)
+        val live = _entries.filter { !it.closing }
+        val top = live.lastOrNull { it.layoutBounds?.contains(position) == true }
+
+        var source: (() -> Rect?)? = null
+        var initial: Rect? = null
+        if (top != null) {
+            val menuAnchor = top.anchor
+            if (top.placement == MorphPlacement.Anchored && menuAnchor != null) {
+                // A tap on a menu item: the dialog it opens grows from the 3-dot button the menu
+                // itself grew from, which is exactly where that menu is collapsing back to.
+                initial = menuAnchor
+                source = { menuAnchor }
+            } else {
+                // A tap inside a dialog/card: use a tagged button inside it if there is one,
+                // otherwise the touch point.
+                val hit = MorphSources.hit(position, afterSeq = top.seq)
+                if (hit != null) {
+                    initial = hit.bounds()
+                    source = hit.liveOrLast(initial)
+                }
+            }
+        } else if (live.isEmpty()) {
+            val hit = MorphSources.hit(position, afterSeq = -1L)
+            if (hit != null) {
+                initial = hit.bounds()
+                source = hit.liveOrLast(initial)
+            }
+        } else {
+            // Tap on a backdrop outside every open popup: that dismisses, it doesn't open anything.
+            tapSource = null
+            tapInitial = null
+            tapDown = true
+            tapLastEventMs = SystemClock.uptimeMillis()
+            tapConsumed = true
+            return
+        }
+        if (initial == null) {
+            initial = pointRect
+            source = { pointRect }
+        }
+        tapSource = source
+        tapInitial = initial
+        tapDown = true
+        tapLastEventMs = SystemClock.uptimeMillis()
+        tapConsumed = false
+    }
+
+    internal fun onTapUp() {
+        tapDown = false
+        tapLastEventMs = SystemClock.uptimeMillis()
+    }
+
+    /** The source for a popup opening right now, or null if nothing was tapped recently. Single use per tap. */
+    private fun consumeTapSource(): Pair<Rect, () -> Rect?>? {
+        if (tapConsumed) return null
+        val fresh = tapDown || SystemClock.uptimeMillis() - tapLastEventMs <= MORPH_TAP_FRESH_MS
+        tapConsumed = true
+        val initial = tapInitial ?: return null
+        val source = tapSource ?: return null
+        return if (fresh) initial to source else null
+    }
 
     /**
      * Opens a popup on top of whatever's already open. [anchor] is the trigger's bounds (from
@@ -181,9 +289,14 @@ class MorphOverlayState {
         isLocked: () -> Boolean = { false },
         content: @Composable (close: () -> Unit) -> Unit
     ): MorphEntry {
+        // Always consume, so one tap never feeds two popups. Only dialogs without an explicit
+        // anchor use it; the card player (bare) keeps its own scale-in, and menus keep theirs.
+        val tapped = consumeTapSource()
+        val auto = if (anchor == null && placement == MorphPlacement.Center && !bare) tapped else null
         val e = MorphEntry(
-            anchor, placement, containerColor, highlightBounds, wide, bare, onDismissRequest, content,
-            dismissOnOutsideTap, isLocked
+            auto?.first ?: anchor, placement, containerColor, highlightBounds, wide, bare,
+            onDismissRequest, content, dismissOnOutsideTap, isLocked,
+            liveAnchor = auto?.second, autoSourced = auto != null
         )
         _entries.add(e)
         return e
@@ -218,6 +331,7 @@ val LocalMorphOverlay = staticCompositionLocalOf<MorphOverlayState> {
 @Stable
 class MorphAnchor {
     private var coordinates: LayoutCoordinates? = null
+    internal var seq: Long = 0L
 
     internal fun update(c: LayoutCoordinates) {
         coordinates = c
@@ -225,10 +339,86 @@ class MorphAnchor {
 
     /** Current bounds of the trigger in root coordinates, or null if it isn't on screen. */
     fun bounds(): Rect? = coordinates?.takeIf { it.isAttached }?.boundsInRoot()
+
+    /** Live bounds, falling back to [last] if the trigger has left the screen (e.g. its row was removed). */
+    internal fun liveOrLast(last: Rect?): () -> Rect? = { bounds() ?: last }
+}
+
+/**
+ * Every on-screen [MorphAnchor], so a tap can be matched to the button under the finger. Main
+ * thread only. A tagged button is any composable using [rememberMorphAnchor] / [morphSource].
+ */
+internal object MorphSources {
+    private val anchors = LinkedHashSet<MorphAnchor>()
+    private var counter = 0L
+
+    fun nextSeq(): Long = ++counter
+
+    fun register(a: MorphAnchor) {
+        a.seq = nextSeq()
+        anchors.add(a)
+    }
+
+    fun unregister(a: MorphAnchor) {
+        anchors.remove(a)
+    }
+
+    /** Smallest registered button containing [p] that was composed after [afterSeq], or null. */
+    fun hit(p: Offset, afterSeq: Long): MorphAnchor? {
+        var best: MorphAnchor? = null
+        var bestArea = Float.MAX_VALUE
+        for (a in anchors) {
+            if (a.seq <= afterSeq) continue
+            val b = a.bounds() ?: continue
+            if (!b.contains(p)) continue
+            val area = b.width * b.height
+            if (area < bestArea) {
+                best = a
+                bestArea = area
+            }
+        }
+        return best
+    }
 }
 
 @Composable
-fun rememberMorphAnchor(): MorphAnchor = remember { MorphAnchor() }
+fun rememberMorphAnchor(): MorphAnchor {
+    val anchor = remember { MorphAnchor() }
+    DisposableEffect(anchor) {
+        MorphSources.register(anchor)
+        onDispose { MorphSources.unregister(anchor) }
+    }
+    return anchor
+}
+
+/**
+ * Tag a button as the visual source of whatever dialog its tap opens: the dialog grows out of
+ * these exact bounds and collapses back into them. No wiring needed — [MorphOverlayHost] matches
+ * the tap to the smallest tagged button under the finger. Untagged triggers still work: the
+ * dialog then grows from the touch point.
+ */
+@Composable
+fun Modifier.morphSource(): Modifier {
+    val anchor = rememberMorphAnchor()
+    return this.morphAnchor(anchor)
+}
+
+/** Records every pointer-down/up (without consuming it) for [MorphOverlayState]'s tap source. */
+private fun Modifier.morphTapTracker(state: MorphOverlayState): Modifier =
+    this.pointerInput(state) {
+        val tapRectPx = MorphTapRectSize.toPx()
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull() ?: continue
+                if (!change.previousPressed && change.pressed) {
+                    state.onTapDown(change.position, tapRectPx)
+                } else if (change.previousPressed && !change.pressed) {
+                    state.onTapUp()
+                }
+            }
+        }
+    }
 
 fun Modifier.morphAnchor(anchor: MorphAnchor): Modifier =
     this.onGloballyPositioned { anchor.update(it) }
@@ -293,7 +483,7 @@ fun MorphOverlayHost(state: MorphOverlayState) {
             MonochromeLayer(
                 active = above.isNotEmpty(),
                 highlights = above.mapNotNull { it.highlightBounds },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().morphTapTracker(state)
             ) {
                 MorphContainer(entry = entry, state = state)
             }
@@ -374,8 +564,22 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
 
     val requestClose = remember(entry) { { state.requestClose(entry) } }
 
+    // Dialogs that grow from a button / tap point get the longer emphasized transform and a
+    // content fade on its own timeline (so the text doesn't pop in during the fast first half).
+    val sourced = entry.autoSourced
+    val contentFade = remember { Animatable(0f) }
+
     LaunchedEffect(entry.closing) {
-        if (entry.closing) {
+        if (sourced) {
+            if (entry.closing) {
+                launch { contentFade.animateTo(0f, tween(90, easing = LinearEasing)) }
+                progress.animateTo(0f, tween(MORPH_SOURCE_EXIT_MS, easing = MorphSourceExitEasing))
+                state.remove(entry)
+            } else {
+                launch { contentFade.animateTo(1f, tween(200, delayMillis = 110, easing = LinearEasing)) }
+                progress.animateTo(1f, tween(MORPH_SOURCE_ENTER_MS, easing = MorphSourceEnterEasing))
+            }
+        } else if (entry.closing) {
             progress.animateTo(0f, tween(MORPH_EXIT_MS, easing = MorphEasing))
             state.remove(entry)
         } else {
@@ -411,6 +615,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     requestClose = requestClose,
                     geometry = geometry,
                     progress = { progress.value },
+                    contentFadeOverride = if (sourced) ({ contentFade.value }) else null,
                     containerColor = containerColor,
                     cornerRadius = cornerRadius,
                     elevation = elevation,
@@ -472,6 +677,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
             }
 
             geometry.origin = Offset(x.toFloat(), y.toFloat())
+            entry.layoutBounds = Rect(x.toFloat(), y.toFloat(), (x + pw).toFloat(), (y + ph).toFloat())
 
             layout(screenW, screenH) {
                 placeable.place(x, y)
@@ -486,6 +692,7 @@ private fun MorphSurface(
     requestClose: () -> Unit,
     geometry: MorphGeometry,
     progress: () -> Float,
+    contentFadeOverride: (() -> Float)?,
     containerColor: Color,
     cornerRadius: Dp,
     elevation: Dp,
@@ -503,7 +710,7 @@ private fun MorphSurface(
                 val frame = morphFrame(
                     size,
                     geometry.origin,
-                    entry.anchor,
+                    entry.currentAnchor(),
                     endRadiusPx,
                     p
                 )
@@ -519,7 +726,7 @@ private fun MorphSurface(
                 val frame = morphFrame(
                     size,
                     geometry.origin,
-                    entry.anchor,
+                    entry.currentAnchor(),
                     endRadiusPx,
                     p
                 )
@@ -592,7 +799,7 @@ private fun MorphSurface(
     ) {
         Box(
             modifier = Modifier
-                    .graphicsLayer { alpha = contentAlpha(progress()) }
+                    .graphicsLayer { alpha = contentFadeOverride?.invoke() ?: contentAlpha(progress()) }
         ) {
             entry.content(close)
         }
@@ -709,7 +916,7 @@ fun MonochromeExcept(
     MonochromeLayer(
         active = overlay.entries.isNotEmpty(),
         highlights = overlay.highlightBoundsList,
-        modifier = modifier,
+        modifier = modifier.morphTapTracker(overlay),
         content = content
     )
 }

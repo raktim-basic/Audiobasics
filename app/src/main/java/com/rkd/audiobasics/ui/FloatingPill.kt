@@ -480,6 +480,7 @@ fun QueueNavPill(
         PillBackButton(iconColor, hapticsEnabled, context, onBack)
         Row(
             modifier = Modifier
+                .morphSource()
                 .clip(RoundedCornerShape(percent = 50))
                 .clickable {
                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)

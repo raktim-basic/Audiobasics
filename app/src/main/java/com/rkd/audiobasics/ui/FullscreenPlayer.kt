@@ -740,14 +740,14 @@ private fun FullscreenPlayerContent(
             IconButton(onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 song?.let(openSongInfo)
-            }) {
+            }, modifier = Modifier.morphSource()) {
                 Icon(Icons.Default.Info, contentDescription = "Song info", tint = fg, modifier = Modifier.size(28.dp))
             }
 
             IconButton(onClick = {
                 if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                 showAddToSheet = true
-            }) {
+            }, modifier = Modifier.morphSource()) {
                 Icon(Icons.Default.Add, contentDescription = "Add to playlist", tint = fg, modifier = Modifier.size(31.dp))
             }
 

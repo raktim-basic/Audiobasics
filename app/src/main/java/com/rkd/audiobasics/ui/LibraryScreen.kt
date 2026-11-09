@@ -249,7 +249,7 @@ fun LibraryScreen(
                                 IconButton(onClick = {
                                     if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                                     showCreateDialog = true
-                                }) {
+                                }, modifier = Modifier.morphSource()) {
                                     Text(
                                         text = "+",
                                         fontFamily = NothingFont,
