@@ -760,6 +760,13 @@ fun AudiobasicsApp(
     val density = LocalDensity.current
     val statusBarPx = WindowInsets.statusBars.getTop(density).toFloat()
     val navBarPx = WindowInsets.navigationBars.getBottom(density).toFloat()
+    // Classic and New player styles: the bar sits above the navigation bar, so the played shade
+    // continues across the strip drawn behind the navigation bar. (The Fullscreen style draws its
+    // own, inside the sheet.) The states are only read while drawing, so nothing recomposes.
+    val barPositionState = vm.currentPosition.collectAsState()
+    val barDurationState = vm.duration.collectAsState()
+    val barPlayedShade = com.rkd.audiobasics.ui.playerBarPlayedShade(isDarkMode)
+    val showBarShade = !useFullscreenPlayer && currentSong != null
 
     // Root box for the nav stack + player bar. MorphOverlayHost (below) draws above both;
     // LocalMorphOverlay is provided further up, around this whole function body, so every
@@ -781,6 +788,17 @@ fun AudiobasicsApp(
                     topLeft = Offset(0f, size.height - navBarPx),
                     size = Size(size.width, navBarPx)
                 )
+                if (showBarShade) {
+                    val d = barDurationState.value
+                    if (d > 0L) {
+                        val played = (barPositionState.value.toFloat() / d.toFloat()).coerceIn(0f, 1f)
+                        drawRect(
+                            barPlayedShade,
+                            topLeft = Offset(0f, size.height - navBarPx),
+                            size = Size(size.width * played, navBarPx)
+                        )
+                    }
+                }
             }
             .systemBarsPadding()
             .imePadding()
