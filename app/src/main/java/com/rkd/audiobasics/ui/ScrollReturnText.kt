@@ -3,6 +3,7 @@ package com.rkd.audiobasics.ui
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,8 +24,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * Single-line text for the fullscreen player's title. A short title is simply centred. A title
@@ -48,13 +51,29 @@ fun ScrollReturnText(
     // A new song starts at the beginning.
     LaunchedEffect(text) { scroll.scrollTo(0) }
 
-    // Every time scrolling stops (finger up and fling finished), wait, then go back to the start.
-    // collectLatest cancels the wait as soon as the person touches the title again.
+    // When the person lets go of the title (finger up, fling finished), wait, then go back to the
+    // start. Driven by the finger's drag events, not by isScrollInProgress: the return animation
+    // itself sets isScrollInProgress, which used to cancel the animation the moment it started.
     LaunchedEffect(scroll) {
-        snapshotFlow { scroll.isScrollInProgress }.collectLatest { moving ->
-            if (!moving && scroll.value > 0) {
-                delay(returnDelayMs)
-                scroll.animateScrollTo(0, tween(450, easing = FastOutSlowInEasing))
+        var returnJob: Job? = null
+        scroll.interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is DragInteraction.Start -> returnJob?.cancel()
+                is DragInteraction.Stop, is DragInteraction.Cancel -> {
+                    returnJob?.cancel()
+                    returnJob = launch {
+                        // Wait for the fling to end, then for a quiet [returnDelayMs]; if a new
+                        // fling started during the wait, start over.
+                        while (true) {
+                            snapshotFlow { scroll.isScrollInProgress }.first { !it }
+                            delay(returnDelayMs)
+                            if (!scroll.isScrollInProgress) break
+                        }
+                        if (scroll.value > 0) {
+                            scroll.animateScrollTo(0, tween(450, easing = FastOutSlowInEasing))
+                        }
+                    }
+                }
             }
         }
     }
