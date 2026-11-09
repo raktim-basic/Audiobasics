@@ -1,5 +1,8 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.animatedRowWeight
+import com.rkd.audiobasics.ui.theme.rememberWeightWindow
+import com.rkd.audiobasics.ui.theme.trackWeightWindow
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -477,12 +480,16 @@ fun AlbumRowItem(
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
     val playPulse = LocalPlayPulse.current
     val pulsedHere = playPulse.active && playPulse.songId == "album:${album.id}"
-    val titleWeight = animatedPulseWeight(pulsedHere, playPulse.active)
-    val subWeight = animatedPulseWeight(pulsedHere, playPulse.active, base = 400, pressedWeight = 200, othersWeight = 650)
+    val window = rememberWeightWindow()
+    val titleWeight = animatedRowWeight(window, pulseActive = playPulse.active, pulsed = pulsedHere)
+    val subWeight = animatedRowWeight(
+        window, pulseActive = playPulse.active, pulsed = pulsedHere,
+        base = 400, pulsedWeight = 200, othersWeight = 650
+    )
     val pulseInteraction = rememberPlayPulseInteractionSource("album:${album.id}")
 
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(
+        modifier = Modifier.fillMaxWidth().trackWeightWindow(window).clickable(
             interactionSource = pulseInteraction, indication = LocalIndication.current, onClick = onClick
         )
             .padding(horizontal = 16.dp, vertical = 10.dp),

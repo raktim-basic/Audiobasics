@@ -1,5 +1,8 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.animatedRowWeight
+import com.rkd.audiobasics.ui.theme.rememberWeightWindow
+import com.rkd.audiobasics.ui.theme.trackWeightWindow
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -456,12 +459,14 @@ private fun LibraryRow(
     var contextMenuOpen by remember { mutableStateOf(false) }
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF888888)
-    val labelWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
+    val window = rememberWeightWindow()
     val pulseId = "playlist:$label"
     val playPulse = LocalPlayPulse.current
     val pulsedHere = playPulse.active && playPulse.songId == pulseId
-    val pulseWeight = animatedPulseWeight(pulsedHere, playPulse.active)
-    val displayWeight = if (contextMenuOpen) 900 else if (labelWeight != 700) labelWeight else pulseWeight
+    val displayWeight = animatedRowWeight(
+        window, menuOpen = contextMenuOpen, reorderActive = reorderActive, armed = isDragging,
+        pulseActive = playPulse.active, pulsed = pulsedHere
+    )
     val pulseInteraction = rememberPlayPulseInteractionSource(pulseId, enabled = !reorderActive)
     // Bounds of the whole row — used only so the 3-dot menu can keep this row in color while
     // the rest of the list goes monochrome (see MorphOverlay's MonochromeExcept). The menu
@@ -469,7 +474,7 @@ private fun LibraryRow(
     val rowAnchor = rememberMorphAnchor()
 
     Row(
-        modifier = Modifier.fillMaxWidth().morphAnchor(rowAnchor)
+        modifier = Modifier.fillMaxWidth().trackWeightWindow(window).morphAnchor(rowAnchor)
             .clickable(interactionSource = pulseInteraction, indication = LocalIndication.current,
                 onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 14.dp),

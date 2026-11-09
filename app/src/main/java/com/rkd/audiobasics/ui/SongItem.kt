@@ -1,5 +1,8 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.animatedRowWeight
+import com.rkd.audiobasics.ui.theme.rememberWeightWindow
+import com.rkd.audiobasics.ui.theme.trackWeightWindow
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import android.content.Intent
 import androidx.compose.foundation.LocalIndication
@@ -68,35 +71,23 @@ fun SongItem(
     var showShareChoice by remember { mutableStateOf(false) }
     var contextMenuOpen by remember { mutableStateOf(false) }
 
-    // Reorder mode: picked-up row goes heavy, every other row goes thin.
-    val reorderTitle = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
-    val reorderSub = animatedReorderWeight(
-        armed = isDragging, reorderActive = reorderActive,
-        base = 400, armedWeight = 650, thinWeight = 200
-    )
-    // Play pulse (reverse): the song you just pressed goes thin, every other song goes heavy.
+    // One weight animation per text line. Priority: menu open, reorder (picked-up row heavy, the
+    // rest thin), play pulse (pressed song thin, the rest heavy), then normal. Rows far outside
+    // the viewport jump instead of gliding.
+    val window = rememberWeightWindow()
     val playPulse = LocalPlayPulse.current
     val pulsedHere = playPulse.active && playPulse.songId == "song:${song.id}"
-    val pulseTitle = animatedPulseWeight(pressed = pulsedHere, pulseActive = playPulse.active)
-    val pulseSub = animatedPulseWeight(
-        pressed = pulsedHere, pulseActive = playPulse.active,
-        base = 400, pressedWeight = 200, othersWeight = 650
+    val titleWeight = animatedRowWeight(
+        window, menuOpen = contextMenuOpen, reorderActive = reorderActive, armed = isDragging,
+        pulseActive = playPulse.active, pulsed = pulsedHere,
+        base = 700, menuWeight = 900, armedWeight = 900, thinWeight = 300, pulsedWeight = 300, othersWeight = 900
+    )
+    val subWeight = animatedRowWeight(
+        window, menuOpen = contextMenuOpen, reorderActive = reorderActive, armed = isDragging,
+        pulseActive = playPulse.active, pulsed = pulsedHere,
+        base = 400, menuWeight = 700, armedWeight = 650, thinWeight = 200, pulsedWeight = 200, othersWeight = 650
     )
     val pulseInteraction = rememberPlayPulseInteractionSource("song:${song.id}", enabled = !reorderActive)
-    val menuTitleWeight = animatedBodyWeight(
-        selected = contextMenuOpen,
-        selectedWeight = 900,
-        unselectedWeight = 700,
-        durationMs = 280
-    )
-    val menuSubWeight = animatedBodyWeight(
-        selected = contextMenuOpen,
-        selectedWeight = 700,
-        unselectedWeight = 400,
-        durationMs = 280
-    )
-    val titleWeight = if (contextMenuOpen) menuTitleWeight else if (reorderTitle != 700) reorderTitle else pulseTitle
-    val subWeight = if (contextMenuOpen) menuSubWeight else if (reorderSub != 400) reorderSub else pulseSub
 
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -158,6 +149,7 @@ fun SongItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .trackWeightWindow(window)
             .morphAnchor(rowAnchor)
             .background(bgColor)
             .clickable(

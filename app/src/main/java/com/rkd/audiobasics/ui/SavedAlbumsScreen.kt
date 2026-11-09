@@ -1,5 +1,8 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.animatedRowWeight
+import com.rkd.audiobasics.ui.theme.rememberWeightWindow
+import com.rkd.audiobasics.ui.theme.trackWeightWindow
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -380,17 +383,19 @@ fun AlbumItem(
     onRemoveFromSave: (() -> Unit)? = null
 ) {
     var contextMenuOpen by remember { mutableStateOf(false) }
-    val titleWeight = animatedReorderWeight(armed = isDragging, reorderActive = reorderActive)
-    val subWeight = animatedReorderWeight(
-        armed = isDragging, reorderActive = reorderActive,
-        base = 400, armedWeight = 650, thinWeight = 200
-    )
+    val window = rememberWeightWindow()
     val playPulse = LocalPlayPulse.current
     val pulsedHere = playPulse.active && playPulse.songId == "album:${album.id}"
-    val pulseTitle = animatedPulseWeight(pulsedHere, playPulse.active)
-    val pulseSub = animatedPulseWeight(pulsedHere, playPulse.active, base = 400, pressedWeight = 200, othersWeight = 650)
-    val titleDisplayWeight = if (contextMenuOpen) 900 else if (titleWeight != 700) titleWeight else pulseTitle
-    val subDisplayWeight = if (contextMenuOpen) 700 else if (subWeight != 400) subWeight else pulseSub
+    val titleDisplayWeight = animatedRowWeight(
+        window, menuOpen = contextMenuOpen, reorderActive = reorderActive, armed = isDragging,
+        pulseActive = playPulse.active, pulsed = pulsedHere,
+        base = 700, menuWeight = 900, armedWeight = 900, thinWeight = 300, pulsedWeight = 300, othersWeight = 900
+    )
+    val subDisplayWeight = animatedRowWeight(
+        window, menuOpen = contextMenuOpen, reorderActive = reorderActive, armed = isDragging,
+        pulseActive = playPulse.active, pulsed = pulsedHere,
+        base = 400, menuWeight = 700, armedWeight = 650, thinWeight = 200, pulsedWeight = 200, othersWeight = 650
+    )
     val pulseInteraction = rememberPlayPulseInteractionSource("album:${album.id}", enabled = !reorderActive)
     val textColor = if (isDarkMode) Color.White else Color.Black
     val subTextColor = if (isDarkMode) Color(0xFFAAAAAA) else Color(0xFF666666)
@@ -401,6 +406,7 @@ fun AlbumItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .trackWeightWindow(window)
             .morphAnchor(rowAnchor)
             .background(bgColor)
             .clickable(

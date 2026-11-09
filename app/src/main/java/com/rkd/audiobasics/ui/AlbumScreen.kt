@@ -1,5 +1,8 @@
 package com.rkd.audiobasics.ui
 
+import com.rkd.audiobasics.ui.theme.animatedRowWeight
+import com.rkd.audiobasics.ui.theme.rememberWeightWindow
+import com.rkd.audiobasics.ui.theme.trackWeightWindow
 import com.rkd.audiobasics.ui.theme.AmoledBlack
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -783,16 +786,20 @@ fun AlbumSongRow(
     // "Just played" pulse: the pressed song goes thin and the rest heavy for a moment, then back.
     val playPulse = LocalPlayPulse.current
     val pulsedHere = playPulse.active && playPulse.songId == "song:${song.id}"
-    val titleWeight = if (contextMenuOpen) 900 else animatedPulseWeight(pressed = pulsedHere, pulseActive = playPulse.active)
-    val subWeight = if (contextMenuOpen) 700 else animatedPulseWeight(
-        pressed = pulsedHere, pulseActive = playPulse.active,
-        base = 400, pressedWeight = 200, othersWeight = 650
+    val window = rememberWeightWindow()
+    val titleWeight = animatedRowWeight(
+        window, menuOpen = contextMenuOpen, pulseActive = playPulse.active, pulsed = pulsedHere
+    )
+    val subWeight = animatedRowWeight(
+        window, menuOpen = contextMenuOpen, pulseActive = playPulse.active, pulsed = pulsedHere,
+        base = 400, menuWeight = 700, pulsedWeight = 200, othersWeight = 650
     )
     val pulseInteraction = rememberPlayPulseInteractionSource("song:${song.id}")
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .trackWeightWindow(window)
             .background(bgColor)
             .clickable(
                 interactionSource = pulseInteraction,
