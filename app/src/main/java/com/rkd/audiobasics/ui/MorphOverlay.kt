@@ -3,6 +3,7 @@ package com.rkd.audiobasics.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -93,13 +94,13 @@ import kotlin.math.roundToInt
 
 private const val MORPH_ENTER_MS = 280
 private const val MORPH_EXIT_MS = 200
-private val MorphEasing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 
-// Centered popup dialogs use the same motion whether or not a tap source was captured.
-// Anchored menus retain the shorter Material curve above.
+// The raw Animatable values stay linear; this curve is applied explicitly to every visual
+// progress consumer (geometry, alpha, scrim, and source-button hand-off).
 private const val MORPH_DIALOG_ENTER_MS = 300
 private const val MORPH_DIALOG_EXIT_MS = 220
-private val MorphDialogEasing = CubicBezierEasing(0.65f, 0.13f, 0.37f, 1f)
+// Shared curve for every popup transition.
+private val MorphEasing = CubicBezierEasing(0.65f, 0.13f, 0.37f, 1f)
 
 /** A tap is considered "the thing that opened this popup" while held, and for this long after release. */
 private const val MORPH_TAP_FRESH_MS = 800L
@@ -613,6 +614,9 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
     val sourced = entry.autoSourced
     val contentFade = remember { Animatable(0f) }
     val sourceButton = entry.sourceAnchor
+    // Keep animation clocks linear and transform them exactly once here. This avoids having
+    // the animation spec and the geometry interpolation each own part of the easing behavior.
+    val visualProgress = { MorphEasing.transform(progress.value.coerceIn(0f, 1f)) }
 
     // Never leave the trigger hidden if this popup disappears for any reason.
     DisposableEffect(entry) { onDispose { sourceButton?.setHidden(entry, 0f) } }
@@ -621,9 +625,9 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
         if (isPopupDialog) {
             if (sourced) {
                 if (entry.closing) {
-                    launch { contentFade.animateTo(0f, tween(90, easing = MorphDialogEasing)) }
+                    launch { contentFade.animateTo(0f, tween(90, easing = LinearEasing)) }
                 } else {
-                    launch { contentFade.animateTo(1f, tween(170, delayMillis = 85, easing = MorphDialogEasing)) }
+                    launch { contentFade.animateTo(1f, tween(170, delayMillis = 85, easing = LinearEasing)) }
                 }
             }
 
@@ -632,20 +636,25 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                 target,
                 tween(
                     durationMillis = if (entry.closing) MORPH_DIALOG_EXIT_MS else MORPH_DIALOG_ENTER_MS,
-                    easing = MorphDialogEasing
+                    easing = LinearEasing
                 )
             ) {
-                if (sourced) sourceButton?.setHidden(entry, sourceHideAmount(value))
+                if (sourced) {
+                    val eased = MorphEasing.transform(value.coerceIn(0f, 1f))
+                    sourceButton?.setHidden(entry, sourceHideAmount(eased))
+                }
             }
             if (entry.closing) state.remove(entry)
         } else if (entry.closing) {
-            progress.animateTo(0f, tween(MORPH_EXIT_MS, easing = MorphEasing)) {
-                sourceButton?.setHidden(entry, sourceHideAmount(value))
+            progress.animateTo(0f, tween(MORPH_EXIT_MS, easing = LinearEasing)) {
+                val eased = MorphEasing.transform(value.coerceIn(0f, 1f))
+                sourceButton?.setHidden(entry, sourceHideAmount(eased))
             }
             state.remove(entry)
         } else {
-            progress.animateTo(1f, tween(MORPH_ENTER_MS, easing = MorphEasing)) {
-                sourceButton?.setHidden(entry, sourceHideAmount(value))
+            progress.animateTo(1f, tween(MORPH_ENTER_MS, easing = LinearEasing)) {
+                val eased = MorphEasing.transform(value.coerceIn(0f, 1f))
+                sourceButton?.setHidden(entry, sourceHideAmount(eased))
             }
         }
     }
@@ -661,7 +670,7 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
             modifier = Modifier
                 .fillMaxSize()
                 .drawBehind {
-                    drawRect(Color.Black.copy(alpha = scrimAlpha * progress.value))
+                    drawRect(Color.Black.copy(alpha = scrimAlpha * visualProgress()))
                 }
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
@@ -677,8 +686,10 @@ private fun MorphContainer(entry: MorphEntry, state: MorphOverlayState) {
                     entry = entry,
                     requestClose = requestClose,
                     geometry = geometry,
-                    progress = { progress.value },
-                    contentFadeOverride = if (sourced) ({ contentFade.value }) else null,
+                    progress = visualProgress,
+                    contentFadeOverride = if (sourced) ({
+                        MorphEasing.transform(contentFade.value.coerceIn(0f, 1f))
+                    }) else null,
                     containerColor = containerColor,
                     cornerRadius = cornerRadius,
                     elevation = elevation,
