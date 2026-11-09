@@ -325,8 +325,9 @@ fun LyricsPill(
             .fillMaxWidth(0.8f)
             .widthIn(max = 320.dp)
             .height(46.dp)
-            .clip(RoundedCornerShape(50))
-            .background(pillColor)
+            // Drop shadow in light mode, soft light halo in dark: the same lift as the app's
+            // other floating pills.
+            .pillSurface(pillColor)
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceEvenly

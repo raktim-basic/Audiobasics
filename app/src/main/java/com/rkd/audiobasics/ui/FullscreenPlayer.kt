@@ -47,6 +47,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -55,6 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -402,7 +404,14 @@ private fun FullscreenPlayerContent(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // ── Artwork: square, shrinks on short screens ───────────────────────────────────
-        Box(modifier = Modifier.weight(1.25f).fillMaxWidth()) {
+        // The stage lays out the artwork (or lyrics) above the controls block exactly like the
+        // old 1.25 : 1 weights, but in lyrics mode it grows by LyricsShift and moves the whole
+        // controls block down rigidly, so title, scrub bar and controls keep their spacing.
+        StageLayout(
+            lyricsProgress = lyricsProgress,
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
@@ -444,41 +453,12 @@ private fun FullscreenPlayerContent(
                     .fillMaxSize()
                     .graphicsLayer { alpha = lyricsProgress.value }
             )
-            // The pill hides while the lyrics are being scrolled and comes back by itself.
-            PillVisibility(
-                visible = lyricsMode && !lyricsUserScrolling,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp)
-            ) {
-                LyricsPill(
-                    isDarkMode = isDarkMode,
-                    isRealTime = isRealTime,
-                    onBack = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        lyricsMode = false
-                    },
-                    onRealTime = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        isRealTime = true
-                    },
-                    onStatic = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        isRealTime = false
-                    },
-                    onRefresh = {
-                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                        song?.let { CacheManager.getLyricsFile(context, it.id).delete() }
-                        lyricsRefresh++
-                    }
-                )
-            }
         }
         }
 
         // ── Controls block (ViMusic: weight 1, spacers 1 / 0.5 / 1 around the content) ───
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
         // Gap 1 (artwork -> title) and gap 2 (artist -> progress bar) share the same weight, so
@@ -593,7 +573,7 @@ private fun FullscreenPlayerContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 30.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -620,8 +600,7 @@ private fun FullscreenPlayerContent(
                 modifier = Modifier
                     .width(168.dp)
                     .height(58.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(pillBg)
+                    .pillSurface(pillBg, 8.dp)
                     .clickable {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.togglePlayPause()
@@ -670,19 +649,59 @@ private fun FullscreenPlayerContent(
             }
         }
 
+        // Pulls the controls up a little, closer to the progress bar.
+        Spacer(Modifier.height(16.dp))
         }
 
-        // The spacer, the bottom row and the lift below it share one box that shrinks to nothing
-        // in lyrics mode, which is what slides the title and controls down.
+        // The floating lyrics pill is the stage's third child (the stage places it just below
+        // the lyrics, over the gap above the title). It hides while the lyrics are scrolled.
+        if (lyricsVisible) {
+            // The pill hides while the lyrics are being scrolled and comes back by itself.
+            PillVisibility(
+                visible = lyricsMode && !lyricsUserScrolling
+            ) {
+                LyricsPill(
+                    isDarkMode = isDarkMode,
+                    isRealTime = isRealTime,
+                    onBack = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        lyricsMode = false
+                    },
+                    onRealTime = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        isRealTime = true
+                    },
+                    onStatic = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        isRealTime = false
+                    },
+                    onRefresh = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        song?.let { CacheManager.getLyricsFile(context, it.id).delete() }
+                        lyricsRefresh++
+                    }
+                )
+            }
+        }
+        }
+
+        // The spacer, the bottom row and the lift below it share one box that fades out in lyrics
+        // mode and gives up LyricsShift of its height, which is what slides the title and
+        // controls down.
         Column(
             modifier = Modifier
                 .graphicsLayer { alpha = 1f - lyricsProgress.value }
-                .clipToBounds()
                 .layout { measurable, constraints ->
                     val placeable = measurable.measure(constraints)
-                    val h = (placeable.height * (1f - lyricsProgress.value)).toInt()
+                    val h = (placeable.height - LyricsShift.roundToPx() * lyricsProgress.value)
+                        .toInt().coerceAtLeast(0)
                     layout(placeable.width, h) { placeable.place(0, 0) }
                 }
+                .then(
+                    // Invisible but still there in lyrics mode: swallow touches so the hidden
+                    // buttons can't be pressed.
+                    if (lyricsMode) Modifier.pointerInput(Unit) {} else Modifier
+                )
         ) {
         // Space between the playback controls and the bottom row (was 10dp; a little more moves
         // the controls up).
@@ -833,5 +852,50 @@ private fun PillVisibility(
         exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 2 }
     ) {
         content()
+    }
+}
+
+/** How much taller the lyrics stage gets (and how far the title and controls drop) in lyrics mode. */
+private val LyricsShift = 60.dp
+
+/** How far below the lyrics area the floating pill's bottom edge sits (over the gap above the title). */
+private val LyricsPillDrop = 18.dp
+
+/**
+ * Lays out its children as: [0] the artwork/lyrics area on top, [1] the controls block below it,
+ * and optionally [2] the floating lyrics pill.
+ *
+ * In normal mode the split is the old weights: controls get 1 / 2.25 of the height, the artwork
+ * the rest. In lyrics mode the stage is [LyricsShift] taller (the bottom row gave that height up),
+ * but the controls block keeps exactly the height it had, so everything in it, the title, the
+ * progress bar and the buttons, moves down as one piece and keeps its spacing.
+ */
+@Composable
+private fun StageLayout(
+    lyricsProgress: State<Float>,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val total = constraints.maxHeight
+        val normalTotal = total - LyricsShift.roundToPx() * lyricsProgress.value
+        val controlsHeight = (normalTotal / 2.25f).roundToInt().coerceIn(0, total)
+        val topHeight = total - controlsHeight
+
+        val top = measurables[0].measure(Constraints.fixed(width, topHeight))
+        val controls = measurables[1].measure(Constraints.fixed(width, controlsHeight))
+        val pill = measurables.getOrNull(2)?.measure(constraints.copy(minWidth = 0, minHeight = 0))
+
+        layout(width, total) {
+            top.placeRelative(0, 0)
+            controls.placeRelative(0, topHeight)
+            pill?.let {
+                it.placeRelative(
+                    x = (width - it.width) / 2,
+                    y = topHeight + LyricsPillDrop.roundToPx() - it.height
+                )
+            }
+        }
     }
 }
