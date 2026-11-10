@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -14,6 +15,14 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+
+/**
+ * True while Settings > Appearance > "Immersive text" is on (the default). When it is off, the
+ * weight changes that react to taps and long presses (play pulse, context-menu open, reorder
+ * mode) are skipped, so list rows keep their normal weight and never re-lay-out their text while
+ * a finger is down. Provided once by MainActivity.
+ */
+val LocalImmersiveText = staticCompositionLocalOf { true }
 
 /**
  * A font weight that glides between a thin and a thick value when [selected] changes, for tabs and
@@ -73,8 +82,10 @@ fun animatedReorderWeight(
     thinWeight: Int = 300,
     durationMs: Int = 300,
 ): Int {
+    val immersive = LocalImmersiveText.current
     val w by animateIntAsState(
         targetValue = when {
+            !immersive -> base
             armed -> armedWeight
             reorderActive -> thinWeight
             else -> base
@@ -99,9 +110,10 @@ fun animatedPulseWeight(
     othersWeight: Int = 900,
     durationMs: Int = 110,
 ): Int {
+    val immersive = LocalImmersiveText.current
     val w by animateIntAsState(
         targetValue = when {
-            !pulseActive -> base
+            !immersive || !pulseActive -> base
             pressed -> pressedWeight
             else -> othersWeight
         },
@@ -162,7 +174,9 @@ fun animatedRowWeight(
     pulsedWeight: Int = 300,
     othersWeight: Int = 900,
 ): Int {
+    val immersive = LocalImmersiveText.current
     val mode = when {
+        !immersive -> 3
         menuOpen -> 0
         reorderActive -> 1
         pulseActive -> 2
