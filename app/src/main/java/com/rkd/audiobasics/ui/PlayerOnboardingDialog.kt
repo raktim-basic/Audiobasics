@@ -1,7 +1,6 @@
 package com.rkd.audiobasics.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,21 +14,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rkd.audiobasics.ui.theme.BodyFont
 import com.rkd.audiobasics.ui.theme.NothingFont
+import com.rkd.audiobasics.ui.theme.animatedBodyWeight
+import com.rkd.audiobasics.ui.theme.bodyFontAt
 import com.rkd.audiobasics.utils.HapticUtils
 
 /**
  * One-time first-launch popup (see MusicViewModel.showPlayerOnboarding) asking which player design
- * to use. Same locked popup style as AppLinksNudgeDialog: it has to be answered. Designs are
- * numbered like Settings > Appearance: 0 = OG, 1 = basics, 2 = Full.
+ * to use. Same locked popup style as AppLinksNudgeDialog: it has to be answered. Uses the same
+ * segmented selector as Settings > Appearance. Designs are numbered like there:
+ * 0 = OG, 1 = basics, 2 = Full.
  */
 @Composable
 fun PlayerOnboardingDialog(
@@ -78,41 +77,34 @@ fun PlayerOnboardingDialog(
                 Spacer(Modifier.height(16.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    listOf(0 to "OG", 1 to "basics", 2 to "Full").forEach { (design, label) ->
-                        val isSelected = selected == design
-                        Column(
+                    listOf(0 to "OG", 1 to "basics", 2 to "Full").forEach { (value, label) ->
+                        val isSelected = selected == value
+                        Row(
                             modifier = Modifier
                                 .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) Color.Red else Color.Transparent)
                                 .clickable {
                                     if (!isSelected && hapticsEnabled) HapticUtils.performSubtleHaptic(context)
-                                    selected = design
-                                },
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                    selected = value
+                                }
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            PlayerPreview(
-                                design = design,
-                                isDarkMode = isDarkMode,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(0.6f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .border(
-                                        width = if (isSelected) 2.dp else 1.dp,
-                                        color = if (isSelected) Color.Red else textColor.copy(alpha = 0.15f),
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                            )
-                            Spacer(Modifier.height(8.dp))
+                            val segWeight = animatedBodyWeight(isSelected)
                             Text(
                                 text = label,
-                                fontFamily = NothingFont,
-                                fontWeight = FontWeight.Bold,
+                                fontFamily = bodyFontAt(segWeight),
+                                fontWeight = FontWeight(segWeight),
                                 fontSize = 13.sp,
-                                textAlign = TextAlign.Center,
-                                color = if (isSelected) Color.Red else textColor
+                                color = if (isSelected) Color.White else textColor
                             )
                         }
                     }
@@ -131,136 +123,4 @@ fun PlayerOnboardingDialog(
             }
         }
     }
-}
-
-/** A tiny abstract drawing of each player design: OG card, basics (art-first card), Full sheet. */
-@Composable
-private fun PlayerPreview(design: Int, isDarkMode: Boolean, modifier: Modifier) {
-    val ink = if (isDarkMode) Color.White else Color.Black
-    val art = Color(0xFF8A8A8A)
-    when (design) {
-        0 -> Column(
-            modifier = modifier
-                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color.White)
-                .padding(8.dp)
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(art)
-            )
-            Spacer(Modifier.height(10.dp))
-            PreviewBar(0.7f, 4.dp, ink.copy(alpha = 0.8f))
-            Spacer(Modifier.height(4.dp))
-            PreviewBar(0.45f, 3.dp, ink.copy(alpha = 0.4f))
-            Spacer(Modifier.height(8.dp))
-            PreviewBar(1f, 2.dp, ink.copy(alpha = 0.25f))
-            Spacer(Modifier.weight(1f))
-            PreviewPlay(Modifier.align(Alignment.CenterHorizontally))
-        }
-
-        1 -> Box(modifier = modifier.background(art)) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.Black.copy(alpha = 0.8f),
-                                Color.Black.copy(alpha = 0.45f),
-                                Color.Black.copy(alpha = 0.85f)
-                            )
-                        )
-                    )
-            )
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                repeat(2) {
-                    Box(
-                        Modifier
-                            .size(5.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(Color.White.copy(alpha = 0.7f))
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(8.dp)
-            ) {
-                PreviewBar(0.7f, 5.dp, Color.White.copy(alpha = 0.9f))
-                Spacer(Modifier.height(4.dp))
-                PreviewBar(0.45f, 3.dp, Color.White.copy(alpha = 0.5f))
-                Spacer(Modifier.height(8.dp))
-                PreviewBar(1f, 2.dp, Color.White.copy(alpha = 0.3f))
-                Spacer(Modifier.height(8.dp))
-                PreviewPlay(Modifier.align(Alignment.CenterHorizontally))
-            }
-        }
-
-        else -> Column(
-            modifier = modifier.background(if (isDarkMode) Color(0xFF121212) else Color(0xFFF5F5F5))
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1.1f)
-                    .background(art)
-            ) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 5.dp)
-                        .width(18.dp)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.White.copy(alpha = 0.7f))
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.9f)
-                    .padding(8.dp)
-            ) {
-                PreviewBar(0.7f, 4.dp, ink.copy(alpha = 0.8f))
-                Spacer(Modifier.height(4.dp))
-                PreviewBar(0.45f, 3.dp, ink.copy(alpha = 0.4f))
-                Spacer(Modifier.height(8.dp))
-                PreviewBar(1f, 2.dp, ink.copy(alpha = 0.25f))
-                Spacer(Modifier.weight(1f))
-                PreviewPlay(Modifier.align(Alignment.CenterHorizontally))
-            }
-        }
-    }
-}
-
-@Composable
-private fun PreviewBar(widthFraction: Float, height: Dp, color: Color) {
-    Box(
-        Modifier
-            .fillMaxWidth(widthFraction)
-            .height(height)
-            .clip(RoundedCornerShape(50))
-            .background(color)
-    )
-}
-
-@Composable
-private fun PreviewPlay(modifier: Modifier) {
-    Box(
-        modifier
-            .width(18.dp)
-            .height(12.dp)
-            .clip(RoundedCornerShape(3.dp))
-            .background(Color.Red)
-    )
 }
