@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
@@ -553,6 +554,7 @@ private fun AppearancePage(
     val newPlayerDesign by vm.newPlayerDesign.collectAsState()
     val fullscreenPlayer by vm.fullscreenPlayer.collectAsState()
     val autoImmerseEnabled by vm.autoImmerseEnabled.collectAsState()
+    val immersiveText by vm.immersiveText.collectAsState()
 
     val scrollState = rememberScrollState()
 
@@ -786,6 +788,52 @@ private fun AppearancePage(
                     onCheckedChange = {
                         if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
                         vm.setAutoImmerseEnabled(it)
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color.Red,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.Gray
+                    )
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(surfaceColor)
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.TextFields,
+                    contentDescription = null,
+                    tint = textColor,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    val settingWeight = animatedSettingWeight(immersiveText)
+                    Text(
+                        text = "Immersive text",
+                        fontFamily = bodyFontAt(settingWeight),
+                        fontWeight = FontWeight(settingWeight),
+                        fontSize = 15.sp,
+                        color = textColor
+                    )
+                    Text(
+                        text = "Change weight on taps and long presses",
+                        fontFamily = BodyFont,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 12.sp,
+                        color = if (isDarkMode) Color(0xFF888888) else Color(0xFF666666)
+                    )
+                }
+                Switch(
+                    checked = immersiveText,
+                    onCheckedChange = {
+                        if (hapticsEnabled) HapticUtils.performSubtleHaptic(context)
+                        vm.setImmersiveText(it)
                     },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,

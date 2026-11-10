@@ -374,6 +374,17 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("new_player_design", enabled).apply()
     }
 
+    // Immersive text (Settings > Appearance): text changes weight on taps and long presses (play
+    // pulse, menu open, reorder). Off = rows keep a fixed weight, which avoids per-frame text
+    // re-layout on low-end devices. See LocalImmersiveText.
+    private val _immersiveText = MutableStateFlow(prefs.getBoolean("immersive_text", true))
+    val immersiveText: StateFlow<Boolean> = _immersiveText
+
+    fun setImmersiveText(enabled: Boolean) {
+        _immersiveText.value = enabled
+        prefs.edit().putBoolean("immersive_text", enabled).apply()
+    }
+
     // Fullscreen player: the third option of Settings > Appearance > Player design. When on, the
     // player is a full-screen sheet that slides up from the player bar (FullscreenPlayer.kt)
     // instead of the card popup; newPlayerDesign above is left untouched so it still applies to

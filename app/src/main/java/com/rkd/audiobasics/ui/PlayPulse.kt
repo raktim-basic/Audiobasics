@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import com.rkd.audiobasics.ui.theme.LocalImmersiveText
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -51,13 +52,15 @@ class PlayPulseState {
 fun rememberPlayPulseInteractionSource(id: String, enabled: Boolean = true): MutableInteractionSource {
     val source = androidx.compose.runtime.remember { MutableInteractionSource() }
     val pulse = LocalPlayPulse.current
-    LaunchedEffect(source, id, pulse, enabled) {
+    // With "Immersive text" off no pulse is ever started, so a tap changes no state and no row recomposes.
+    val immersive = LocalImmersiveText.current
+    LaunchedEffect(source, id, pulse, enabled, immersive) {
         var pressToken = -1L
         var releaseJob: Job? = null
         try {
             source.interactions.collect { interaction: Interaction ->
                 when (interaction) {
-                    is PressInteraction.Press -> if (enabled) {
+                    is PressInteraction.Press -> if (enabled && immersive) {
                         releaseJob?.cancel()
                         pressToken = pulse.press(id)
                     }
