@@ -50,6 +50,7 @@ import com.rkd.audiobasics.ui.LocalMorphOverlay
 import com.rkd.audiobasics.ui.LocalSongInfo
 import com.rkd.audiobasics.ui.LocalPlayPulse
 import com.rkd.audiobasics.ui.LocalStreamOnly
+import com.rkd.audiobasics.ui.theme.LocalImmersiveText
 import com.rkd.audiobasics.ui.PlayPulseState
 import com.rkd.audiobasics.ui.SongInfoPopup
 import com.rkd.audiobasics.ui.FullscreenPlayerSheet
@@ -384,6 +385,7 @@ fun AudiobasicsApp(
     val isLoading by vm.isLoading.collectAsState()
     val showStorageLow by vm.showStorageLow.collectAsState()
     val streamOnly by vm.streamOnly.collectAsState()
+    val immersiveText by vm.immersiveText.collectAsState()
     val navigateToUpdater by vm.navigateToUpdater.collectAsState()
     val smartInputsVisible by vm.smartInputsVisible.collectAsState()
     val smartInputsLoading by vm.smartInputsLoading.collectAsState()
@@ -577,6 +579,7 @@ fun AudiobasicsApp(
         LocalSongInfo provides openSongInfo,
         LocalPlayPulse provides playPulse,
         LocalStreamOnly provides streamOnly,
+        LocalImmersiveText provides immersiveText,
         LocalViewConfiguration provides appViewConfiguration
     ) {
 
