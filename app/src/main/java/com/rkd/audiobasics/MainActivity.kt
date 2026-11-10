@@ -129,6 +129,7 @@ import com.rkd.audiobasics.ui.SearchScreen
 import com.rkd.audiobasics.ui.StreamErrorDialog
 import com.rkd.audiobasics.ui.SettingsScreen
 import com.rkd.audiobasics.ui.AppLinksNudgeDialog
+import com.rkd.audiobasics.ui.PlayerOnboardingDialog
 import com.rkd.audiobasics.ui.SmartInputsDialog
 import com.rkd.audiobasics.utils.AudiobasicsLinks
 import com.rkd.audiobasics.ui.UpdaterScreen
@@ -394,6 +395,7 @@ fun AudiobasicsApp(
     val pendingAlbumLinkNavigation by vm.pendingAlbumLinkNavigation.collectAsState()
     val pendingArtistLinkNavigation by vm.pendingArtistLinkNavigation.collectAsState()
     val showAppLinksNudge by vm.showAppLinksNudge.collectAsState()
+    val showPlayerOnboarding by vm.showPlayerOnboarding.collectAsState()
     val streamErrors by vm.streamErrors.collectAsState()
 
     val backStack = rememberNavBackStack(HomeKey)
@@ -686,7 +688,19 @@ fun AudiobasicsApp(
 
     // One-time nudge toward enabling Audiobasics Link handling in Settings (see MainActivity's
     // vm.checkAppLinksNudge call and AudiobasicsLinks.isDomainLinkHandlingEnabled)
-    if (showAppLinksNudge) {
+    // First launch: pick a player design before anything else asks for attention.
+    if (showPlayerOnboarding) {
+        val context = LocalContext.current
+        val hapticsEnabled by vm.hapticsEnabled.collectAsState()
+        PlayerOnboardingDialog(
+            isDarkMode = isDarkMode,
+            hapticsEnabled = hapticsEnabled,
+            context = context,
+            initialDesign = vm.currentPlayerDesign(),
+            onConfirm = { vm.completePlayerOnboarding(it) }
+        )
+    }
+    if (showAppLinksNudge && !showPlayerOnboarding) {
         val context = LocalContext.current
         val hapticsEnabled by vm.hapticsEnabled.collectAsState()
         AppLinksNudgeDialog(
