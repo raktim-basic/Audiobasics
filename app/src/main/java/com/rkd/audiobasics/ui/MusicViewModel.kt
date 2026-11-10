@@ -364,6 +364,23 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // touching the persisted newPlayerDesign preference below.
     val isAnniversaryDay: Boolean = EasterEggUtils.isAnniversaryDay()
 
+    // Fresh install vs. update, decided once on the first launch of a build that has this key and
+    // then remembered. A first install has lastUpdateTime == firstInstallTime; anyone updating
+    // from an earlier version does not. Only fresh installs default to the Full player; people
+    // updating keep the design they already had (the onboarding popup preselects it).
+    private val isFreshInstall: Boolean = run {
+        if (!prefs.contains("fresh_install")) {
+            val fresh = try {
+                val pi = app.packageManager.getPackageInfo(app.packageName, 0)
+                pi.lastUpdateTime - pi.firstInstallTime < 60_000L
+            } catch (e: Exception) {
+                false
+            }
+            prefs.edit().putBoolean("fresh_install", fresh).apply()
+        }
+        prefs.getBoolean("fresh_install", false)
+    }
+
     // Player design: false = classic (existing) player face, true = the new art-first,
     // immersive-mode player face. Settings > Appearance > Player design.
     private val _newPlayerDesign = MutableStateFlow(prefs.getBoolean("new_player_design", true))
@@ -374,8 +391,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("new_player_design", enabled).apply()
     }
 
-    // One-time first-launch popup asking which player design to use (PlayerOnboardingDialog).
-    private val _showPlayerOnboarding = MutableStateFlow(!prefs.getBoolean("player_onboarding_done", false))
+    // One-time popup asking which player design to use (PlayerOnboardingDialog). Shown to new
+    // users and to everyone who updates to the build that introduced it; answering it stores
+    // player_onboarding_done, so no later update ever shows it again.
+    private val _showPlayerOnboarding = MutableStateFlow(
+        !prefs.getBoolean("player_onboarding_done", false)
+    )
     val showPlayerOnboarding: StateFlow<Boolean> = _showPlayerOnboarding
 
     /** 0 = OG, 1 = basics, 2 = Full — the same numbering as Settings > Appearance. */
@@ -407,10 +428,10 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // player is a full-screen sheet that slides up from the player bar (FullscreenPlayer.kt)
     // instead of the card popup; newPlayerDesign above is left untouched so it still applies to
     // the card whenever this is off.
-    // Default is Full. Someone who already picked a design in Settings (new_player_design is
-    // stored) and never touched Full keeps what they had.
+    // Default is Full for fresh installs; people updating from an earlier version keep their
+    // old default (not Full) until they choose it themselves.
     private val _fullscreenPlayer = MutableStateFlow(
-        prefs.getBoolean("fullscreen_player", !prefs.contains("new_player_design"))
+        prefs.getBoolean("fullscreen_player", isFreshInstall)
     )
     val fullscreenPlayer: StateFlow<Boolean> = _fullscreenPlayer
 
