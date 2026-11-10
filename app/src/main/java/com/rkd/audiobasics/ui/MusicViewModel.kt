@@ -374,6 +374,24 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("new_player_design", enabled).apply()
     }
 
+    // One-time first-launch popup asking which player design to use (PlayerOnboardingDialog).
+    private val _showPlayerOnboarding = MutableStateFlow(!prefs.getBoolean("player_onboarding_done", false))
+    val showPlayerOnboarding: StateFlow<Boolean> = _showPlayerOnboarding
+
+    /** 0 = OG, 1 = basics, 2 = Full — the same numbering as Settings > Appearance. */
+    fun currentPlayerDesign(): Int =
+        if (_fullscreenPlayer.value) 2 else if (_newPlayerDesign.value) 1 else 0
+
+    fun completePlayerOnboarding(design: Int) {
+        when (design) {
+            0 -> { setFullscreenPlayer(false); setNewPlayerDesign(false) }
+            1 -> { setFullscreenPlayer(false); setNewPlayerDesign(true) }
+            else -> setFullscreenPlayer(true)
+        }
+        prefs.edit().putBoolean("player_onboarding_done", true).apply()
+        _showPlayerOnboarding.value = false
+    }
+
     // Immersive text (Settings > Appearance): text changes weight on taps and long presses (play
     // pulse, menu open, reorder). Off = rows keep a fixed weight, which avoids per-frame text
     // re-layout on low-end devices. See LocalImmersiveText.
@@ -389,7 +407,11 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
     // player is a full-screen sheet that slides up from the player bar (FullscreenPlayer.kt)
     // instead of the card popup; newPlayerDesign above is left untouched so it still applies to
     // the card whenever this is off.
-    private val _fullscreenPlayer = MutableStateFlow(prefs.getBoolean("fullscreen_player", false))
+    // Default is Full. Someone who already picked a design in Settings (new_player_design is
+    // stored) and never touched Full keeps what they had.
+    private val _fullscreenPlayer = MutableStateFlow(
+        prefs.getBoolean("fullscreen_player", !prefs.contains("new_player_design"))
+    )
     val fullscreenPlayer: StateFlow<Boolean> = _fullscreenPlayer
 
     fun setFullscreenPlayer(enabled: Boolean) {

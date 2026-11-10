@@ -704,11 +704,11 @@ private fun AppearancePage(
                         .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE0E0E0)),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    // 0 = Classic, 1 = New (art-first card), 2 = Fullscreen (slide-up sheet).
+                    // 0 = OG (classic card), 1 = basics (art-first card), 2 = Full (slide-up sheet).
                     // Fullscreen keeps the Classic/New choice stored underneath, so it is a
                     // separate flag rather than a third value of newPlayerDesign.
                     val selectedDesign = if (fullscreenPlayer) 2 else if (newPlayerDesign) 1 else 0
-                    val playerDesignOptions = listOf(0 to "Classic", 1 to "New", 2 to "Fullscreen")
+                    val playerDesignOptions = listOf(0 to "OG", 1 to "basics", 2 to "Full")
                     playerDesignOptions.forEach { (value, label) ->
                         val isSelected = selectedDesign == value
                         Row(
