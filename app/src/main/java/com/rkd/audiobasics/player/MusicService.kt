@@ -280,6 +280,14 @@ class MusicService : MediaLibraryService() {
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+            // VISIONOS stream URLs (c=VISIONOS) have to be fetched with that client's own
+            // user agent; every other URL keeps the iOS one set on the factory below.
+            .addInterceptor { chain ->
+                val req = chain.request()
+                val ua = Innertube.userAgentForStreamUrl(req.url.toString())
+                if (ua != null) chain.proceed(req.newBuilder().header("User-Agent", ua).build())
+                else chain.proceed(req)
+            }
             .build()
 
         val okHttpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
@@ -481,7 +489,8 @@ class MusicService : MediaLibraryService() {
                     val probeReq = okhttp3.Request.Builder()
                         .url(url)
                         .get()
-                        .addHeader("User-Agent", "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)")
+                        .addHeader("User-Agent", Innertube.userAgentForStreamUrl(url)
+                            ?: "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X)")
                         .addHeader("Range", "bytes=0-1")
                         .build()
                     val probe = probeClient.newCall(probeReq).execute()
