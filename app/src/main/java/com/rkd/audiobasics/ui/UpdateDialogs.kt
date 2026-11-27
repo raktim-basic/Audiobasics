@@ -48,27 +48,42 @@ fun DownloadProgressDialog(
         dismissOnOutsideTap = false
     ) { close ->
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+            // The download sits at 0% while the app connects to GitHub. Until the first real
+            // progress arrives, show a sweeping bar so it doesn't look stuck.
+            val progress = percent()
+            val connecting = progress <= 0
             Text(
-                text = "Downloading update : ${percent()}%",
+                text = if (connecting) "Connecting..." else "Downloading update : $progress%",
                 fontFamily = NothingFont,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = textColor
             )
             Spacer(Modifier.height(16.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(trackColor)
-            ) {
+            if (connecting) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = Color.Red,
+                    trackColor = trackColor
+                )
+            } else {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(percent().coerceIn(0, 100) / 100f)
-                        .fillMaxHeight()
-                        .background(Color.Red)
-                )
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(trackColor)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress.coerceIn(0, 100) / 100f)
+                            .fillMaxHeight()
+                            .background(Color.Red)
+                    )
+                }
             }
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
