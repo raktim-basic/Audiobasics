@@ -184,7 +184,7 @@ object CacheManager {
                     // No chunk limit needed here — we want the whole file in one stream
                     val request = Request.Builder()
                         .url(streamUrl)
-                        .addHeader("User-Agent", IOS_USER_AGENT)
+                        .addHeader("User-Agent", Innertube.userAgentForStreamUrl(streamUrl) ?: IOS_USER_AGENT)
                         .addHeader("Accept", "*/*")
                         .addHeader("Accept-Encoding", "identity")
                         .addHeader("Range", "bytes=0-")
