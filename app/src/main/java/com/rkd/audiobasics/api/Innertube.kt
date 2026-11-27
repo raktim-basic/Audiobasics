@@ -2035,6 +2035,10 @@ object Innertube {
         // is what gets "Sign in to confirm you're not a bot". If that fails for any reason,
         // once more anonymously, so a revoked or flagged session can never make this fallback
         // worse than it was before.
+        // NewPipe reports YouTube's bot check as an exception, not a playabilityStatus, so it
+        // never counted as "sign in required". Remember it, so a signed-out user gets the
+        // sign-in message instead of a raw log.
+        var newPipeWantsSignIn = false
         fun newPipeLookup(label: String): Pair<String, Long>? = try {
             val extractor = ServiceList.YouTube
                 .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
@@ -2051,6 +2055,9 @@ object Innertube {
         } catch (e: Exception) {
             Timber.e("$label ALSO failed: ${e.message} ❌")
             trail.note("$label: ${e.javaClass.simpleName}: ${e.message}")
+            val msg = e.message.orEmpty()
+            if (msg.contains("LOGIN_REQUIRED") || msg.contains("not a bot", ignoreCase = true) ||
+                msg.contains("Sign in to confirm", ignoreCase = true)) newPipeWantsSignIn = true
             null
         }
         val hasSession = AccountManager.activeSession() != null
@@ -2066,7 +2073,10 @@ object Innertube {
             clearSignInBlock()
         } else {
             if (trail.none { it.startsWith("NewPipe") }) trail.note("NewPipe: no audio streams found")
-            recordFailure(videoId, loginRequired = sawSignIn, trail = trail)
+            // Signed out + NewPipe's anonymous request got the bot check: logging in is the fix.
+            // (Signed in and still refused means login isn't the problem, so no flag then.)
+            val needsSignIn = sawSignIn || (newPipeWantsSignIn && !hasSession)
+            recordFailure(videoId, loginRequired = needsSignIn, trail = trail)
             if (sawSignIn) {
                 // Every native client was told to sign in and NewPipe didn't get through either.
                 // That's either this one song or the whole connection — see noteSignInFailure().
