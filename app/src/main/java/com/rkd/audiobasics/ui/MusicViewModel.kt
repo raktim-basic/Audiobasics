@@ -1134,9 +1134,12 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // The playing song plus this many related ones: 1 + 29 = a 30-song queue.
+    private val RELATED_QUEUE_SIZE = 29
+
     private suspend fun fetchAndQueueSimilar(song: Song) {
         try {
-            val similar = Innertube.getRelatedSongs(getApplication(), song.id, 15)
+            val similar = Innertube.getRelatedSongs(getApplication(), song.id, RELATED_QUEUE_SIZE)
             if (similar.isNotEmpty()) {
                 val newQueue = listOf(song) + similar
                 _queue.value = newQueue
@@ -1357,8 +1360,29 @@ class MusicViewModel(app: Application) : AndroidViewModel(app) {
         controller?.moveMediaItem(fromIndex, toIndex)
     }
 
-    fun skipToNext() { _isLoading.value = true; controller?.seekToNextMediaItem() }
-    fun skipToPrevious() { _isLoading.value = true; controller?.seekToPreviousMediaItem() }
+    // Only "repeat list" wraps around the queue. With repeat off or repeat one, the first and
+    // last songs are real ends, so say so instead of silently doing nothing (or looping).
+    fun skipToNext() {
+        val ctrl = controller ?: return
+        val atEnd = ctrl.mediaItemCount > 0 && ctrl.currentMediaItemIndex >= ctrl.mediaItemCount - 1
+        if (atEnd && ctrl.repeatMode != Player.REPEAT_MODE_ALL) {
+            Toast.makeText(getApplication(), "End of the queue", Toast.LENGTH_SHORT).show()
+            return
+        }
+        _isLoading.value = true
+        ctrl.seekToNextMediaItem()
+    }
+
+    fun skipToPrevious() {
+        val ctrl = controller ?: return
+        val atStart = ctrl.mediaItemCount > 0 && ctrl.currentMediaItemIndex <= 0
+        if (atStart && ctrl.repeatMode != Player.REPEAT_MODE_ALL) {
+            Toast.makeText(getApplication(), "First song of the queue", Toast.LENGTH_SHORT).show()
+            return
+        }
+        _isLoading.value = true
+        ctrl.seekToPreviousMediaItem()
+    }
     fun togglePlayPause() { controller?.run { if (isPlaying) pause() else play() } }
 
     fun toggleRepeatMode() {
