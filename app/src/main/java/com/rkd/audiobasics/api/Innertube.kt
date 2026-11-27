@@ -172,6 +172,8 @@ object Innertube {
     private fun syncAccountIdentity() {
         val session = AccountManager.activeSession()
         if (session != null) {
+            // NewPipe's signed-in requests must carry the same identity as the cookie.
+            if (NewPipeDownloader.visitorData != session.visitorData) NewPipeDownloader.visitorData = session.visitorData
             if (visitorData != session.visitorData) {
                 visitorData = session.visitorData
                 Timber.tag("Innertube").d("Using the signed-in account's visitor identity")
@@ -180,6 +182,7 @@ object Innertube {
         } else if (identityFromAccount) {
             identityFromAccount = false
             visitorData = null
+            NewPipeDownloader.visitorData = null
             Timber.tag("Innertube").d("Account no longer active - dropped its visitor identity")
         }
     }
@@ -1362,9 +1365,20 @@ object Innertube {
             usePoTokenInBody = true, appendPotToUrl = true, useSignatureTimestamp = true),
         YTClient("WEB", "2.20260213.00.00", "1", FIREFOX_UA,
             usePoTokenInBody = true, appendPotToUrl = true, useSignatureTimestamp = true),
-        // ANDROID_VR: the Oculus Quest YouTube app. Usually plays without sign-in or a poToken,
-        // which makes it the most useful fallback when the other clients get LOGIN_REQUIRED
-        // (Metrolist falls back to it for the same reason). Version/UA mirror the values other
+        // VISIONOS: the YouTube app on Apple Vision Pro. Hands out direct (cipher-free) audio
+        // URLs without sign-in and without a poToken, which ANDROID_VR's URLs now need (they
+        // get an HTTP 403 from the CDN without one). Metrolist keeps a tokenless visionOS
+        // profile as its last resort for the same reason. Values mirror yt-dlp's
+        // INNERTUBE_CLIENTS['visionos']; if YouTube retires this version, bump it here.
+        // Its stream URLs carry c=VISIONOS, and the CDN wants this same user agent on the
+        // follow-up requests — see userAgentForStreamUrl().
+        YTClient("VISIONOS", "1.02", "101",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+            usePoTokenInBody = false, appendPotToUrl = false, useSignatureTimestamp = false,
+            osName = "visionOS", osVersion = "26.5.23O471",
+            deviceMake = "Apple", deviceModel = "RealityDevice17,1"),
+        // ANDROID_VR: the Oculus Quest YouTube app. Used to play without a poToken; its URLs
+        // now often need one, so it sits behind VISIONOS. Version/UA mirror the values other
         // open-source extractors use for it; if YouTube retires this version, bump it here.
         YTClient("ANDROID_VR", "1.65.10", "28",
             "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
@@ -1379,6 +1393,17 @@ object Innertube {
             usePoTokenInBody = false, appendPotToUrl = true, useSignatureTimestamp = false,
             androidSdkVersion = 30, osName = "Android", osVersion = "11"),
     )
+
+    /**
+     * The user agent a stream URL has to be fetched with, for the clients whose CDN URLs
+     * check it. Right now that is only VISIONOS (the URL announces its client as c=VISIONOS);
+     * every other URL returns null and keeps the app's existing user agent, so nothing about
+     * the older clients changes.
+     */
+    fun userAgentForStreamUrl(url: String): String? {
+        val c = Regex("[?&]c=([A-Za-z0-9_]+)").find(url)?.groupValues?.get(1) ?: return null
+        return STREAM_CLIENTS.firstOrNull { it.clientName == "VISIONOS" && it.clientName == c }?.userAgent
+    }
 
     fun parseExpiry(url: String): Long {
         val expireUnixSec = Regex("[?&]expire=(\\d+)").find(url)?.groupValues?.get(1)?.toLongOrNull()
@@ -1475,10 +1500,12 @@ object Innertube {
     // Validate stream URL with a HEAD request before using it.
     // Catches URLs that resolve but are already expired, geo-blocked, or 403'd due to a
     // stale visitorData identity.
-    private fun validateStreamUrl(url: String, clientName: String): ValidateResult {
+    private fun validateStreamUrl(url: String, clientName: String, userAgent: String? = null): ValidateResult {
         return try {
             val response = httpClient.newCall(
-                Request.Builder().url(url).head().build()
+                Request.Builder().url(url).head()
+                    .apply { userAgent?.let { header("User-Agent", it) } }
+                    .build()
             ).execute()
             val ok = response.isSuccessful
             Timber.d("$clientName: stream validate HTTP ${response.code} → ${if (ok) "✅" else "❌"}")
@@ -1767,7 +1794,7 @@ object Innertube {
                 // Validate stream URL before caching — skip validation for last client
                 val isLastClient = client == STREAM_CLIENTS.last()
                 if (!isLastClient) {
-                    when (validateStreamUrl(url, client.clientName)) {
+                    when (validateStreamUrl(url, client.clientName, if (client.clientName == "VISIONOS") client.userAgent else null)) {
                         ValidateResult.Forbidden -> {
                             trail.note("${client.clientName}: stream check HTTP 403")
                             sawForbidden = true; continue
@@ -2004,7 +2031,11 @@ object Innertube {
         // NewPipe fallback
         Timber.w("Falling to NewPipe (forceFallback=$forceFallback)")
         initNewPipe()
-        val fallbackResult: Pair<String, Long>? = try {
+        // First as the signed-in account (when one is linked), because the anonymous request
+        // is what gets "Sign in to confirm you're not a bot". If that fails for any reason,
+        // once more anonymously, so a revoked or flagged session can never make this fallback
+        // worse than it was before.
+        fun newPipeLookup(label: String): Pair<String, Long>? = try {
             val extractor = ServiceList.YouTube
                 .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
@@ -2018,9 +2049,18 @@ object Innertube {
                 }?.content
             if (url != null) url to parseExpiry(url) else null
         } catch (e: Exception) {
-            Timber.e("NewPipe ALSO failed: ${e.message} ❌")
-            trail.note("NewPipe: ${e.javaClass.simpleName}: ${e.message}")
+            Timber.e("$label ALSO failed: ${e.message} ❌")
+            trail.note("$label: ${e.javaClass.simpleName}: ${e.message}")
             null
+        }
+        val hasSession = AccountManager.activeSession() != null
+        var fallbackResult: Pair<String, Long>? =
+            NewPipeDownloader.runWithSession(hasSession) {
+                newPipeLookup(if (hasSession) "NewPipe (signed in)" else "NewPipe")
+            }
+        if (fallbackResult == null && hasSession) {
+            Timber.w("NewPipe signed-in lookup failed - retrying anonymously")
+            fallbackResult = NewPipeDownloader.runWithSession(false) { newPipeLookup("NewPipe") }
         }
         if (fallbackResult != null) {
             clearSignInBlock()
@@ -2766,23 +2806,85 @@ object NewPipeDownloader : Downloader() {
     @Volatile var visitorData: String? = null
     @Volatile var poToken: String? = null
 
+    // Requests are anonymous unless the calling thread opted in through runWithSession() -
+    // only the stream lookup does, so search, related songs and everything else NewPipe is
+    // used for never carry the account. NewPipe runs a lookup synchronously on the calling
+    // thread, which is what makes a thread-local flag reliable here.
+    private val sessionAllowed = ThreadLocal<Boolean>()
+
+    fun <T> runWithSession(allowed: Boolean, block: () -> T): T {
+        val previous = sessionAllowed.get()
+        sessionAllowed.set(allowed)
+        try {
+            return block()
+        } finally {
+            if (previous == null) sessionAllowed.remove() else sessionAllowed.set(previous)
+        }
+    }
+
+    private val webClientBody = Regex(""""clientName"\s*:\s*"WEB(_REMIX)?"""")
+    private val visitorDataField = Regex(""""visitorData"\s*:\s*"[^"]*"""")
+
     override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): Response {
-        val rb = Request.Builder().url(request.url()).header("User-Agent", FIREFOX_UA)
+        val url = request.url()
+        val host = try { java.net.URI(url).host?.lowercase() } catch (_: Exception) { null }
+        val bodyText = if (request.httpMethod() == "POST") request.dataToSend()?.toString(Charsets.UTF_8) else null
+
+        // The account goes only to YouTube's own web hosts, and only on web-client requests:
+        // the page fetch, or a player/next call whose body says WEB / WEB_REMIX. The native
+        // client requests (iOS, Android, TV) never get web cookies.
+        var session: com.rkd.audiobasics.api.account.AccountSession? = null
+        var authorization: String? = null
+        if (sessionAllowed.get() == true && (host == "www.youtube.com" || host == "music.youtube.com")) {
+            val isApiCall = url.contains("/youtubei/")
+            val webRequest = if (isApiCall) bodyText != null && webClientBody.containsMatchIn(bodyText) else !url.contains("/s/player/")
+            if (webRequest) {
+                session = AccountManager.activeSession()
+                authorization = session?.let { SapisidAuth.authorizationHeader(it.cookie, "https://$host") }
+            }
+        }
+        val signed = session != null && authorization != null
+
+        val rb = Request.Builder().url(url).header("User-Agent", FIREFOX_UA)
         val hdrs = request.headers() ?: emptyMap()
         hdrs.forEach { (k, v) -> if (!k.equals("User-Agent", ignoreCase = true)) v.forEach { rb.addHeader(k, it) } }
         if (!hdrs.containsKey("Accept-Language")) rb.addHeader("Accept-Language", "en-US,en;q=0.9")
-        if (!hdrs.containsKey("Cookie"))
-            rb.addHeader("Cookie", "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
-        visitorData?.let { rb.addHeader("X-Visitor-Data", it) }
-        if (request.url().contains("/youtubei/v1/player") || request.url().contains("/youtubei/v1/next"))
-            poToken?.let { rb.addHeader("X-Goog-Visitor-Id", it) }
+
+        if (signed && session != null && authorization != null) {
+            // Same identity the signed-in web clients use: cookie, SAPISIDHASH for this
+            // origin, the account index, and the account's own visitor id.
+            rb.header("Cookie", session.cookie)
+            rb.header("Authorization", authorization)
+            rb.header("X-Goog-AuthUser", session.authUser)
+            rb.header("X-Goog-Visitor-Id", session.visitorData)
+            rb.header("X-Visitor-Data", session.visitorData)
+            if (!hdrs.containsKey("Origin")) rb.header("Origin", "https://$host")
+            if (!hdrs.containsKey("Referer")) rb.header("Referer", "https://$host/")
+        } else {
+            if (!hdrs.containsKey("Cookie"))
+                rb.addHeader("Cookie", "CONSENT=YES+; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
+            visitorData?.let { rb.addHeader("X-Visitor-Data", it) }
+            if (url.contains("/youtubei/v1/player") || url.contains("/youtubei/v1/next"))
+                poToken?.let { rb.addHeader("X-Goog-Visitor-Id", it) }
+        }
+
         when (request.httpMethod()) {
-            "POST" -> rb.post((request.dataToSend() ?: ByteArray(0))
-                .toRequestBody("application/json".toMediaTypeOrNull()))
+            "POST" -> {
+                var data = request.dataToSend() ?: ByteArray(0)
+                // NewPipe's body carries its own anonymous visitor id; swap in the account's
+                // so the body and the cookie describe the same visitor.
+                if (signed && session != null && bodyText != null) {
+                    val vd = session.visitorData
+                    data = visitorDataField.replace(bodyText) { "\"visitorData\":\"$vd\"" }
+                        .toByteArray(Charsets.UTF_8)
+                }
+                rb.post(data.toRequestBody("application/json".toMediaTypeOrNull()))
+            }
             else -> rb.get()
         }
         val response = client.newCall(rb.build()).execute()
-        response.header("X-Visitor-Data")?.let { visitorData = it }
+        if (signed && response.code == 401) AccountManager.requestSessionCheck()
+        if (!signed) response.header("X-Visitor-Data")?.let { visitorData = it }
         val body = response.body?.string() ?: ""
         val headers = mutableMapOf<String, MutableList<String>>()
         response.headers.names().forEach { name -> headers[name] = response.headers(name).toMutableList() }
