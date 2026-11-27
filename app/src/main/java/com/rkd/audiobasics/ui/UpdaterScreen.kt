@@ -424,5 +424,32 @@ fun UpdaterScreen(
         )
 
         Spacer(Modifier.height(32.dp))
+
+        // Heads-up about Google's developer verification. The screen already scrolls, so with
+        // a large text size or display zoom this just runs further down the page.
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 28.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (isDarkMode) Color(0xFF2A2A2A) else Color(0xFFE8E8E8))
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "⚠️ Starting in 2027, Google will make it harder to install/update apps " +
+                    "from developers who aren't verified with Google.\n\n" +
+                    "Since Audiobasics doesn't comply with their verification policies (and the " +
+                    "\$25 fee is too much for me), you'll have to either install updates manually " +
+                    "from a computer, or do Android's \"Advanced flow\" once and select " +
+                    "\"indefinitely\" so Audiobasics can keep updating on your device. :(",
+                fontFamily = BodyFont,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = textColor
+            )
+        }
+
+        // Extra room at the bottom so the last line isn't hidden behind the mini player.
+        Spacer(Modifier.height(140.dp))
     }
 }
